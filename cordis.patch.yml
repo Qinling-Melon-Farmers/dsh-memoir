@@ -1,0 +1,13 @@
+# dsh-memoir bundle patch: inserts the host-half plugin row into the web
+# profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
+# manifest field) over dsh-base; activate with
+#   dsh plugin --profile web add github:<owner>/dsh-memoir
+# or, for local development,
+#   dsh plugin --profile web add link:<abs path to this directory>
+#
+# The row is a bare plugin by package name: the node half (exports ".")
+# registers the memoir_record / memoir_read tools and the per-project
+# system-prompt announcement. No client half — this is a host-only plugin.
+- insert:
+    - id: memoir
+      name: dsh-memoir

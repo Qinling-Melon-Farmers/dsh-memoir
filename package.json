@@ -1,0 +1,44 @@
+{
+  "name": "dsh-memoir",
+  "description": "Project persistent memory and session-lessons distillation for the dsh web GUI: an agent records a session's work summary, lessons learned, and next-action guide (memoir_record) into a per-project PROJECT_MEMORY.md plus a cross-project index (~/.dsh/dsh-memoir.json), reads it back on demand (memoir_read), and has the project memory auto-injected into the system prompt of future sessions. Host-only, no client bundle 鈥?mounted via the dsh.bundle.patch manifest, no dsh source changes.",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "memory",
+    "lessons",
+    "session",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Qinling-Melon-Farmers/dsh-memoir.git"
+  }
+}
