@@ -7,6 +7,8 @@
  * three sibling entries keep a stable order.
  */
 
+import type { PanelController } from './controller.js'
+
 /** Stable data attribute identifying the injected entry row. */
 export const ENTRY_SELECTOR = '[data-dsh-memoir-entry]'
 
@@ -16,25 +18,25 @@ const ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke
 const FAMILY_SELECTOR = '[data-dsh-taskboard-entry], [data-dsh-ssh-entry], [data-dsh-memoir-entry]'
 
 /** Find the sidebar shell root element, or undefined while not yet mounted. */
-function sidebarRoot() {
-  const column = document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]')
+function sidebarRoot(): HTMLElement | undefined {
+  const column = document.querySelector<HTMLElement>('[data-pane="sidebar"], [class*="sidebarCol"]')
   if (column === null) return undefined
-  const logoOwner = column.querySelector('[class*="logoRow"]')?.parentElement
-  return logoOwner ?? (column.firstElementChild ?? undefined)
+  const logoOwner = column.querySelector<HTMLElement>('[class*="logoRow"]')?.parentElement
+  return logoOwner ?? (column.firstElementChild as HTMLElement | undefined)
 }
 
 /** The New Session button: nested in the logo row on current shells. */
-function newSessionButton(root) {
-  const nested = root.querySelector('button[class*="newSession"]')
+function newSessionButton(root: HTMLElement): HTMLButtonElement | undefined {
+  const nested = root.querySelector<HTMLButtonElement>('button[class*="newSession"]')
   if (nested !== null) return nested
   for (const child of root.children) {
-    if (child.tagName === 'BUTTON') return child
+    if (child.tagName === 'BUTTON') return child as HTMLButtonElement
   }
   return undefined
 }
 
 /** Build the entry row (a detached button; inserted once the shell is up). */
-function createEntry(controller, t) {
+function createEntry(controller: PanelController, t: (key: string) => string): HTMLButtonElement {
   const entry = document.createElement('button')
   entry.type = 'button'
   entry.dataset.dshMemoirEntry = ''
@@ -52,14 +54,14 @@ function createEntry(controller, t) {
  * Re-insert the entry after the sibling family block (stable relative order).
  * @returns true when the entry is placed.
  */
-function placeEntry(root, entry) {
+function placeEntry(root: HTMLElement, entry: HTMLButtonElement): boolean {
   const button = newSessionButton(root)
   if (button === undefined) return false
   if (entry.parentElement !== root) {
     const row = button.closest('[class*="logoRow"]')
     const base = row !== null && row.parentElement === root ? row : button
     const family = Array.from(root.children).filter(
-      (el) => el instanceof HTMLElement && el.matches(FAMILY_SELECTOR),
+      (el): el is HTMLElement => el instanceof HTMLElement && el.matches(FAMILY_SELECTOR),
     )
     // memoir sits after the whole family block.
     const anchor = family.length > 0 ? family[family.length - 1].nextElementSibling : base.nextElementSibling
@@ -74,12 +76,12 @@ function placeEntry(root, entry) {
  * @param t - the bound translator.
  * @returns disposer removing the entry and its observers.
  */
-export function mountSidebarEntry(controller, t) {
+export function mountSidebarEntry(controller: PanelController, t: (key: string) => string): () => void {
   const entry = createEntry(controller, t)
-  let root
+  let root: HTMLElement | undefined
   let placed = false
 
-  const tryPlace = () => {
+  const tryPlace = (): void => {
     if (placed) return
     if (root !== undefined && !root.isConnected) {
       rootObserver.disconnect()

@@ -11,8 +11,11 @@
  * a sibling dispatches its own activation.
  */
 
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { MemoirPanel } from './panel.jsx'
+import type { MemoirApi } from './api.js'
+import type { CwdTracker } from './cwd.js'
+import type { PanelController } from './controller.js'
 
 /** The injected panel container (kept in the DOM, hidden when inactive). */
 export const PANEL_VIEW_SELECTOR = '[data-dsh-memoir-view]'
@@ -26,8 +29,8 @@ const ACTIVATE_EVENT = 'dsh-panel-activate'
 const PANEL_NAME = 'memoir'
 
 /** Find the center column, or undefined while the frame is not mounted. */
-function conversationColumn() {
-  return document.querySelector(CONVERSATION_COLUMN_SELECTOR) ?? undefined
+function conversationColumn(): HTMLElement | undefined {
+  return document.querySelector<HTMLElement>(CONVERSATION_COLUMN_SELECTOR) ?? undefined
 }
 
 /**
@@ -39,11 +42,16 @@ function conversationColumn() {
  * @param t - the bound translator.
  * @returns disposer unmounting the tree and restoring the column.
  */
-export function mountPanel(controller, api, cwdTracker, t) {
-  let root
-  let container
+export function mountPanel(
+  controller: PanelController,
+  api: MemoirApi,
+  cwdTracker: CwdTracker,
+  t: (key: string) => string,
+): () => void {
+  let root: Root | undefined
+  let container: HTMLDivElement | undefined
 
-  const ensure = () => {
+  const ensure = (): void => {
     if (container !== undefined) {
       if (container.isConnected) return
       root?.unmount()
@@ -66,7 +74,7 @@ export function mountPanel(controller, api, cwdTracker, t) {
   })
   waitObserver.observe(document.body, { childList: true, subtree: true })
 
-  const applyActive = () => {
+  const applyActive = (): void => {
     if (controller.getSnapshot().panelOpen) {
       for (const attr of SIBLING_ATTRS) document.documentElement.removeAttribute(attr)
       document.documentElement.setAttribute(ACTIVE_ATTR, '')
@@ -76,8 +84,8 @@ export function mountPanel(controller, api, cwdTracker, t) {
     }
   }
 
-  const onOtherActivate = (event) => {
-    const detail = event.detail
+  const onOtherActivate = (event: Event): void => {
+    const detail = (event as CustomEvent).detail as string | undefined
     if ((detail === 'ssh' || detail === 'taskboard') && controller.getSnapshot().panelOpen) {
       controller.close()
     }
@@ -85,9 +93,9 @@ export function mountPanel(controller, api, cwdTracker, t) {
 
   // Hand the center column back to the conversation on sidebar context clicks.
   const SIDEBAR_ROW_SELECTOR = '[class*="sessionRow"], [class*="projectRow"], [class*="searchResultRow"], [class*="searchResultWorkspace"], [class*="newSession"]'
-  const onClickSidebarRow = (event) => {
+  const onClickSidebarRow = (event: MouseEvent): void => {
     if (!controller.getSnapshot().panelOpen) return
-    const target = event.target
+    const target = event.target as HTMLElement | null
     if (target === null || typeof target.closest !== 'function') return
     if (target.closest(SIDEBAR_ROW_SELECTOR) !== null) controller.close()
   }

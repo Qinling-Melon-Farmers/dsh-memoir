@@ -51,9 +51,9 @@ test('client bundle follows the ModuleLoader closure-factory protocol', () => {
 
 test('client bundle requires only platform modules (purity)', () => {
   const source = readFileSync(OUT, 'utf8')
-  const required = new Set()
+  const required = new Set<string>()
   for (const match of source.matchAll(/require\((['"])([^'"]+)\1\)/g)) {
-    required.add(match[2])
+    required.add(match[2]!)
   }
   assert.ok(required.size > 0, 'the bundle does emit require calls')
   for (const specifier of required) {

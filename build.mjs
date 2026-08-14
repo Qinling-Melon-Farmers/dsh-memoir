@@ -27,7 +27,7 @@ const PLATFORM_MODULES = [
 const ID = 'dsh-memoir'
 
 await build({
-  entryPoints: ['src/client/index.jsx'],
+  entryPoints: ['src/client/index.tsx'],
   outfile: 'lib/client.js',
   bundle: true,
   format: 'cjs',

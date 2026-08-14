@@ -1,16 +1,27 @@
 /**
  * The memoir panel: project / global memory tabs, client-side search,
  * manual record form, per-entry delete. Rendered into the center-column
- * container by mount.jsx; visibility is CSS-driven (html data attribute).
+ * container by mount.tsx; visibility is CSS-driven (html data attribute).
  */
 
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SECTION_KEYS } from './i18n.js'
+import type { MemoirApi, WireEntry, WireProject } from './api.js'
+import type { CwdTracker } from './cwd.js'
+import type { PanelController } from './controller.js'
+import type { SectionKey } from './types.ts'
+
+interface PanelProps {
+  controller: PanelController
+  api: MemoirApi
+  cwdTracker: CwdTracker
+  t: (key: string) => string
+}
 
 /** One entry's meta line: time, section chip, session id tooltip. */
-function EntryMeta({ entry, t }) {
+function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string }) {
   const when = new Date(entry.time)
-  const pad = (n) => String(n).padStart(2, '0')
+  const pad = (n: number) => String(n).padStart(2, '0')
   const timeText = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`
   return (
     <div className="memoir-entry-meta">
@@ -23,7 +34,7 @@ function EntryMeta({ entry, t }) {
   )
 }
 
-function EntryCard({ entry, t, onDelete }) {
+function EntryCard({ entry, t, onDelete }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void }) {
   return (
     <div className="memoir-entry">
       <button type="button" className="memoir-delete" title={t('delete.confirm')} onClick={() => onDelete(entry)}>×</button>
@@ -35,7 +46,7 @@ function EntryCard({ entry, t, onDelete }) {
 }
 
 /** Sectioned entry list in canonical order. */
-function SectionedEntries({ entries, t, onDelete }) {
+function SectionedEntries({ entries, t, onDelete }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void }) {
   const groups = useMemo(
     () => SECTION_KEYS.map((key) => ({ key, entries: entries.filter((e) => e.section === key) })).filter((g) => g.entries.length > 0),
     [entries],
@@ -64,8 +75,8 @@ function SectionedEntries({ entries, t, onDelete }) {
   )
 }
 
-function AddForm({ t, onSubmit, onCancel }) {
-  const [section, setSection] = useState('lessons')
+function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubmit: (payload: { section: SectionKey; title?: string; content: string }) => void; onCancel: () => void }) {
+  const [section, setSection] = useState<SectionKey>('lessons')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const submit = () => {
@@ -77,7 +88,7 @@ function AddForm({ t, onSubmit, onCancel }) {
       <div className="memoir-form-row">
         <div className="memoir-field">
           <label>{t('form.section')}</label>
-          <select value={section} onChange={(e) => setSection(e.target.value)}>
+          <select value={section} onChange={(e) => setSection(e.target.value as SectionKey)}>
             {SECTION_KEYS.map((key) => (
               <option key={key} value={key}>{t('sections.' + key)}</option>
             ))}
@@ -100,19 +111,16 @@ function AddForm({ t, onSubmit, onCancel }) {
   )
 }
 
-/**
- * @param props - { controller, api, cwdTracker, t }
- */
-export function MemoirPanel({ controller, api, cwdTracker, t }) {
+export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const cwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
-  const [tab, setTab] = useState('project')
+  const [tab, setTab] = useState<'project' | 'global'>('project')
   const [query, setQuery] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [project, setProject] = useState(null)
-  const [projects, setProjects] = useState([])
+  const [project, setProject] = useState<WireProject | null>(null)
+  const [projects, setProjects] = useState<WireProject[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -126,41 +134,41 @@ export function MemoirPanel({ controller, api, cwdTracker, t }) {
       setLoading(true)
       api.project(cwd)
         .then((value) => { if (!cancelled) setProject(value.project) })
-        .catch((e) => { if (!cancelled) setError(e.message) })
+        .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     } else {
       setLoading(true)
       api.global()
         .then((value) => { if (!cancelled) setProjects(value.projects) })
-        .catch((e) => { if (!cancelled) setError(e.message) })
+        .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     }
     return () => { cancelled = true }
   }, [tab, cwd, refreshKey])
 
   const q = query.trim().toLowerCase()
-  const filterEntries = (entries) =>
+  const filterEntries = (entries: WireEntry[]) =>
     q === '' ? entries : entries.filter((e) => `${e.title ?? ''} ${e.content}`.toLowerCase().includes(q))
 
   const reload = () => setRefreshKey((k) => k + 1)
 
-  const onDelete = (entry, entryPath) => {
+  const onDelete = (entry: WireEntry, entryPath: string) => {
     if (!window.confirm(t('delete.confirm'))) return
     setBusy(true)
     api.remove({ path: entryPath, id: entry.id })
       .then(() => reload())
-      .catch((e) => setError(`${t('delete.failed')}: ${e.message}`))
+      .catch((e: Error) => setError(`${t('delete.failed')}: ${e.message}`))
       .finally(() => setBusy(false))
   }
 
-  const onRecord = (payload) => {
+  const onRecord = (payload: { section: SectionKey; title?: string; content: string }) => {
     setBusy(true)
     api.record({ path: cwd, ...payload })
       .then(() => {
         setFormOpen(false)
         reload()
       })
-      .catch((e) => setError(`${t('record.failed')}: ${e.message}`))
+      .catch((e: Error) => setError(`${t('record.failed')}: ${e.message}`))
       .finally(() => setBusy(false))
   }
 
@@ -208,7 +216,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }) {
                       <div className="memoir-empty-hint">{t('empty.projectHint')}</div>
                     </div>
                   )
-                : <SectionedEntries entries={projectEntries} t={t} onDelete={(entry) => onDelete(entry, project.path)} />
+                : <SectionedEntries entries={projectEntries} t={t} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} />
             : projects.length === 0
               ? (
                   <div className="memoir-empty">

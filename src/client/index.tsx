@@ -7,6 +7,7 @@
  * the GUI down.
  */
 
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { PanelController } from './controller.js'
 import { MemoirApi } from './api.js'
 import { createCwdTracker } from './cwd.js'
@@ -19,7 +20,7 @@ import { mountPanel } from './mount.jsx'
 export const inject = ['sessions']
 
 /** Inject the panel stylesheet once (the loader removes plugin-owned tags on unload). */
-function injectStyles() {
+function injectStyles(): void {
   if (document.querySelector('style[data-plugin="dsh-memoir"]') !== null) return
   const tag = document.createElement('style')
   tag.dataset.plugin = 'dsh-memoir'
@@ -31,9 +32,9 @@ function injectStyles() {
  * Mount the memoir panel.
  * @param ctx - client root context (sessions service).
  */
-export function apply(ctx) {
+export function apply(ctx: ClientContext): void {
   const t = makeT(document)
-  const disposers = []
+  const disposers: Array<() => void> = []
   try {
     const controller = new PanelController()
     const api = new MemoirApi()

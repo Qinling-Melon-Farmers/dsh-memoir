@@ -3,7 +3,9 @@
  * The shell owns <html lang>; the panel reads it at render time.
  */
 
-export const dictionaries = {
+export type Lang = 'zh' | 'en'
+
+export const dictionaries: Record<Lang, Record<string, string>> = {
   zh: {
     'entry.label': '记忆',
     'entry.tooltip': '打开记忆面板（项目记忆 / 全局记忆）',
@@ -79,21 +81,26 @@ export const dictionaries = {
 }
 
 /** Section keys in canonical display order. */
-export const SECTION_KEYS = ['work', 'lessons', 'actions', 'note']
+export const SECTION_KEYS: string[] = ['work', 'lessons', 'actions', 'note']
+
+/** Minimal document surface for language detection. */
+export interface DocumentLike {
+  documentElement?: { lang?: string }
+}
 
 /** Current UI language: zh when the shell's <html lang> starts with zh. */
-export function detectLanguage(documentLike) {
-  const lang = documentLike && documentLike.documentElement && documentLike.documentElement.lang
+export function detectLanguage(documentLike: DocumentLike | undefined): Lang {
+  const lang = documentLike?.documentElement?.lang
   return typeof lang === 'string' && lang.startsWith('zh') ? 'zh' : 'en'
 }
 
 /** Pure translation lookup: `translate(lang, key)` with en fallback. */
-export function translate(lang, key) {
-  const dict = dictionaries[lang] ?? dictionaries.en
+export function translate(lang: string, key: string): string {
+  const dict = dictionaries[lang as Lang] ?? dictionaries.en
   return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : (dictionaries.en[key] ?? key)
 }
 
 /** Bound translator reading the live <html lang> at each call. */
-export function makeT(documentLike) {
+export function makeT(documentLike: DocumentLike): (key: string) => string {
   return (key) => translate(detectLanguage(documentLike), key)
 }

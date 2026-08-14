@@ -3,11 +3,19 @@
 # manifest field) over dsh-base; activate with
 #   dsh plugin --profile web add github:<owner>/dsh-memoir
 # or, for local development,
-#   dsh plugin --profile web add link:<abs path to this directory>
+#   dsh plugin --profile web add file:<abs path to this directory>
 #
 # The row is a bare plugin by package name: the node half (exports ".")
-# registers the memoir_record / memoir_read tools and the per-project
-# system-prompt announcement. No client half — this is a host-only plugin.
+# registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel
+# routes, the turn-end auto-distill listener, and the per-project
+# system-prompt announcement; the browser half (exports "./client") renders
+# the sidebar entry + memory panel.
+#
+# Optional config (all default true):
+#   config:
+#     enabled: true          # master switch (tools, routes, prompt section)
+#     announceToAgent: true  # system-prompt announcement
+#     autoDistill: true      # steer a distill prompt after each worked turn
 - insert:
     - id: memoir
       name: dsh-memoir

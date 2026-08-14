@@ -9,16 +9,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { makeRoutes, json, readJsonBody } from '../lib/routes.js'
-import { callRoute, makeReq, makeTempStorePath, makeTempWorkspace } from './helpers.js'
+import { callRoute, makeReq, makeRes, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
 test('route registration returns one prefix route', () => {
   const routes = makeRoutes(new MemoirStore(makeTempStorePath()))
   assert.equal(routes.length, 1)
-  assert.equal(routes[0].kind, 'prefix')
-  assert.equal(routes[0].path, '/api/dsh-memoir')
-  assert.equal(typeof routes[0].handler, 'function')
+  assert.equal(routes[0]?.kind, 'prefix')
+  assert.equal(routes[0]?.path, '/api/dsh-memoir')
+  assert.equal(typeof routes[0]?.handler, 'function')
 })
 
 test('readJsonBody parses json, rejects garbage and oversized payloads', async () => {
@@ -29,32 +29,34 @@ test('readJsonBody parses json, rejects garbage and oversized payloads', async (
 })
 
 test('json writes the envelope', () => {
-  const res = { writeHead: (s, h) => { res.statusCode = s; res.headers = h }, end: (c) => { res.body = c } }
+  const res = makeRes()
   json(res, { ok: true, value: { x: 1 } })
-  assert.equal(res.statusCode, 200)
-  assert.match(res.headers['content-type'], /application\/json/)
-  assert.deepEqual(JSON.parse(res.body), { ok: true, value: { x: 1 } })
+  assert.equal((res as unknown as { statusCode: number }).statusCode, 200)
+  assert.match((res as unknown as { headers: Record<string, string> }).headers['content-type'] ?? '', /application\/json/)
+  assert.deepEqual(JSON.parse((res as unknown as { body: string }).body), { ok: true, value: { x: 1 } })
 })
 
 test('GET project returns an empty project shape for unknown paths', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const routes = makeRoutes(new MemoirStore(makeTempStorePath()))
+  const handler = routes[0]!.handler
   const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent('C:\\nope') })
   assert.equal(status, 200)
   assert.equal(envelope.ok, true)
-  assert.equal(envelope.value.project.path, 'C:\\nope')
-  assert.deepEqual(envelope.value.project.entries, [])
+  const project = (envelope.value as { project: { path: string; entries: unknown[] } }).project
+  assert.equal(project.path, 'C:\\nope')
+  assert.deepEqual(project.entries, [])
 })
 
 test('GET project with missing path is a 400', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/project' })
   assert.equal(status, 400)
   assert.equal(envelope.ok, false)
-  assert.equal(envelope.error.code, 'bad-request')
+  assert.equal(envelope.error?.code, 'bad-request')
 })
 
 test('GET project with invalid section is a 400', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   const { status } = await callRoute(handler, { url: '/api/dsh-memoir/project?path=C%3A%5Cx&section=bogus' })
   assert.equal(status, 400)
 })
@@ -65,20 +67,23 @@ test('GET project returns entries with section and query filters', async () => {
     const store = new MemoirStore(makeTempStorePath())
     const a = store.record(ws.cwd, { section: 'lessons', title: '踩坑', content: '先备份' })
     store.record(ws.cwd, { section: 'work', content: '开发' })
-    const handler = makeRoutes(store)[0].handler
+    const handler = makeRoutes(store)[0]!.handler
 
     const all = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) })
     assert.equal(all.status, 200)
-    assert.equal(all.envelope.value.project.entries.length, 2)
-    assert.equal(all.envelope.value.project.title.length > 0, true)
+    const allProject = (all.envelope.value as { project: { entries: unknown[]; title: string } }).project
+    assert.equal(allProject.entries.length, 2)
+    assert.ok(allProject.title.length > 0)
 
     const lessons = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) + '&section=lessons' })
-    assert.equal(lessons.envelope.value.project.entries.length, 1)
-    assert.equal(lessons.envelope.value.project.entries[0].id, a.id)
+    const lessonsProject = (lessons.envelope.value as { project: { entries: Array<{ id: string }> } }).project
+    assert.equal(lessonsProject.entries.length, 1)
+    assert.equal(lessonsProject.entries[0]?.id, a.id)
 
     const hit = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) + '&query=' + encodeURIComponent('备份') })
-    assert.equal(hit.envelope.value.project.entries.length, 1)
-    assert.equal(hit.envelope.value.project.entries[0].content, '先备份')
+    const hitProject = (hit.envelope.value as { project: { entries: Array<{ content: string }> } }).project
+    assert.equal(hitProject.entries.length, 1)
+    assert.equal(hitProject.entries[0]?.content, '先备份')
   } finally {
     ws.cleanup()
   }
@@ -91,12 +96,13 @@ test('GET global aggregates projects newest-first', async () => {
     const store = new MemoirStore(makeTempStorePath())
     store.record(a.cwd, { section: 'work', content: 'A' })
     store.record(b.cwd, { section: 'work', content: 'B' })
-    const handler = makeRoutes(store)[0].handler
+    const handler = makeRoutes(store)[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/global' })
     assert.equal(status, 200)
-    assert.equal(envelope.value.projects.length, 2)
+    const projects = (envelope.value as { projects: Array<{ path: string }> }).projects
+    assert.equal(projects.length, 2)
     // b was recorded later → sorts first (newest-first).
-    assert.equal(envelope.value.projects[0].path, b.cwd)
+    assert.equal(projects[0]?.path, b.cwd)
   } finally {
     a.cleanup()
     b.cleanup()
@@ -107,7 +113,7 @@ test('POST entries records and regenerates the project file', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
-    const handler = makeRoutes(store)[0].handler
+    const handler = makeRoutes(store)[0]!.handler
     const { status, envelope } = await callRoute(handler, {
       method: 'POST',
       url: '/api/dsh-memoir/entries',
@@ -116,8 +122,9 @@ test('POST entries records and regenerates the project file', async () => {
     })
     assert.equal(status, 200)
     assert.equal(envelope.ok, true)
-    assert.ok(envelope.value.entry.id.length > 0)
-    assert.equal(envelope.value.entry.sessionId, 's-3')
+    const entry = (envelope.value as { entry: { id: string; sessionId: string } }).entry
+    assert.ok(entry.id.length > 0)
+    assert.equal(entry.sessionId, 's-3')
     assert.ok(existsSync(join(ws.cwd, PROJECT_FILE)))
     assert.ok(readFileSync(join(ws.cwd, PROJECT_FILE), 'utf8').includes('发布前跑测试'))
   } finally {
@@ -126,7 +133,7 @@ test('POST entries records and regenerates the project file', async () => {
 })
 
 test('POST without application/json is a 415 (CSRF gate)', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   const { status, envelope } = await callRoute(handler, {
     method: 'POST',
     url: '/api/dsh-memoir/entries',
@@ -134,11 +141,11 @@ test('POST without application/json is a 415 (CSRF gate)', async () => {
     body: JSON.stringify({ path: 'C:\\x', section: 'work', content: 'x' }),
   })
   assert.equal(status, 415)
-  assert.equal(envelope.error.code, 'content-type')
+  assert.equal(envelope.error?.code, 'content-type')
 })
 
 test('POST rejects malformed payloads', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   for (const payload of [
     { path: 'relative', section: 'work', content: 'x' },
     { path: 'C:\\x', section: 'bogus', content: 'x' },
@@ -162,7 +169,7 @@ test('DELETE removes an entry and updates the file', async () => {
   try {
     const store = new MemoirStore(makeTempStorePath())
     const entry = store.record(ws.cwd, { section: 'note', content: '待删' })
-    const handler = makeRoutes(store)[0].handler
+    const handler = makeRoutes(store)[0]!.handler
     const ok = await callRoute(handler, {
       method: 'DELETE',
       url: '/api/dsh-memoir/entries',
@@ -170,7 +177,7 @@ test('DELETE removes an entry and updates the file', async () => {
       body: JSON.stringify({ path: ws.cwd, id: entry.id }),
     })
     assert.equal(ok.status, 200)
-    assert.equal(ok.envelope.value.removed, true)
+    assert.equal((ok.envelope.value as { removed: boolean }).removed, true)
     assert.equal(store.entries(ws.cwd).length, 0)
     const again = await callRoute(handler, {
       method: 'DELETE',
@@ -178,14 +185,14 @@ test('DELETE removes an entry and updates the file', async () => {
       headers: JSON_HEADERS,
       body: JSON.stringify({ path: ws.cwd, id: entry.id }),
     })
-    assert.equal(again.envelope.value.removed, false)
+    assert.equal((again.envelope.value as { removed: boolean }).removed, false)
   } finally {
     ws.cleanup()
   }
 })
 
 test('unknown routes 404 and wrong methods 405', async () => {
-  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0].handler
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   const notFound = await callRoute(handler, { url: '/api/dsh-memoir/bogus' })
   assert.equal(notFound.status, 404)
   const method = await callRoute(handler, { method: 'PUT', url: '/api/dsh-memoir/entries', headers: JSON_HEADERS, body: '{}' })

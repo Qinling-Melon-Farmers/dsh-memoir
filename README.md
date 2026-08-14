@@ -1,8 +1,9 @@
 # dsh-memoir
 
-把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为**项目持久化记忆**，并作为**未来 AGENTS 的行动指南**自动注入后续会话；同时提供一个 Web GUI 可视化面板来浏览、检索与维护这些记忆。
+把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为**项目持久化记忆**，并作为**未来 AGENTS 的行动指南**自动注入后续会话；插件开启后**每轮有实际工作的回合结束时自动提醒 agent 归纳沉淀**，另有 Web GUI 可视化面板浏览、检索与维护记忆。
 
-- **归纳总结**：每个阶段性任务收尾时，agent 用 `memoir_record` 归纳工作记录、经验教训与行动指南。
+- **自动收尾（auto-distill）**：监听 `agent/turn-stopping`，一轮有工具调用、且尚未记录过记忆的回合结束时，自动 steer 一句归纳提示，让 agent 用 `memoir_record` 把该轮工作沉淀为项目记忆（无实质工作的回合不打扰、子代理会话不打扰、每回合最多一次）。
+- **归纳总结**：`memoir_record` 归纳工作记录、经验教训与行动指南。
 - **持久记忆**：项目级写入 `<工作区>/PROJECT_MEMORY.md`（随 git 提交）；结构化源数据存全局索引 `~/.dsh/dsh-memoir.json`（跨项目检索）。
 - **自动行动指南**：新会话开始时，插件把本项目的 `PROJECT_MEMORY.md` 自动注入 system prompt，未来 AGENTS 无需手翻文档即可继承既往经验。
 - **可视化面板**：侧边栏「记忆」入口，中心面板提供项目 / 全局两个视图、全文检索、手动记录与删除。
@@ -24,6 +25,20 @@
 | 添加记忆 | 手动记录一条（分类 + 标题 + 正文），与 agent 的 `memoir_record` 写入同一份数据 |
 | 删除 | 每条记忆可单独删除，删除后自动重新生成项目记忆文件 |
 
+## 配置
+
+在 `cordis.patch.yml` 的行上可加 `config`（三者默认均为 `true`）：
+
+```yaml
+- insert:
+    - id: memoir
+      name: dsh-memoir
+      config:
+        enabled: true          # 总开关（工具、路由、注入段）
+        announceToAgent: true  # system prompt 公告段
+        autoDistill: true      # 每轮有实际工作的回合结束自动提醒归纳
+```
+
 ## 安装
 
 ```bash
@@ -38,7 +53,8 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 
 ## 使用约定
 
-- **任务收尾**：归纳「做了什么 / 踩了什么坑 / 下一步怎么走」，分三条调用 `memoir_record`（`work`、`lessons`、`actions`）。
+- **自动模式（默认）**：插件在每轮有实际工作的回合结束自动提醒归纳；agent 按提示调用 `memoir_record` 即可。
+- **手动模式（`autoDistill: false`）**：任务收尾时，归纳「做了什么 / 踩了什么坑 / 下一步怎么走」，分三条调用 `memoir_record`（`work`、`lessons`、`actions`）。
 - **接手项目**：新会话开始时先用 `memoir_read`（默认 `project`）读取项目记忆与行动指南；跨项目检索用 `memoir_read(scope: 'global', query: ...)` 或面板的全局 tab。
 - **人工维护**：面板里可随时手动补录、检索、删除。
 
@@ -68,21 +84,23 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 - [dsh-memory](https://github.com/Jesse-njx/dsh-memory)（引用式记忆）—— 每条记忆携带会话来源，本插件的条目同样记录 `sessionId`；
 - [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon)（三层记忆）—— 本插件对应「自动注入的项目记忆 + 可检索的全局记忆」两层；
 - [DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) / [dsh-side-panel](https://github.com/ccq1/dsh-side-panel)（侧边栏工作台）—— 面板的多 tab + 检索式布局；
-- [distill](https://github.com/LoserFox/distill)（自动蒸馏）—— 「任务收尾时归纳沉淀」的使用约定；
+- [distill](https://github.com/LoserFox/distill)（自动对话蒸馏）—— 「任务收尾时归纳沉淀」的实现（本插件用 `agent/turn-stopping` + `agent.steer` 的官方事件机制在进程内完成同样的事）；
 - [dsh-plugins: bounded cross-session memory](https://github.com/deepseek-ai/deepseek-harness/discussions/525) —— `MEMORY.md` 式有界跨会话记忆文件。
 
 ## 实现说明
 
-- **双面插件**：host 半注册 agent 工具、`/api/dsh-memoir` 路由与按项目求值的 system prompt 注入段；client 半（`lib/client.js`，esbuild 构建）提供面板。仅依赖官方 NPM SDK（`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-client-runtime`）。
+- **TypeScript 全栈**：`src/host/*.ts`（store / tools / routes / autodistill / index，tsc 构建出 `lib/*.js` + 类型声明）+ `src/client/*.ts(x)`（esbuild 打出 `lib/client.js` 闭包工厂 bundle）。
+- **双面插件**：host 半注册 agent 工具、`/api/dsh-memoir` 路由、`agent/turn-stopping` 自动收尾监听与按项目求值的 system prompt 注入段；client 半提供面板。运行时仅依赖官方 NPM SDK（`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-client-runtime`）。
 - 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
-- 项目记忆注入通过 `systemPrompt.section` 的 provider 形式，按「当前会话工作区」逐次求值，互不串项目。
+- 自动收尾的安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止的回合不打扰、每回合至多触发一次（`AutoDistillGate`）。
 
 ## 开发与测试
 
 ```bash
-pnpm install          # 安装 devDeps（esbuild、@deepseek-ai/dsh-tools）
-pnpm run build        # 构建 client bundle 到 lib/client.js
-pnpm test             # 57 项测试：store / tools / routes / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
+pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
+pnpm run typecheck    # 全量类型检查（src + test）
+pnpm test             # 66 项测试：store / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
 ```
 
 ## 许可

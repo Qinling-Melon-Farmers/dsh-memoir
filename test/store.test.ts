@@ -12,7 +12,7 @@ import {
   MemoirStore, FORMAT_VERSION, SECTIONS, SECTION_KEYS, PROJECT_FILE,
   projectKey, projectTitle, formatTime, bounded, validateEntryPayload,
 } from '../lib/store.js'
-import { makeTempStorePath, makeTempWorkspace } from './helpers.js'
+import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 test('validateEntryPayload rejects bad payloads', () => {
   assert.equal(typeof validateEntryPayload(null), 'string')
@@ -40,7 +40,7 @@ test('formatTime renders local YYYY-MM-DD HH:mm', () => {
 test('bounded trims to a tail', () => {
   assert.equal(bounded('short', 100), 'short')
   const out = bounded('a'.repeat(200), 100)
-  assert.ok(out.length <= 100 + 100)
+  assert.ok(out.length <= 200)
   assert.ok(out.includes('仅显示最近'))
   assert.ok(out.endsWith('a'.repeat(100)))
 })
@@ -54,9 +54,8 @@ test('fresh store is empty', () => {
 
 test('record appends, returns a full entry, persists, and regenerates the file', () => {
   const ws = makeTempWorkspace()
-  const path = makeTempStorePath()
   try {
-    const store = new MemoirStore(path)
+    const store = new MemoirStore(makeTempStorePath())
     const entry = store.record(ws.cwd, { section: 'lessons', title: '坑', content: '先备份再改' }, 's-1')
     assert.equal(entry.section, 'lessons')
     assert.equal(entry.title, '坑')
@@ -66,12 +65,12 @@ test('record appends, returns a full entry, persists, and regenerates the file',
     assert.ok(Number.isFinite(entry.time))
 
     // Persistence: a second instance reads the same data.
-    const reread = new MemoirStore(path)
+    const reread = new MemoirStore(store.path)
     const entries = reread.entries(ws.cwd)
     assert.equal(entries.length, 1)
-    assert.equal(entries[0].id, entry.id)
-    assert.equal(reread.project(ws.cwd).path, ws.cwd)
-    assert.equal(reread.listProjects()[0].count, 1)
+    assert.equal(entries[0]?.id, entry.id)
+    assert.equal(reread.project(ws.cwd)?.path, ws.cwd)
+    assert.equal(reread.listProjects()[0]?.count, 1)
 
     // Project file regenerated with section headers.
     const file = join(ws.cwd, PROJECT_FILE)
@@ -114,7 +113,7 @@ test('remove deletes by id and regenerates', () => {
     assert.equal(store.remove(ws.cwd, 'nope'), false)
     const entries = store.entries(ws.cwd)
     assert.equal(entries.length, 1)
-    assert.equal(entries[0].id, b.id)
+    assert.equal(entries[0]?.id, b.id)
     const md = store.renderMarkdown(ws.cwd)
     assert.ok(md.includes('b'))
     assert.ok(!md.includes('> 暂无条目'), 'placeholder gone while entries exist')
@@ -140,8 +139,8 @@ test('legacy v1 entries (no id) are normalized with minted ids', () => {
   const store = new MemoirStore(path)
   const entries = store.entries('C:\\old')
   assert.equal(entries.length, 1)
-  assert.equal(entries[0].content, 'legacy')
-  assert.ok(entries[0].id.length > 0)
+  assert.equal(entries[0]?.content, 'legacy')
+  assert.ok((entries[0]?.id ?? '').length > 0)
   assert.equal(store.load().version, FORMAT_VERSION)
 })
 
@@ -152,7 +151,7 @@ test('unknown sections in legacy data fall back to note', () => {
     projects: { 'C:\\x': { path: 'C:\\x', entries: [{ section: 'bogus', content: 'x', time: 1 }] } },
   }))
   const store = new MemoirStore(path)
-  assert.equal(store.entries('C:\\x')[0].section, 'note')
+  assert.equal(store.entries('C:\\x')[0]?.section, 'note')
 })
 
 test('corrupted store file recovers to an empty store', () => {
@@ -179,9 +178,9 @@ test('listProjects reports summaries sorted by insertion', () => {
     store.record(b.cwd, { section: 'note', content: 'y' })
     const projects = store.listProjects()
     assert.equal(projects.length, 2)
-    assert.equal(projects[0].path, a.cwd)
-    assert.equal(projects[0].title, projectTitle(a.cwd))
-    assert.equal(projects[1].count, 1)
+    assert.equal(projects[0]?.path, a.cwd)
+    assert.equal(projects[0]?.title, projectTitle(a.cwd))
+    assert.equal(projects[1]?.count, 1)
   } finally {
     a.cleanup()
     b.cleanup()
