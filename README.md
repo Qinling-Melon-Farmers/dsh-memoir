@@ -161,4 +161,4 @@ pnpm test             # 66 项测试：store / tools / routes / 自动收尾 / �
 
 ## 许可
 
-MIT
+Apache-2.0

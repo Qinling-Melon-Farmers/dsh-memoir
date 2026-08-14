@@ -58,7 +58,7 @@
     "cordis.patch.yml",
     "README.md"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "dsh",
     "deepseek-harness",
