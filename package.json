@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
-  "description": "Project persistent memory and session-lessons distillation for the dsh web GUI: an agent records a session's work summary, lessons learned, and next-action guide (memoir_record) into a per-project PROJECT_MEMORY.md plus a cross-project index (~/.dsh/dsh-memoir.json), reads it back on demand (memoir_read), and has the project memory auto-injected into the system prompt of future sessions. Host-only, no client bundle 鈥?mounted via the dsh.bundle.patch manifest, no dsh source changes.",
-  "version": "0.1.0",
+  "description": "Project persistent memory and session-lessons distillation for DeepSeek Harness (DSH): an agent records a session's work summary, lessons learned, and next-action guide (memoir_record) into a per-project PROJECT_MEMORY.md plus a cross-project index (~/.dsh/dsh-memoir.json), reads it back on demand (memoir_read), and has the project memory auto-injected into the system prompt of future sessions. Ships a web-GUI 'Memory' panel (project/global tabs, search, manual record/delete) over /api/dsh-memoir routes. Mounted via the dsh.bundle.patch manifest, no dsh source changes.",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -9,21 +9,39 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "esbuild": "^0.28.2"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "files": [
-    "lib/index.js",
+    "lib/*.js",
+    "lib/*.js.map",
     "cordis.patch.yml",
     "README.md"
   ],

@@ -1,0 +1,112 @@
+/**
+ * Panel view mounting (the dsh-ssh / task-board center-column precedent).
+ * The panel takes over the center column at the DOM level: a container is
+ * appended inside the [data-pane="conversation"] grid item and a stylesheet
+ * rule hides the conversation content while the panel is active. Toggling is
+ * a data attribute on <html> — the conversation subtree stays mounted.
+ *
+ * Cross-plugin coordination: opening this panel evicts the sibling panels'
+ * visibility attributes (data-dsh-ssh-active / data-dsh-taskboard-active)
+ * and dispatches the shared `dsh-panel-activate` event; it closes itself when
+ * a sibling dispatches its own activation.
+ */
+
+import { createRoot } from 'react-dom/client'
+import { MemoirPanel } from './panel.jsx'
+
+/** The injected panel container (kept in the DOM, hidden when inactive). */
+export const PANEL_VIEW_SELECTOR = '[data-dsh-memoir-view]'
+
+const CONVERSATION_COLUMN_SELECTOR = '[data-pane="conversation"]'
+const ACTIVE_ATTR = 'data-dsh-memoir-active'
+/** Sibling panels' activation attributes, removed when this panel opens. */
+const SIBLING_ATTRS = ['data-dsh-ssh-active', 'data-dsh-taskboard-active']
+/** Cross-plugin activation event; detail is the activating panel name. */
+const ACTIVATE_EVENT = 'dsh-panel-activate'
+const PANEL_NAME = 'memoir'
+
+/** Find the center column, or undefined while the frame is not mounted. */
+function conversationColumn() {
+  return document.querySelector(CONVERSATION_COLUMN_SELECTOR) ?? undefined
+}
+
+/**
+ * Mount the panel React tree into the center column and bind its visibility
+ * to the controller's panelOpen state.
+ * @param controller - the panel controller driving the view.
+ * @param api - the memoir API client the panel operates through.
+ * @param cwdTracker - the active-workspace tracker (useSyncExternalStore-compatible).
+ * @param t - the bound translator.
+ * @returns disposer unmounting the tree and restoring the column.
+ */
+export function mountPanel(controller, api, cwdTracker, t) {
+  let root
+  let container
+
+  const ensure = () => {
+    if (container !== undefined) {
+      if (container.isConnected) return
+      root?.unmount()
+      root = undefined
+      container.remove()
+      container = undefined
+    }
+    const column = conversationColumn()
+    if (column === undefined) return
+    container = document.createElement('div')
+    container.dataset.dshMemoirView = ''
+    column.appendChild(container)
+    root = createRoot(container)
+    root.render(<MemoirPanel controller={controller} api={api} cwdTracker={cwdTracker} t={t} />)
+  }
+
+  // The frame mounts after boot settlement; watch for the column's arrival.
+  const waitObserver = new MutationObserver(() => {
+    ensure()
+  })
+  waitObserver.observe(document.body, { childList: true, subtree: true })
+
+  const applyActive = () => {
+    if (controller.getSnapshot().panelOpen) {
+      for (const attr of SIBLING_ATTRS) document.documentElement.removeAttribute(attr)
+      document.documentElement.setAttribute(ACTIVE_ATTR, '')
+      document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: PANEL_NAME }))
+    } else {
+      document.documentElement.removeAttribute(ACTIVE_ATTR)
+    }
+  }
+
+  const onOtherActivate = (event) => {
+    const detail = event.detail
+    if ((detail === 'ssh' || detail === 'taskboard') && controller.getSnapshot().panelOpen) {
+      controller.close()
+    }
+  }
+
+  // Hand the center column back to the conversation on sidebar context clicks.
+  const SIDEBAR_ROW_SELECTOR = '[class*="sessionRow"], [class*="projectRow"], [class*="searchResultRow"], [class*="searchResultWorkspace"], [class*="newSession"]'
+  const onClickSidebarRow = (event) => {
+    if (!controller.getSnapshot().panelOpen) return
+    const target = event.target
+    if (target === null || typeof target.closest !== 'function') return
+    if (target.closest(SIDEBAR_ROW_SELECTOR) !== null) controller.close()
+  }
+
+  document.addEventListener('click', onClickSidebarRow, true)
+  document.addEventListener(ACTIVATE_EVENT, onOtherActivate)
+  const unsubscribe = controller.subscribe(applyActive)
+  applyActive()
+  ensure()
+
+  return () => {
+    document.removeEventListener('click', onClickSidebarRow, true)
+    document.removeEventListener(ACTIVATE_EVENT, onOtherActivate)
+    waitObserver.disconnect()
+    unsubscribe()
+    document.documentElement.removeAttribute(ACTIVE_ATTR)
+    root?.unmount()
+    root = undefined
+    container?.remove()
+    container = undefined
+  }
+}
