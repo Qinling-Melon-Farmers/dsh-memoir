@@ -30,7 +30,8 @@ export interface Config {
     /** When true (default), turns with real work are auto-distilled at turn end. */
     autoDistill?: boolean;
 }
-/** Model-facing announcement: plugin presence, capabilities, and usage rules. */
+/** Model-facing announcement: trimmed to the essentials (details live in
+ *  the tool schemas and README, not in every prompt). */
 export declare const MEMOIR_GUIDANCE: string;
 /**
  * Per-assembly prompt section text: static guidance plus the calling agent's

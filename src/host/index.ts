@@ -52,14 +52,12 @@ const DEFAULT_ENABLED = true
 const DEFAULT_ANNOUNCE = true
 const DEFAULT_AUTO_DISTILL = true
 
-/** Model-facing announcement: plugin presence, capabilities, and usage rules. */
+/** Model-facing announcement: trimmed to the essentials (details live in
+ *  the tool schemas and README, not in every prompt). */
 export const MEMOIR_GUIDANCE =
-  '本机已安装 dsh-memoir 插件（项目持久化记忆 / 会话经验沉淀）：把每个会话的工作归纳、经验教训与行动指南写入项目记忆，作为未来 AGENTS 的行动指南。' +
-  '能力：memoir_record 记录一条记忆（section：work 工作记录 / lessons 经验教训 / actions 行动指南 / note 备注）；memoir_read 读取记忆（scope：project 本项目 / global 全局跨项目 / all 全部）；Web GUI 侧边栏有「记忆」可视化面板。' +
-  '插件默认会在每轮有实际工作的回合结束时自动提醒你把该轮工作归纳沉淀进项目记忆（可用 config.autoDistill: false 关闭）。' +
-  '记忆位置：项目级 <工作区>/PROJECT_MEMORY.md（随 git 提交、会话开始时自动注入下方）；全局索引 ~/.dsh/dsh-memoir.json（跨项目检索，按需读取）。' +
-  '使用约定：一个阶段性任务收尾时，主动归纳「做了什么 / 踩了什么坑 / 下一步怎么走」，用 memoir_record 沉淀；开始新会话或接手旧项目时，先用 memoir_read 读取项目记忆与行动指南。' +
-  '下方「项目持久记忆」为本项目已沉淀内容，请据此协作，并在产生新经验时更新。'
+  '本机已安装 dsh-memoir 插件（项目持久记忆）：把会话的工作归纳、经验教训与行动指南沉淀进项目记忆，供未来 AGENTS 继承。' +
+  '用 memoir_record 记录（work 工作 / lessons 教训 / actions 行动 / note 备注），用 memoir_read 读取；' +
+  '新会话开始时下方会自动注入本项目记忆，请据此协作，并在产生新经验时更新。'
 
 /**
  * Per-assembly prompt section text: static guidance plus the calling agent's

@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "Project persistent memory and session-lessons distillation for DeepSeek Harness (DSH): an agent records a session's work summary, lessons learned, and next-action guide (memoir_record) into a per-project PROJECT_MEMORY.md plus a cross-project index (~/.dsh/dsh-memoir.json), reads it back on demand (memoir_read), auto-distills each worked turn at turn end, and has the project memory auto-injected into the system prompt of future sessions. Ships a web-GUI 'Memory' panel (project/global tabs, search, manual record/delete) over /api/dsh-memoir routes. TypeScript, mounted via the dsh.bundle.patch manifest, no dsh source changes.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

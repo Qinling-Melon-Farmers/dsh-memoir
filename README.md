@@ -156,7 +156,7 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 66 项测试：store / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 78 项测试：store（含缓存） / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
 ```
 
 ## 许可
