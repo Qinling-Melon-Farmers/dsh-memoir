@@ -4,10 +4,18 @@
  * is a regenerated human-readable rendering of the same entries (git-friendly,
  * auto-injected into future sessions). Pure node:fs, no cordis dependency —
  * unit-testable with an injected path.
+ *
+ * v0.3.1: revision-based in-memory snapshot cache — cold start reads the file
+ * once, warm reads return the snapshot without touching disk, writes bump the
+ * revision and refresh the snapshot; external file changes are picked up by a
+ * low-frequency mtime probe. Corrupt JSON is backed up (never silently
+ * overwritten), atomic writes use unique temp names, and project keys are
+ * normalized (drive-letter case + separators) so C:\A / c:\a\ / C:/A share
+ * one bucket.
  */
 
-import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -28,7 +36,12 @@ export const SECTIONS: Record<SectionKey, { label: string; header: string }> = {
 /** Section keys in canonical render order. */
 export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
 
-/** Cap on how much project memory is auto-injected into the prompt (bytes). */
+/**
+ * Legacy cap on how much project memory was auto-injected into the prompt,
+ * in JS string length (not bytes, not tokens). Kept for compatibility with
+ * existing imports; v0.4+ replaces this with the selector's token budget
+ * (targetTokens / hardMaxTokens).
+ */
 export const INJECT_LIMIT = 16000
 
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note'
@@ -64,6 +77,52 @@ export interface EntryPayload {
   content: string
 }
 
+/** An in-memory snapshot of the store at one revision. */
+export interface StoreSnapshot {
+  /** Write revision this snapshot reflects (bumped only by save()). */
+  revision: number
+  /** Snapshot epoch: bumped on every snapshot (re)build — external changes
+   *  and first loads included — so consumers can key caches on it. */
+  epoch: number
+  /** The parsed (normalized) store file. */
+  file: MemoirStoreFile
+  /** Disk signature backing the snapshot; null when the file was absent. */
+  stat: { mtimeMs: number; size: number } | null
+}
+
+/** Cache/IO counters exposed for diagnostics and cache-hit-rate tests. */
+export interface CacheStats {
+  /** Current write revision (bumped by record/remove). */
+  revision: number
+  /** Current snapshot epoch (bumped on every snapshot (re)build). */
+  epoch: number
+  /** Total load() calls. */
+  loads: number
+  /** Warm reads served straight from the snapshot (no file read). */
+  hits: number
+  /** Cold reads / rebuilds that consulted the file. */
+  misses: number
+  /** hits / loads, in [0, 1]. */
+  hitRate: number
+  /** Full file reads (parse) since construction. */
+  fileReads: number
+  /** mtime stat probes issued against the store file. */
+  statProbes: number
+  /** Corrupt store files that were backed up instead of overwritten. */
+  corruptBackups: number
+  /** renderMarkdown() calls. */
+  renders: number
+  /** Actual markdown recomputations. */
+  renderComputes: number
+  /** (renders - renderComputes) / renders, in [0, 1]. */
+  renderHitRate: number
+  /** Duration of the last cold load in milliseconds. */
+  lastLoadMs?: number
+}
+
+/** How often (ms) warm load() calls re-probe the file mtime; 0 = every call. */
+export const DEFAULT_MTIME_CHECK_MS = 2000
+
 /** Default store location: <home>/.dsh/dsh-memoir.json. */
 export function defaultStorePath(): string {
   return join(homedir(), '.dsh', 'dsh-memoir.json')
@@ -76,14 +135,23 @@ export function formatTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/** Normalize one workspace path into a stable key (strip trailing separators). */
+/**
+ * Normalize one workspace path into a stable key:
+ * strip trailing separators, lowercase the drive letter, unify separators to
+ * '/', so `C:\A` / `c:\a\` / `C:/A` map to one bucket. POSIX paths are
+ * unchanged apart from trailing separators.
+ */
 export function projectKey(cwd: string): string {
-  return String(cwd).replace(/[\\/]+$/, '')
+  const raw = String(cwd).replace(/[\\/]+$/, '')
+  const drive = /^([A-Za-z]):/.exec(raw)
+  const prefix = drive === null ? '' : drive[1].toLowerCase() + ':'
+  const body = drive === null ? raw : raw.slice(2)
+  return prefix + body.replace(/\\/g, '/')
 }
 
 /** Project display title: the last path segment. */
 export function projectTitle(cwd: string): string {
-  return projectKey(cwd).split(/[\\/]/).filter(Boolean).pop() || projectKey(cwd)
+  return projectKey(cwd).split('/').filter(Boolean).pop() || projectKey(cwd)
 }
 
 /** Mint one entry id (opaque, locally unique). */
@@ -91,13 +159,27 @@ function mintId(): string {
   return randomBytes(6).toString('hex')
 }
 
-/** Atomic write (tmp + rename), creating the parent dir. */
+/** Mint a unique temp-file suffix (avoids concurrent-write collisions). */
+function tmpSuffix(): string {
+  return `${process.pid}.${randomBytes(4).toString('hex')}`
+}
+
+/** Atomic write (unique tmp name + rename), creating the parent dir. */
 export function writeFileAtomic(path: string, content: string, mode = 0o644): void {
   const dir = dirname(path)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, content, { encoding: 'utf8', mode })
-  renameSync(tmp, path)
+  const tmp = `${path}.tmp.${tmpSuffix()}`
+  try {
+    writeFileSync(tmp, content, { encoding: 'utf8', mode })
+    renameSync(tmp, path)
+  } catch (error) {
+    try {
+      if (existsSync(tmp)) renameSync(tmp, tmp + '.failed')
+    } catch {
+      // best effort: never mask the original write error
+    }
+    throw error
+  }
 }
 
 /** Trim a long text to a bounded tail for prompt injection. */
@@ -127,31 +209,135 @@ export class MemoirStore {
   /** The store file path. */
   readonly path: string
 
+  /** How often warm load() calls re-probe the file mtime (0 = every call). */
+  readonly mtimeCheckIntervalMs: number
+
+  /** The in-memory snapshot backing warm reads. */
+  private snapshot: StoreSnapshot | null = null
+  /** Write counter; bumped on every save() (record/remove). */
+  private revision = 0
+  /** Snapshot-rebuild counter; bumped on every snapshot (re)build. */
+  private epoch = 0
+  /** Timestamp of the last mtime probe (throttles external-change checks). */
+  private lastMtimeCheck = 0
+
+  // IO / cache counters (diagnostics + tests).
+  private loadCount = 0
+  private hitCount = 0
+  private fileReadCount = 0
+  private statProbeCount = 0
+  private corruptBackupCount = 0
+  private lastLoadMs: number | undefined
+
+  /** renderMarkdown cache: project key → { signature, markdown }. */
+  private renderCache = new Map<string, { signature: string; markdown: string }>()
+  private renderCount = 0
+  private renderComputeCount = 0
+
   /**
    * @param path - store file path (defaults to the standard location).
+   * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
+   *   every load (tests), defaults to a low-frequency 2000ms.
    */
-  constructor(path?: string) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number }) {
     this.path = path ?? defaultStorePath()
+    this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
   }
 
-  /** Load and normalize the store (fresh empty store on absence/corruption). */
+  /** Current store revision (0 before the first load/save). */
+  currentRevision(): number {
+    return this.revision
+  }
+
+  /** Stat the store file into the snapshot signature (null when absent). */
+  private statNow(): { mtimeMs: number; size: number } | null {
+    try {
+      const s = statSync(this.path)
+      return { mtimeMs: s.mtimeMs, size: s.size }
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Load and normalize the store.
+   *
+   * Revision-based snapshot cache: the first call of a process reads and
+   * parses the file; every later call returns the in-memory snapshot without
+   * touching disk. External file changes (another dsh process) are picked up
+   * by a low-frequency mtime probe (mtimeCheckIntervalMs). Absence is
+   * negatively cached the same way. Corrupt JSON is renamed to a
+   * `.corrupt.<timestamp>` backup before the store starts fresh.
+   */
   load(): MemoirStoreFile {
+    this.loadCount++
+    const started = Date.now()
+
+    // Warm path: serve the snapshot directly; probe mtime only at the
+    // configured frequency (or every call when the interval is 0).
+    if (this.snapshot !== null) {
+      const now = Date.now()
+      if (this.mtimeCheckIntervalMs === 0 || now - this.lastMtimeCheck >= this.mtimeCheckIntervalMs) {
+        this.lastMtimeCheck = now
+        this.statProbeCount++
+        const stat = this.statNow()
+        const same =
+          this.snapshot.stat === null
+            ? stat === null
+            : stat !== null && stat.mtimeMs === this.snapshot.stat.mtimeMs && stat.size === this.snapshot.stat.size
+        if (same) {
+          this.hitCount++
+          return this.snapshot.file
+        }
+        // File changed underneath us: fall through to a rebuild.
+      } else {
+        this.hitCount++
+        return this.snapshot.file
+      }
+    }
+
+    // Cold path: stat + read + parse (+ corrupt backup) + normalize.
+    let stat = this.statNow()
     let parsed: Partial<MemoirStoreFile> = { version: FORMAT_VERSION, projects: {} }
-    if (existsSync(this.path)) {
+    if (stat !== null) {
       try {
         const raw: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
         if (typeof raw === 'object' && raw !== null && typeof (raw as MemoirStoreFile).projects === 'object' && (raw as MemoirStoreFile).projects !== null) {
           parsed = raw as Partial<MemoirStoreFile>
+        } else {
+          throw new Error('store shape invalid')
         }
       } catch {
-        // Corrupt store: start fresh (the project markdown files remain as
-        // human-readable history and are not destroyed).
+        // Corrupt store: preserve it as a backup, then start fresh (the
+        // project markdown files remain as human-readable history).
+        this.corruptBackupCount++
+        try {
+          renameSync(this.path, `${this.path}.corrupt.${Date.now()}`)
+          stat = null
+        } catch {
+          // Backup failed (permissions?): keep serving fresh in-memory; the
+          // next save will still overwrite the corrupt file.
+        }
       }
+      this.fileReadCount++
     }
-    // Normalize: mint missing entry ids, coerce shapes defensively.
+    const file = this.normalize(parsed)
+    this.epoch++
+    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat }
+    this.lastMtimeCheck = Date.now()
+    this.lastLoadMs = Date.now() - started
+    // Entry shapes may have changed underneath us: drop the render cache.
+    this.renderCache.clear()
+    return file
+  }
+
+  /** Normalize a parsed store file: mint ids, coerce shapes, merge duplicate
+   *  buckets that normalize to the same project key (legacy Windows variants). */
+  private normalize(parsed: Partial<MemoirStoreFile>): MemoirStoreFile {
     const projects: Record<string, MemoirProject> = {}
-    for (const [key, project] of Object.entries(parsed.projects ?? {})) {
+    for (const [rawKey, project] of Object.entries(parsed.projects ?? {})) {
       if (typeof project !== 'object' || project === null) continue
+      const key = projectKey(rawKey)
       const rawEntries: unknown[] = Array.isArray(project.entries) ? project.entries : []
       const entries: MemoirEntry[] = rawEntries
         .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
@@ -163,11 +349,22 @@ export class MemoirStore {
               time: typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now(),
               ...(typeof e.sessionId === 'string' && e.sessionId !== '' ? { sessionId: e.sessionId } : {}),
             }))
-      projects[key] = {
-        path: typeof project.path === 'string' && project.path !== '' ? project.path : key,
-        title: typeof project.title === 'string' && project.title !== '' ? project.title : projectTitle(key),
+      const normalized: MemoirProject = {
+        path: typeof project.path === 'string' && project.path !== '' ? project.path : rawKey,
+        title: typeof project.title === 'string' && project.title !== '' ? project.title : projectTitle(rawKey),
         updatedAt: typeof project.updatedAt === 'number' ? project.updatedAt : (entries[entries.length - 1]?.time ?? Date.now()),
         entries,
+      }
+      const existing = projects[key]
+      if (existing === undefined) {
+        projects[key] = normalized
+      } else {
+        // Same workspace stored under legacy key variants: merge by id.
+        const seen = new Set(existing.entries.map((e) => e.id))
+        for (const entry of normalized.entries) {
+          if (!seen.has(entry.id)) existing.entries.push(entry)
+        }
+        existing.updatedAt = Math.max(existing.updatedAt, normalized.updatedAt)
       }
     }
     return { version: FORMAT_VERSION, projects }
@@ -175,7 +372,47 @@ export class MemoirStore {
 
   /** Persist the store atomically (0600 — may contain user's notes). */
   save(file: MemoirStoreFile): void {
-    writeFileAtomic(this.path, JSON.stringify(file, null, 2) + '\n', 0o600)
+    try {
+      writeFileAtomic(this.path, JSON.stringify(file, null, 2) + '\n', 0o600)
+    } catch (error) {
+      // The in-memory snapshot may already carry the mutation; drop it so the
+      // next load() re-reads the on-disk truth instead of serving a stale hit.
+      this.snapshot = null
+      throw error
+    }
+    // Bump the revision and refresh the snapshot signature from the file we
+    // just wrote: subsequent reads hit the cache without re-parsing.
+    this.revision++
+    this.epoch++
+    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat: this.statNow() }
+    this.lastMtimeCheck = Date.now()
+    // Entry shapes changed under a mutation: drop all render-cache entries.
+    this.renderCache.clear()
+  }
+
+  /** Drop the snapshot so the next load() re-reads and re-parses the file. */
+  invalidate(): void {
+    this.snapshot = null
+    this.renderCache.clear()
+  }
+
+  /** Cache/IO counters (diagnostics + tests). */
+  stats(): CacheStats {
+    return {
+      revision: this.revision,
+      epoch: this.epoch,
+      loads: this.loadCount,
+      hits: this.hitCount,
+      misses: this.loadCount - this.hitCount,
+      hitRate: this.loadCount === 0 ? 0 : this.hitCount / this.loadCount,
+      fileReads: this.fileReadCount,
+      statProbes: this.statProbeCount,
+      corruptBackups: this.corruptBackupCount,
+      renders: this.renderCount,
+      renderComputes: this.renderComputeCount,
+      renderHitRate: this.renderCount === 0 ? 0 : (this.renderCount - this.renderComputeCount) / this.renderCount,
+      lastLoadMs: this.lastLoadMs,
+    }
   }
 
   /** One project record, or undefined. */
@@ -250,9 +487,29 @@ export class MemoirStore {
     return `- [${when}] [${label}] ${head}${entry.content}`
   }
 
+  /** Cheap O(1) signature of one project's entries (count + tail id/time). */
+  private renderSignature(project: MemoirProject | undefined): string {
+    const entries = project?.entries ?? []
+    const last = entries[entries.length - 1]
+    return `${entries.length}|${project?.updatedAt ?? 0}|${last?.id ?? ''}|${last?.time ?? ''}`
+  }
+
   /** Regenerate the full PROJECT_MEMORY.md content for one project. */
   renderMarkdown(cwd: string): string {
-    const entries = this.entries(cwd)
+    this.renderCount++
+    const key = projectKey(cwd)
+    const project = this.load().projects[key]
+    const signature = this.renderSignature(project)
+    const cached = this.renderCache.get(key)
+    if (cached !== undefined && cached.signature === signature) return cached.markdown
+    const markdown = this.renderMarkdownNow(project?.entries ?? [])
+    this.renderComputeCount++
+    this.renderCache.set(key, { signature, markdown })
+    return markdown
+  }
+
+  /** Pure markdown assembly for one project's entries (no cache access). */
+  private renderMarkdownNow(entries: MemoirEntry[]): string {
     const header = [
       '# 项目持久记忆 Project Memory',
       '',
@@ -274,10 +531,28 @@ export class MemoirStore {
     return [...header, ...body].join('\n')
   }
 
+  /** Absolute path of one project's memory file (no write). */
+  projectFilePath(cwd: string): string {
+    return join(cwd, PROJECT_FILE)
+  }
+
   /** Regenerate and write the project memory file; returns its path. */
   writeProjectFile(cwd: string): string {
-    const path = join(cwd, PROJECT_FILE)
-    writeFileAtomic(path, this.renderMarkdown(cwd))
+    const path = this.projectFilePath(cwd)
+    const markdown = this.renderMarkdown(cwd)
+    // Skip the write when the file already holds this exact content — keeps
+    // mtimes stable (no git churn) and avoids pointless disk writes.
+    try {
+      if (existsSync(path) && readFileSync(path, 'utf8') === markdown) return path
+    } catch {
+      // Unreadable file: fall through to a fresh atomic write.
+    }
+    writeFileAtomic(path, markdown)
     return path
   }
+}
+
+/** SHA-256 hex digest of a string, truncated for prompt-stability hashing. */
+export function sha256(text: string, length = 16): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, length)
 }

@@ -25,11 +25,16 @@ test('validateEntryPayload rejects bad payloads', () => {
 })
 
 test('projectKey / projectTitle handle windows and posix paths', () => {
-  assert.equal(projectKey('C:\\work\\proj\\'), 'C:\\work\\proj')
+  // Windows variants normalize onto one key (drive letter case + separators).
+  assert.equal(projectKey('C:\\work\\proj\\'), 'c:/work/proj')
+  assert.equal(projectKey('c:/work/proj'), 'c:/work/proj')
+  assert.equal(projectKey('c:\\work/proj/'), 'c:/work/proj')
   assert.equal(projectKey('/home/u/proj/'), '/home/u/proj')
   assert.equal(projectTitle('C:\\work\\proj'), 'proj')
   assert.equal(projectTitle('/home/u/proj'), 'proj')
-  assert.equal(projectTitle('C:\\'), 'C:')
+  assert.equal(projectTitle('C:\\'), 'c:')
+  // UNC / posix absolute paths keep their leading slashes.
+  assert.equal(projectKey('//server/share'), '//server/share')
 })
 
 test('formatTime renders local YYYY-MM-DD HH:mm', () => {
