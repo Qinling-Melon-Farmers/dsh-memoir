@@ -8,7 +8,27 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { SECTIONS, SECTION_KEYS, projectKey, projectTitle } from './store.js'
-import type { MemoirEntry, MemoirStore } from './store.js'
+import type { CacheStats, MemoirEntry, MemoirStore } from './store.js'
+
+/** Diagnostics payload shape (v0.4 observability, roadmap §4). */
+export interface DiagnosticsValue {
+  storeRevision: number
+  snapshotEpoch: number
+  cache: CacheStats
+  snapshotCount: number
+  snapshotMax: number
+  hotMemory: { selected: number; total: number; estimatedTokens: number } | null
+  config: {
+    hotMemoryTokens: number
+    hotMemoryMaxTokens: number
+    readDefaultLimit: number
+    readMaxLimit: number
+    sessionSnapshotMax: number
+  }
+}
+
+/** Supplies the runtime diagnostics snapshot (closed over plugin state). */
+export type DiagnosticsProvider = (path?: string) => DiagnosticsValue
 
 export interface Envelope<T = unknown> {
   ok: boolean
@@ -89,9 +109,10 @@ function wireProject(
 /**
  * Build the /api/dsh-memoir prefix route.
  * @param store - the structured MemoirStore.
+ * @param diagnostics - optional runtime diagnostics provider.
  * @returns route definitions for ctx.webServer.register.
  */
-export function makeRoutes(store: MemoirStore): WebRoute[] {
+export function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://x')
     const pathname = url.pathname
@@ -99,6 +120,15 @@ export function makeRoutes(store: MemoirStore): WebRoute[] {
 
     // ------------------------------------------------------------ reads
     if (method === 'GET') {
+      if (pathname === '/api/dsh-memoir/diagnostics') {
+        if (diagnostics === undefined) {
+          json(res, FAIL(NOT_FOUND), 404)
+          return
+        }
+        const path = url.searchParams.get('path') ?? undefined
+        json(res, OK(diagnostics(path)))
+        return
+      }
       if (pathname === '/api/dsh-memoir/project') {
         const path = url.searchParams.get('path')
         if (path === null || path === '') {
@@ -132,7 +162,8 @@ export function makeRoutes(store: MemoirStore): WebRoute[] {
         const projects = Object.entries(storeFile.projects)
           .map(([key, project]) => wireProject(key, project, filter))
           .filter((project) => project.entries.length > 0)
-          .sort((a, b) => b.updatedAt - a.updatedAt)
+          // Newest first; deterministic tiebreak when times collide (same ms).
+          .sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path))
         json(res, OK({ projects }))
         return
       }

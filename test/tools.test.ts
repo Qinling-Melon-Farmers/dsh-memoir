@@ -136,3 +136,41 @@ test('memoir_read global with empty store reports empty', async () => {
   const value = (await memoirReadTool(store).execute({ scope: 'global' }, makeExec('C:\\x'))) as { text: string }
   assert.ok(value.text.includes('没有匹配的内容'))
 })
+
+test('memoir_read default limit 8 with compact one-line entries', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    for (let i = 0; i < 10; i++) store.record(ws.cwd, { section: 'work', content: '工作' + i })
+    const read = memoirReadTool(store)
+    const value = (await read.execute({ scope: 'project' }, makeExec(ws.cwd))) as { text: string }
+    const bullets = (value.text.match(/^- \[/gm) ?? []).length
+    assert.equal(bullets, 8, 'default limit 8')
+    assert.ok(value.text.includes('共 10 条'), 'truncation note present')
+    assert.ok(value.text.includes('工作9'), 'newest entries kept')
+    assert.ok(!value.text.includes('工作0'), 'oldest dropped')
+    // compact shape: id prefix + content, no timestamps
+    assert.match(value.text, /- \[[0-9a-f]+\] /)
+    assert.ok(!/\d{4}-\d{2}-\d{2}/.test(value.text), 'no timestamps in compact')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('memoir_read limit/detail: full restores timestamps, limit clamps to max', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    for (let i = 0; i < 10; i++) store.record(ws.cwd, { section: 'lessons', content: '教训' + i })
+    const read = memoirReadTool(store, { defaultLimit: 3, maxLimit: 5 })
+    const value = (await read.execute({ scope: 'project' }, makeExec(ws.cwd))) as { text: string }
+    assert.equal((value.text.match(/^- \[/gm) ?? []).length, 3, 'defaultLimit from options')
+    const full = (await read.execute({ scope: 'project', limit: 99, detail: 'full' }, makeExec(ws.cwd))) as { text: string }
+    assert.equal((full.text.match(/^- \[/gm) ?? []).length, 5, 'limit clamped to maxLimit')
+    assert.match(full.text, /\d{4}-\d{2}-\d{2}/, 'full detail has timestamps')
+    assert.ok(full.text.includes('经验教训'))
+  } finally {
+    ws.cleanup()
+  }
+})
+

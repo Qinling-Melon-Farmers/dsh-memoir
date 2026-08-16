@@ -10,6 +10,7 @@ import assert from 'node:assert/strict'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, MEMOIR_GUIDANCE, memoirSectionText } from '../lib/index.js'
 import { MemoirStore } from '../lib/store.js'
+import { MemorySnapshotManager, sessionKeyOf } from '../lib/snapshot.js'
 import { callRoute, makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 interface ListenerRecord {
@@ -151,3 +152,52 @@ test('record through a tool and read through the panel route agree', async () =>
     ws.cleanup()
   }
 })
+
+test('prompt stability: same session keeps its frozen snapshot, new session sees new memory', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'lessons', title: '要点', content: '契约先行' })
+    const manager = new MemorySnapshotManager()
+    const ctxA = { agent: { id: 'a1', session: { id: 'sess-A', header: { cwd: ws.cwd } } } }
+    const first = memoirSectionText(store, ctxA, manager)
+    assert.ok(first.startsWith(MEMOIR_GUIDANCE))
+    assert.ok(first.includes('契约先行'))
+    const keyA = sessionKeyOf(ctxA)
+    assert.ok(keyA)
+    const hashA = manager.peek(keyA)?.hash
+
+    // The session records new memory — its prompt must NOT change.
+    store.record(ws.cwd, { section: 'actions', content: '新增行动' })
+    const second = memoirSectionText(store, ctxA, manager)
+    assert.equal(second, first, 'same session: prompt prefix frozen')
+    assert.equal(manager.peek(keyA)?.hash, hashA, 'snapshot hash stable')
+    assert.ok(!second.includes('新增行动'), 'current session does not re-consume its own memory')
+
+    // A NEW session rebuilds and inherits the new memory.
+    const ctxB = { agent: { id: 'a2', session: { id: 'sess-B', header: { cwd: ws.cwd } } } }
+    const third = memoirSectionText(store, ctxB, manager)
+    assert.notEqual(third, first)
+    assert.ok(third.includes('新增行动'), 'new session sees the new memory')
+    assert.ok(third.includes('契约先行'))
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('no snapshot manager: every assembly builds fresh (compat)', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'work', content: '第一条' })
+    const ctx = { agent: { session: { id: 'sess-X', header: { cwd: ws.cwd } } } }
+    const a = memoirSectionText(store, ctx)
+    store.record(ws.cwd, { section: 'work', content: '第二条' })
+    const b = memoirSectionText(store, ctx)
+    assert.ok(b.includes('第二条'), 'without a manager the latest memory shows up')
+    assert.ok(a.includes('第一条'))
+  } finally {
+    ws.cleanup()
+  }
+})
+

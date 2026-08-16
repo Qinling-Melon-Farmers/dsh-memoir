@@ -6,7 +6,29 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
-import type { MemoirStore } from './store.js';
+import type { CacheStats, MemoirStore } from './store.js';
+/** Diagnostics payload shape (v0.4 observability, roadmap §4). */
+export interface DiagnosticsValue {
+    storeRevision: number;
+    snapshotEpoch: number;
+    cache: CacheStats;
+    snapshotCount: number;
+    snapshotMax: number;
+    hotMemory: {
+        selected: number;
+        total: number;
+        estimatedTokens: number;
+    } | null;
+    config: {
+        hotMemoryTokens: number;
+        hotMemoryMaxTokens: number;
+        readDefaultLimit: number;
+        readMaxLimit: number;
+        sessionSnapshotMax: number;
+    };
+}
+/** Supplies the runtime diagnostics snapshot (closed over plugin state). */
+export type DiagnosticsProvider = (path?: string) => DiagnosticsValue;
 export interface Envelope<T = unknown> {
     ok: boolean;
     value?: T;
@@ -22,6 +44,7 @@ export declare function readJsonBody(req: IncomingMessage, limit?: number): Prom
 /**
  * Build the /api/dsh-memoir prefix route.
  * @param store - the structured MemoirStore.
+ * @param diagnostics - optional runtime diagnostics provider.
  * @returns route definitions for ctx.webServer.register.
  */
-export declare function makeRoutes(store: MemoirStore): WebRoute[];
+export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider): WebRoute[];

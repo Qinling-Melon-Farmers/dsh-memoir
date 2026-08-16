@@ -95,6 +95,9 @@ test('GET global aggregates projects newest-first', async () => {
   try {
     const store = new MemoirStore(makeTempStorePath())
     store.record(a.cwd, { section: 'work', content: 'A' })
+    // Guarantee b's updatedAt is strictly newer (same-ms ties are possible).
+    const waitUntil = Date.now() + 5
+    while (Date.now() < waitUntil) { /* busy-wait for a fresh millisecond */ }
     store.record(b.cwd, { section: 'work', content: 'B' })
     const handler = makeRoutes(store)[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/global' })
@@ -198,3 +201,39 @@ test('unknown routes 404 and wrong methods 405', async () => {
   const method = await callRoute(handler, { method: 'PUT', url: '/api/dsh-memoir/entries', headers: JSON_HEADERS, body: '{}' })
   assert.equal(method.status, 405)
 })
+
+test('GET diagnostics reports cache stats and hot-memory selection', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'lessons', content: '先备份' })
+    let seenPath: string | undefined
+    const handler = makeRoutes(store, (path) => {
+      seenPath = path
+      return {
+        storeRevision: store.stats().revision,
+        snapshotEpoch: store.stats().epoch,
+        cache: store.stats(),
+        snapshotCount: 3,
+        snapshotMax: 128,
+        hotMemory: { selected: 1, total: 1, estimatedTokens: 42 },
+        config: { hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128 },
+      }
+    })[0]!.handler
+    const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })
+    assert.equal(status, 200)
+    const value = (envelope.value as { cache: { hitRate: number }; hotMemory: { selected: number; estimatedTokens: number }; snapshotCount: number })
+    assert.equal(value.hotMemory.selected, 1)
+    assert.equal(value.hotMemory.estimatedTokens, 42)
+    assert.equal(value.snapshotCount, 3)
+    assert.ok(value.cache.hitRate >= 0)
+    assert.equal(seenPath, ws.cwd)
+    // Without a provider the route is a 404.
+    const plain = makeRoutes(store)[0]!.handler
+    const missing = await callRoute(plain, { url: '/api/dsh-memoir/diagnostics' })
+    assert.equal(missing.status, 404)
+  } finally {
+    ws.cleanup()
+  }
+})
+

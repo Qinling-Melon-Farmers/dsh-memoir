@@ -5,15 +5,19 @@
  * 并作为未来 AGENTS 的行动指南：
  *   - 项目级记忆：<工作区>/PROJECT_MEMORY.md（随 git 提交，会话开始时自动注入）
  *   - 全局索引：~/.dsh/dsh-memoir.json（结构化源数据，跨项目检索）
- *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写）
+ *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
  *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
+ *
+ * v0.4.0 cache-aware injection:
+ *   - system prompt 只注入 selector 选出的 Hot Memory（token 预算），
+ *     不再注入完整 markdown；
+ *   - 每个 session 的注入文本由 MemorySnapshotManager 冻结一次，
+ *     同一 session 后续 assembly 复用同一 snapshot（prompt 前缀稳定，
+ *     最大化 prompt-prefix cache 命中）；新 session 才重建。
  *
  * 提供的 agent 工具：
  *   - memoir_record(section, title?, content)  记录一条记忆
- *   - memoir_read(scope?, section?, query?)     读取记忆
- *
- * 全部基于官方 NPM SDK（@deepseek-ai/dsh-tools 等），不改 DSH 源码；
- * 通过 cordis.patch.yml 的 insert 行挂载到 web profile。
+ *   - memoir_read(scope?, section?, query?, limit?, detail?)  读取记忆
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,11 +27,14 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
-import { bounded, INJECT_LIMIT, MemoirStore } from './store.js'
+import { MemoirStore } from './store.js'
 import { memoirReadTool, memoirRecordTool } from './tools.js'
 import { makeRoutes } from './routes.js'
 import { installAutoDistill } from './autodistill.js'
 import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
+import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
+import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
+import type { MemoryBudget } from './selector.js'
 
 /** Stable cordis plugin name. */
 export const name = 'memoir'
@@ -46,41 +53,100 @@ export interface Config {
   announceToAgent?: boolean
   /** When true (default), turns with real work are auto-distilled at turn end. */
   autoDistill?: boolean
+  // v0.4 — cache-aware injection
+  /** Hot-memory soft target tokens (default 900). */
+  hotMemoryTokens?: number
+  /** Hot-memory hard ceiling tokens (default 1200). */
+  hotMemoryMaxTokens?: number
+  /** memoir_read default result count (default 8). */
+  readDefaultLimit?: number
+  /** memoir_read maximum result count (default 30). */
+  readMaxLimit?: number
+  /** Per-session snapshot LRU cap (default 128). */
+  sessionSnapshotMax?: number
 }
 
 const DEFAULT_ENABLED = true
 const DEFAULT_ANNOUNCE = true
 const DEFAULT_AUTO_DISTILL = true
 
-/** Model-facing announcement: trimmed to the essentials (details live in
- *  the tool schemas and README, not in every prompt). */
+/** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
+ *  details live in the tool schemas, not in every prompt. */
 export const MEMOIR_GUIDANCE =
-  '本机已安装 dsh-memoir 插件（项目持久记忆）：把会话的工作归纳、经验教训与行动指南沉淀进项目记忆，供未来 AGENTS 继承。' +
-  '用 memoir_record 记录（work 工作 / lessons 教训 / actions 行动 / note 备注），用 memoir_read 读取；' +
-  '新会话开始时下方会自动注入本项目记忆，请据此协作，并在产生新经验时更新。'
+  'dsh-memoir 提供项目持久记忆。下方仅注入本项目高优先级记忆；' +
+  '需要历史细节时调用 memoir_read；产生可复用的工作结论、经验或后续行动时调用 memoir_record。'
 
-/**
- * Per-assembly prompt section text: static guidance plus the calling agent's
- * project memory (bounded). Pure — exported for tests.
- * @param store - the structured memory store.
- * @param context - the system-prompt assemble context (may carry `agent`).
- */
-export function memoirSectionText(store: MemoirStore, context: { agent?: { session?: { header?: { cwd?: string } } } }): string {
-  const cwd = context?.agent?.session?.header?.cwd
-  if (typeof cwd !== 'string' || cwd === '') return MEMOIR_GUIDANCE
-  const entries = store.entries(cwd)
-  if (entries.length === 0) return MEMOIR_GUIDANCE
-  const markdown = store.renderMarkdown(cwd)
-  return `${MEMOIR_GUIDANCE}\n\n## 项目持久记忆（自动注入）\n${bounded(markdown.trimEnd(), INJECT_LIMIT)}`
-}
+/** The injected-memory heading (kept stable across versions). */
+export const MEMOIR_SECTION_HEADING = '## 项目持久记忆（自动注入）'
 
 /** Resolved runtime switches (schema defaults applied). */
-function resolveConfig(config: Config | undefined): { enabled: boolean; announceToAgent: boolean; autoDistill: boolean } {
+export interface ResolvedConfig {
+  enabled: boolean
+  announceToAgent: boolean
+  autoDistill: boolean
+  budget: MemoryBudget
+  readDefaultLimit: number
+  readMaxLimit: number
+  sessionSnapshotMax: number
+}
+
+function resolveConfig(config: Config | undefined): ResolvedConfig {
+  const target = Math.max(1, Math.floor(config?.hotMemoryTokens ?? DEFAULT_MEMORY_BUDGET.targetTokens))
+  const hardMax = Math.max(target, Math.floor(config?.hotMemoryMaxTokens ?? DEFAULT_MEMORY_BUDGET.hardMaxTokens))
+  const readDefaultLimit = Math.max(1, Math.floor(config?.readDefaultLimit ?? 8))
+  const readMaxLimit = Math.max(readDefaultLimit, Math.floor(config?.readMaxLimit ?? 30))
   return {
     enabled: config?.enabled ?? DEFAULT_ENABLED,
     announceToAgent: config?.announceToAgent ?? DEFAULT_ANNOUNCE,
     autoDistill: config?.autoDistill ?? DEFAULT_AUTO_DISTILL,
+    budget: { targetTokens: target, hardMaxTokens: hardMax },
+    readDefaultLimit,
+    readMaxLimit,
+    sessionSnapshotMax: Math.max(1, Math.floor(config?.sessionSnapshotMax ?? 128)),
   }
+}
+
+/**
+ * Per-assembly prompt section text: minimal guidance plus the session's
+ * frozen hot-memory snapshot. Pure — exported for tests.
+ *
+ * Freezing rules (roadmap §1.2 A / §2.2): the FIRST assembly of a session
+ * builds the hot memory under the token budget and the manager freezes it;
+ * later assemblies — even after memoir_record changed the store — return the
+ * same text, keeping the prompt prefix stable. New sessions rebuild.
+ *
+ * @param store - the structured memory store.
+ * @param context - the system-prompt assemble context (may carry `agent`).
+ * @param manager - optional snapshot manager (no freezing when absent).
+ * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).
+ */
+export function memoirSectionText(
+  store: MemoirStore,
+  context: {
+    agent?: {
+      id?: string
+      session?: { id?: string; header?: { cwd?: string } }
+    }
+  },
+  manager?: MemorySnapshotManager,
+  budget: MemoryBudget = DEFAULT_MEMORY_BUDGET,
+): string {
+  const cwd = context?.agent?.session?.header?.cwd
+  if (typeof cwd !== 'string' || cwd === '') return MEMOIR_GUIDANCE
+  const build = (): { storeRevision: number; text: string } => {
+    const entries = store.entries(cwd)
+    const hot = selectHotMemory(entries, budget)
+    if (hot.selected.length === 0) {
+      return { storeRevision: store.currentRevision(), text: MEMOIR_GUIDANCE }
+    }
+    return {
+      storeRevision: store.currentRevision(),
+      text: MEMOIR_GUIDANCE + '\n\n' + MEMOIR_SECTION_HEADING + '\n' + hot.text,
+    }
+  }
+  const key = sessionKeyOf(context)
+  if (key === undefined || manager === undefined) return build().text
+  return manager.getOrCreate(key, build).text
 }
 
 /** Bridge the cordis context onto the autodistill wire contract. */
@@ -101,9 +167,13 @@ export function apply(ctx: Context, config?: Config): void {
   if (!value.enabled) return
 
   const store = new MemoirStore()
+  const snapshotManager = new MemorySnapshotManager({ max: value.sessionSnapshotMax })
 
   ctx.effect(() => {
-    const tools = [memoirRecordTool(store), memoirReadTool(store)]
+    const tools = [
+      memoirRecordTool(store),
+      memoirReadTool(store, { defaultLimit: value.readDefaultLimit, maxLimit: value.readMaxLimit }),
+    ]
     const disposers = tools.map((tool) => ctx.tools.register(tool))
     return () => {
       for (const dispose of disposers) dispose()
@@ -111,7 +181,31 @@ export function apply(ctx: Context, config?: Config): void {
   }, 'dsh-memoir: tools')
 
   ctx.effect(() => {
-    const disposers = makeRoutes(store).map((route) => ctx.webServer.register(route))
+    const diagnostics = (path?: string) => {
+      const entries = typeof path === 'string' && path !== '' ? store.entries(path) : []
+      const hot = entries.length === 0 ? null : selectHotMemory(entries, value.budget)
+      const stats = store.stats()
+      return {
+        storeRevision: stats.revision,
+        snapshotEpoch: stats.epoch,
+        cache: stats,
+        snapshotCount: snapshotManager.size,
+        snapshotMax: snapshotManager.cap,
+        hotMemory: hot === null ? null : {
+          selected: hot.selected.length,
+          total: hot.total,
+          estimatedTokens: hot.estimatedTokens,
+        },
+        config: {
+          hotMemoryTokens: value.budget.targetTokens,
+          hotMemoryMaxTokens: value.budget.hardMaxTokens,
+          readDefaultLimit: value.readDefaultLimit,
+          readMaxLimit: value.readMaxLimit,
+          sessionSnapshotMax: value.sessionSnapshotMax,
+        },
+      }
+    }
+    const disposers = makeRoutes(store, diagnostics).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
@@ -130,7 +224,8 @@ export function apply(ctx: Context, config?: Config): void {
       order: SECTION_ORDER,
       // text is a provider evaluated per assembly, so each project's memory is
       // injected for its own session and not for unrelated workspaces.
-      text: (context) => memoirSectionText(store, context),
+      text: (context) => memoirSectionText(store, context, snapshotManager, value.budget),
     })
   }
 }
+
