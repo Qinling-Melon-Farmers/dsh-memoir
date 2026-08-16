@@ -15,6 +15,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { SECTIONS, SECTION_KEYS, formatTime, projectTitle } from './store.js'
 import type { MemoirEntry, MemoirStore } from './store.js'
+import type { RetrievalEngine } from './retrieval.js'
 
 /** One text content block (the only render shape these tools emit). */
 export function text(value: string): ContentBlock[] {
@@ -128,7 +129,7 @@ export function memoirRecordTool(store: MemoirStore) {
 }
 
 /** The read tool: project / global / all memory with optional filters. */
-export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions) {
+export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, retrieval?: RetrievalEngine) {
   const defaultLimit = options?.defaultLimit ?? 8
   const maxLimit = options?.maxLimit ?? 30
   return defineTool({
@@ -189,11 +190,16 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions) {
         if (cwd === undefined) {
           parts.push('（无法确定会话工作区，跳过项目记忆）')
         } else {
-          const matched = store.entries(cwd).filter(filterEntry)
+          // v0.4.1: query → ranked recall (BM25 + boosts), no query → newest first.
+          const ranked = query !== '' && retrieval !== undefined
+            ? retrieval.cachedSearch(query, { section: args.section, cwd, limit, detail })
+            : []
+          const matched = ranked.length > 0 ? ranked.map((r) => r.entry) : store.entries(cwd).filter(filterEntry)
           if (matched.length === 0) {
             parts.push('本项目（' + cwd + '）暂无' + (query !== '' || args.section !== undefined ? '匹配的' : '') + '持久记忆。可用 memoir_record 沉淀。')
           } else {
-            const entries = matched.slice(-limit)
+            const isRanked = ranked.length > 0
+            const entries = isRanked ? matched.slice(0, limit) : matched.slice(-limit)
             const lines: string[] = []
             let lastSection = ''
             for (const entry of entries) {
@@ -210,21 +216,46 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions) {
       }
 
       if (scope === 'global' || scope === 'all') {
-        const projects = store.listProjects()
-        const out: string[] = []
-        for (const project of projects) {
-          const matched = store.entries(project.path).filter(filterEntry)
-          if (matched.length === 0) continue
-          const entries = matched.slice(-Math.min(limit, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
-          out.push(
-            [
-              '### ' + (project.title || projectTitle(project.path)),
-              'path: ' + project.path + '  updated: ' + formatTime(project.updatedAt),
-              ...entries.map((entry) => renderEntry(entry)),
-            ].join('\n'),
-          )
+        const ranked = query !== '' && retrieval !== undefined
+          ? retrieval.cachedSearch(query, { section: args.section, limit, detail })
+          : []
+        if (ranked.length > 0) {
+          // Group ranked hits by their project, best hits first.
+          const grouped = new Map<string, MemoirEntry[]>()
+          for (const result of ranked) {
+            const bucket = grouped.get(result.projectPath) ?? []
+            bucket.push(result.entry)
+            grouped.set(result.projectPath, bucket)
+          }
+          const out: string[] = []
+          for (const [path, entries] of grouped) {
+            const shown = entries.slice(0, limit)
+            out.push(
+              [
+                '### ' + projectTitle(path),
+                'path: ' + path,
+                ...shown.map((entry) => renderEntry(entry)),
+              ].join('\n'),
+            )
+          }
+          parts.push(out.join('\n\n'))
+        } else {
+          const projects = store.listProjects()
+          const out: string[] = []
+          for (const project of projects) {
+            const matched = store.entries(project.path).filter(filterEntry)
+            if (matched.length === 0) continue
+            const entries = matched.slice(-Math.min(limit, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
+            out.push(
+              [
+                '### ' + (project.title || projectTitle(project.path)),
+                'path: ' + project.path + '  updated: ' + formatTime(project.updatedAt),
+                ...entries.map((entry) => renderEntry(entry)),
+              ].join('\n'),
+            )
+          }
+          parts.push(out.length > 0 ? out.join('\n\n') : '（全局索引中没有匹配的内容）')
         }
-        parts.push(out.length > 0 ? out.join('\n\n') : '（全局索引中没有匹配的内容）')
       }
 
       return { text: clampOutput(parts) }

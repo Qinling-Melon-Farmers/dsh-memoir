@@ -35,6 +35,7 @@ import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
 import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
+import { RetrievalEngine } from './retrieval.js'
 
 /** Stable cordis plugin name. */
 export const name = 'memoir'
@@ -64,6 +65,9 @@ export interface Config {
   readMaxLimit?: number
   /** Per-session snapshot LRU cap (default 128). */
   sessionSnapshotMax?: number
+  // v0.4.1 — ranked recall
+  /** memoir_read ranked-query LRU cache size (default 128). */
+  queryCacheSize?: number
 }
 
 const DEFAULT_ENABLED = true
@@ -88,6 +92,7 @@ export interface ResolvedConfig {
   readDefaultLimit: number
   readMaxLimit: number
   sessionSnapshotMax: number
+  queryCacheSize: number
 }
 
 function resolveConfig(config: Config | undefined): ResolvedConfig {
@@ -103,6 +108,7 @@ function resolveConfig(config: Config | undefined): ResolvedConfig {
     readDefaultLimit,
     readMaxLimit,
     sessionSnapshotMax: Math.max(1, Math.floor(config?.sessionSnapshotMax ?? 128)),
+    queryCacheSize: Math.max(1, Math.floor(config?.queryCacheSize ?? 128)),
   }
 }
 
@@ -168,11 +174,12 @@ export function apply(ctx: Context, config?: Config): void {
 
   const store = new MemoirStore()
   const snapshotManager = new MemorySnapshotManager({ max: value.sessionSnapshotMax })
+  const retrieval = new RetrievalEngine(store, { cacheSize: value.queryCacheSize })
 
   ctx.effect(() => {
     const tools = [
       memoirRecordTool(store),
-      memoirReadTool(store, { defaultLimit: value.readDefaultLimit, maxLimit: value.readMaxLimit }),
+      memoirReadTool(store, { defaultLimit: value.readDefaultLimit, maxLimit: value.readMaxLimit }, retrieval),
     ]
     const disposers = tools.map((tool) => ctx.tools.register(tool))
     return () => {
@@ -202,6 +209,7 @@ export function apply(ctx: Context, config?: Config): void {
           readDefaultLimit: value.readDefaultLimit,
           readMaxLimit: value.readMaxLimit,
           sessionSnapshotMax: value.sessionSnapshotMax,
+          queryCacheSize: value.queryCacheSize,
         },
       }
     }

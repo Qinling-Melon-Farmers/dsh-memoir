@@ -12,6 +12,7 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 import type { MemoirEntry, MemoirStore } from './store.js';
+import type { RetrievalEngine } from './retrieval.js';
 /** One text content block (the only render shape these tools emit). */
 export declare function text(value: string): ContentBlock[];
 /** Resolve the caller session's workspace cwd (absolute), or undefined. */
@@ -31,4 +32,4 @@ export declare function renderEntryCompact(entry: MemoirEntry, maxContent?: numb
 /** The record tool: persist one memory entry. */
 export declare function memoirRecordTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */
-export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptions): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, retrieval?: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;

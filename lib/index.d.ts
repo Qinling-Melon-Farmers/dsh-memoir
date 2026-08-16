@@ -45,6 +45,8 @@ export interface Config {
     readMaxLimit?: number;
     /** Per-session snapshot LRU cap (default 128). */
     sessionSnapshotMax?: number;
+    /** memoir_read ranked-query LRU cache size (default 128). */
+    queryCacheSize?: number;
 }
 /** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
  *  details live in the tool schemas, not in every prompt. */
@@ -60,6 +62,7 @@ export interface ResolvedConfig {
     readDefaultLimit: number;
     readMaxLimit: number;
     sessionSnapshotMax: number;
+    queryCacheSize: number;
 }
 /**
  * Per-assembly prompt section text: minimal guidance plus the session's
