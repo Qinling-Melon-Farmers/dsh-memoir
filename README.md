@@ -24,7 +24,7 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 | 工具 | 作用 |
 | --- | --- |
 | `memoir_record(section, title?, content)` | 记录一条记忆，`section` 取值 `work` / `lessons` / `actions` / `note` |
-| `memoir_read(scope?, section?, query?, limit?, detail?)` | 读取记忆，`scope` 取值 `project`（默认）/ `global` / `all`；`limit` 默认 8（最大 30）；`detail` 取值 `compact`（默认，单行摘要）/ `full`（完整正文） |
+| `memoir_read(scope?, section?, query?, limit?, detail?)` | 读取记忆，`scope` 取值 `project`（默认）/ `global` / `all`；`query` 走本地 BM25 排序召回（中文 2-gram / 英文单词 / 代码标识符分词，标题加权 + 短语加权 + 分类权重 + 时间衰减，LRU 查询缓存）；`limit` 默认 8（最大 30）；`detail` 取值 `compact`（默认，单行摘要）/ `full`（完整正文） |
 
 面板（`/api/dsh-memoir/*`）：
 
@@ -72,6 +72,7 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
         readDefaultLimit: 8      # memoir_read 默认返回条数
         readMaxLimit: 30         # memoir_read 最大返回条数
         sessionSnapshotMax: 128  # 每会话快照的 LRU 上限
+        queryCacheSize: 128      # v0.4.1 memoir_read 排序查询的 LRU 缓存大小
 ```
 
 ## 安装
@@ -143,6 +144,7 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 ## 设计思路
 
 - **Cache-aware 注入（v0.4）**：system prompt 不再注入完整历史，而是由 selector 在 token 预算（默认 900/1200）内选出 Hot Memory（pinned > actions > lessons > 近期 work，note 不注入）；每个 session 的注入文本只构建一次并冻结（snapshot.ts），同一 session 后续 assembly 复用同一快照——模型输入前缀稳定，最大化 prompt-prefix cache 命中率；新 session 才重建并继承新记忆。
+- **本地排序召回（v0.4.1）**：`memoir_read` 的 query 从「子串过滤」升级为倒排索引 + BM25 排序（中文 2-gram / 英文单词 / 代码与路径标识符分词；标题 2.5× 加权、精确短语加权、分类权重、时间衰减），无 embedding、无外部服务；查询结果进 epoch 感知的 LRU 缓存——store 任何写入（含外部进程修改）自动失效。curated 36 条查询 Top-5 命中率 100%（门禁 ≥90%，见 `test/recall-quality.test.ts`）。
 - **可观测性（v0.4）**：`/api/dsh-memoir/diagnostics` 与面板底部诊断区暴露 store revision、缓存命中率、快照数量与注入 token 估算，`npm run bench` 生成 benchmark 报告（见 `bench/report.md`）。
 - **单一数据源**：结构化 JSON（`~/.dsh/dsh-memoir.json`）是唯一事实源，`PROJECT_MEMORY.md` 由它重新生成——文件、面板、工具三者永远一致，人工编辑文件不会被意外覆盖（下次写入按源重新生成，但源里没有的内容会丢失，因此约定人工维护走面板/工具）。
 - **两层记忆，各司其职**：项目级（自动注入，成为行动指南）+ 全局级（按需检索，绝不注入，防止 prompt 膨胀与串项目）。
@@ -164,17 +166,17 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 97 项测试：store（含缓存） / snapshot / selector / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 107 项测试：store（含缓存） / snapshot / selector / retrieval（含召回质量门禁） / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
 npm run bench         # benchmark（100/1k/10k 条目），结果写入 bench/report.md
 ```
 
-v0.4.0 benchmark 摘要（node v22，budget 900/1200 tokens；完整报告见 `bench/report.md`）：
+v0.4.1 benchmark 摘要（node v22，budget 900/1200 tokens；完整报告见 `bench/report.md`）：
 
-| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 全量 markdown tokens | 注入 tokens | 降幅 |
-|---|---|---|---|---|---|---|
-| 100 | 0.6 ms | 1.7 µs | 0.62 ms | 3870 | 923 | 76.1% |
-| 1,000 | 1.5 ms | 0.4 µs | 0.61 ms | 38182 | 906 | 97.6% |
-| 10,000 | 21.8 ms | 0.9 µs | 1.96 ms | 385807 | 922 | 99.8% |
+| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 冷查询 | 热查询(缓存) | 全量 markdown tokens | 注入 tokens | 降幅 |
+|---|---|---|---|---|---|---|---|---|---|
+| 100 | 1.3 ms | 2.8 µs | 0.55 ms | 2.3 ms | 0.012 ms | 0.98 µs | 3870 | 923 | 76.1% |
+| 1,000 | 1.4 ms | 0.4 µs | 0.58 ms | 14.4 ms | 0.002 ms | 1.0 µs | 38182 | 906 | 97.6% |
+| 10,000 | 21.6 ms | 0.5 µs | 1.73 ms | 150.1 ms | 0.002 ms | 1.1 µs | 385807 | 922 | 99.8% |
 
 ## 许可
 

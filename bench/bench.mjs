@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { MemoirStore } from '../lib/store.js'
 import { MemorySnapshotManager } from '../lib/snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, estimateTokens, selectHotMemory } from '../lib/selector.js'
+import { RetrievalEngine } from '../lib/retrieval.js'
 
 const SECTIONS = ['actions', 'lessons', 'work', 'note']
 
@@ -65,16 +66,24 @@ for (const n of sizes) {
   for (let i = 0; i < 1000; i++) {
     manager.getOrCreate('sess|/bench/project', () => { builds++; return { storeRevision: 1, text: hot.text } })
   }
+  // Retrieval (v0.4.1): index build + cold/warm ranked query.
+  const engine = new RetrievalEngine(store)
+  const indexBuild = measure('retrieval index build', () => engine.ensureIndex(), 1, false)
+  const coldQuery = measure('cold ranked query', () => engine.cachedSearch('乱码 ' + n, { cwd: '/bench/project' }), 20)
+  const warmQuery = measure('warm cached query', () => engine.cachedSearch('乱码', { cwd: '/bench/project' }))
   const reduction = ((1 - hot.estimatedTokens / fullTokens) * 100).toFixed(1)
   rows.push([
     String(n),
     cold.ms.toFixed(1) + ' ms',
     (warm.ms * 1000).toFixed(2) + ' µs',
     hotBuild.ms.toFixed(3) + ' ms',
+    indexBuild.ms.toFixed(1) + ' ms',
+    coldQuery.ms.toFixed(3) + ' ms',
+    (warmQuery.ms * 1000).toFixed(3) + ' µs',
     String(fullTokens),
     String(hot.estimatedTokens),
     reduction + '%',
-    hot.selected.length + '/' + hot.total,  
+    hot.selected.length + '/' + hot.total,
     String(builds),
   ])
   rmSync(dir, { recursive: true, force: true })
@@ -84,7 +93,7 @@ console.log('# dsh-memoir benchmark report')
 console.log()
 console.log('> 生成时间: ' + new Date().toISOString() + ' · node ' + process.version + ' · budget ' + DEFAULT_MEMORY_BUDGET.targetTokens + '/' + DEFAULT_MEMORY_BUDGET.hardMaxTokens + ' tokens')
 console.log()
-console.log('| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 全量 markdown tokens | 注入 tokens | 降幅 | 选中/候选 | 快照复用(1000次构建数) |')
-console.log('|---|---|---|---|---|---|---|---|---|')
+console.log('| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 冷查询 | 热查询(缓存) | 全量 markdown tokens | 注入 tokens | 降幅 | 选中/候选 | 快照复用(1000次构建数) |')
+console.log('|---|---|---|---|---|---|---|---|---|---|---|---|')
 for (const row of rows) console.log('| ' + row.join(' | ') + ' |')
 
