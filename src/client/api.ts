@@ -66,6 +66,37 @@ export interface WireProject {
   entries: WireEntry[]
 }
 
+/** The host /diagnostics payload (v0.4 observability). */
+export interface WireDiagnostics {
+  storeRevision: number
+  snapshotEpoch: number
+  cache: {
+    revision: number
+    epoch: number
+    loads: number
+    hits: number
+    misses: number
+    hitRate: number
+    fileReads: number
+    statProbes: number
+    corruptBackups: number
+    renders: number
+    renderComputes: number
+    renderHitRate: number
+    lastLoadMs?: number
+  }
+  snapshotCount: number
+  snapshotMax: number
+  hotMemory: { selected: number; total: number; estimatedTokens: number } | null
+  config: {
+    hotMemoryTokens: number
+    hotMemoryMaxTokens: number
+    readDefaultLimit: number
+    readMaxLimit: number
+    sessionSnapshotMax: number
+  }
+}
+
 export interface RecordPayload {
   path: string
   section: SectionKey
@@ -96,6 +127,12 @@ export class MemoirApi {
   async global(options: { section?: SectionKey; query?: string } = {}): Promise<{ projects: WireProject[] }> {
     const response = await this.fetchImpl('/api/dsh-memoir/global' + query({ ...options }))
     return readEnvelope(response) as Promise<{ projects: WireProject[] }>
+  }
+
+  /** Read runtime diagnostics (cache hit rates, snapshot/hot-memory stats). */
+  async diagnostics(path?: string): Promise<WireDiagnostics> {
+    const response = await this.fetchImpl('/api/dsh-memoir/diagnostics' + query({ path }))
+    return readEnvelope(response) as Promise<WireDiagnostics>
   }
 
   /** Record one entry (host regenerates PROJECT_MEMORY.md). */

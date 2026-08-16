@@ -24,7 +24,7 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 | 工具 | 作用 |
 | --- | --- |
 | `memoir_record(section, title?, content)` | 记录一条记忆，`section` 取值 `work` / `lessons` / `actions` / `note` |
-| `memoir_read(scope?, section?, query?)` | 读取记忆，`scope` 取值 `project`（默认）/ `global` / `all` |
+| `memoir_read(scope?, section?, query?, limit?, detail?)` | 读取记忆，`scope` 取值 `project`（默认）/ `global` / `all`；`limit` 默认 8（最大 30）；`detail` 取值 `compact`（默认，单行摘要）/ `full`（完整正文） |
 
 面板（`/api/dsh-memoir/*`）：
 
@@ -35,6 +35,7 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 | 搜索框 | 标题与正文的实时模糊过滤 |
 | 添加记忆 | 手动记录一条（分类 + 标题 + 正文），与 agent 的 `memoir_record` 写入同一份数据 |
 | 删除 | 每条记忆可单独删除，删除后自动重新生成项目记忆文件 |
+| Memory Diagnostics | 面板底部可展开的诊断区：store revision、会话快照数量、缓存命中率（文件缓存 + 渲染缓存）、Hot Memory 选中/总数与估算注入 tokens |
 
 ## 界面预览
 
@@ -56,16 +57,21 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 
 ## 配置
 
-在 `cordis.patch.yml` 的行上可加 `config`（三者默认均为 `true`）：
+在 `cordis.patch.yml` 的行上可加 `config`（全部可省略，默认值如下）：
 
 ```yaml
 - insert:
     - id: memoir
       name: dsh-memoir
       config:
-        enabled: true          # 总开关（工具、路由、注入段）
-        announceToAgent: true  # system prompt 公告段
-        autoDistill: true      # 每轮有实际工作的回合结束自动提醒归纳
+        enabled: true            # 总开关（工具、路由、注入段）
+        announceToAgent: true    # system prompt 公告段
+        autoDistill: true        # 每轮有实际工作的回合结束自动提醒归纳
+        hotMemoryTokens: 900     # v0.4 注入 Hot Memory 的目标 token 数
+        hotMemoryMaxTokens: 1200 # v0.4 注入的硬上限（永不超过）
+        readDefaultLimit: 8      # memoir_read 默认返回条数
+        readMaxLimit: 30         # memoir_read 最大返回条数
+        sessionSnapshotMax: 128  # 每会话快照的 LRU 上限
 ```
 
 ## 安装
@@ -136,6 +142,8 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 
 ## 设计思路
 
+- **Cache-aware 注入（v0.4）**：system prompt 不再注入完整历史，而是由 selector 在 token 预算（默认 900/1200）内选出 Hot Memory（pinned > actions > lessons > 近期 work，note 不注入）；每个 session 的注入文本只构建一次并冻结（snapshot.ts），同一 session 后续 assembly 复用同一快照——模型输入前缀稳定，最大化 prompt-prefix cache 命中率；新 session 才重建并继承新记忆。
+- **可观测性（v0.4）**：`/api/dsh-memoir/diagnostics` 与面板底部诊断区暴露 store revision、缓存命中率、快照数量与注入 token 估算，`npm run bench` 生成 benchmark 报告（见 `bench/report.md`）。
 - **单一数据源**：结构化 JSON（`~/.dsh/dsh-memoir.json`）是唯一事实源，`PROJECT_MEMORY.md` 由它重新生成——文件、面板、工具三者永远一致，人工编辑文件不会被意外覆盖（下次写入按源重新生成，但源里没有的内容会丢失，因此约定人工维护走面板/工具）。
 - **两层记忆，各司其职**：项目级（自动注入，成为行动指南）+ 全局级（按需检索，绝不注入，防止 prompt 膨胀与串项目）。
 - **官方事件机制做自动沉淀**：`agent/turn-stopping` + `agent.steer`（与 goal-round-driver 同款），不造轮子；配安全边界——只蒸馏有工具调用的回合、已记录过就跳过、子代理/嵌套委托/已取消回合不打扰、每回合至多一次。
@@ -156,8 +164,17 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 78 项测试：store（含缓存） / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 97 项测试：store（含缓存） / snapshot / selector / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+npm run bench         # benchmark（100/1k/10k 条目），结果写入 bench/report.md
 ```
+
+v0.4.0 benchmark 摘要（node v22，budget 900/1200 tokens；完整报告见 `bench/report.md`）：
+
+| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 全量 markdown tokens | 注入 tokens | 降幅 |
+|---|---|---|---|---|---|---|
+| 100 | 0.6 ms | 1.7 µs | 0.62 ms | 3870 | 923 | 76.1% |
+| 1,000 | 1.5 ms | 0.4 µs | 0.61 ms | 38182 | 906 | 97.6% |
+| 10,000 | 21.8 ms | 0.9 µs | 1.96 ms | 385807 | 922 | 99.8% |
 
 ## 许可
 

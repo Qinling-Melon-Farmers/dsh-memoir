@@ -41,6 +41,12 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sections.lessons': '经验教训',
     'sections.actions': '行动指南',
     'sections.note': '备注',
+    'diag.title': 'Memory Diagnostics',
+    'diag.revision': 'Store revision',
+    'diag.snapshot': 'Session snapshots',
+    'diag.cache': 'Store cache',
+    'diag.render': 'Render cache',
+    'diag.hot': 'Hot memory',
   },
   en: {
     'entry.label': 'Memory',
@@ -77,6 +83,12 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'sections.lessons': 'Lessons Learned',
     'sections.actions': 'Action Guide',
     'sections.note': 'Notes',
+    'diag.title': 'Memory Diagnostics',
+    'diag.revision': 'Store revision',
+    'diag.snapshot': 'Session snapshots',
+    'diag.cache': 'Store cache',
+    'diag.render': 'Render cache',
+    'diag.hot': 'Hot memory',
   },
 }
 

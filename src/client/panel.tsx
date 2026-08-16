@@ -6,7 +6,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SECTION_KEYS } from './i18n.js'
-import type { MemoirApi, WireEntry, WireProject } from './api.js'
+import type { MemoirApi, WireDiagnostics, WireEntry, WireProject } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { SectionKey } from './types.ts'
@@ -122,6 +122,8 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [diag, setDiag] = useState<WireDiagnostics | null>(null)
+  const [diagOpen, setDiagOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -143,6 +145,10 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     }
+    // Diagnostics follow the active workspace (observability, roadmap §4).
+    api.diagnostics(cwd === '' ? undefined : cwd)
+      .then((value) => { if (!cancelled) setDiag(value) })
+      .catch(() => { if (!cancelled) setDiag(null) })
     return () => { cancelled = true }
   }, [tab, cwd, refreshKey])
 
@@ -243,6 +249,22 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                 })}
       </div>
       {busy ? <div className="memoir-empty">…</div> : null}
+      <div className="memoir-diagnostics">
+        <button type="button" className="memoir-diagnostics-toggle" onClick={() => setDiagOpen((v) => !v)}>
+          {t('diag.title')} {diagOpen ? '▾' : '▸'}
+        </button>
+        {diagOpen && diag !== null
+          ? (
+              <div className="memoir-diagnostics-body">
+                <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>
+                <div>{t('diag.cache')}: {diag.cache.hits}/{diag.cache.loads} 命中 ({Math.round(diag.cache.hitRate * 100)}%) · {t('diag.render')}: {Math.round(diag.cache.renderHitRate * 100)}%</div>
+                {diag.hotMemory !== null
+                  ? <div>{t('diag.hot')}: {diag.hotMemory.selected}/{diag.hotMemory.total} 条 · ~{diag.hotMemory.estimatedTokens} tokens（预算 {diag.config.hotMemoryTokens}/{diag.config.hotMemoryMaxTokens}）</div>
+                  : null}
+              </div>
+            )
+          : null}
+      </div>
     </div>
   )
 }

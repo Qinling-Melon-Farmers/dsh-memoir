@@ -113,4 +113,13 @@ body[data-ds-dark-theme] [data-dsh-memoir-view] {
   background: var(--bg-panel, #16181d);
   color: var(--text-primary, #e6e6e6);
 }
+
+/* Memory Diagnostics (observability strip, v0.4). */
+.memoir-diagnostics { margin: 0 14px 14px; border-top: 1px solid var(--border, rgba(0,0,0,.1)); padding-top: 8px; }
+.memoir-diagnostics-toggle {
+  border: none; background: transparent; color: inherit; cursor: pointer;
+  font-size: 12px; opacity: .75; padding: 2px 0;
+}
+.memoir-diagnostics-toggle:hover { opacity: 1; }
+.memoir-diagnostics-body { font-size: 11px; opacity: .8; display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
 `
