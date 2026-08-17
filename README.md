@@ -1,41 +1,108 @@
 # dsh-memoir
 
-把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为**项目持久化记忆**，并作为**未来 AGENTS 的行动指南**自动注入后续会话；插件开启后**每轮有实际工作的回合结束时自动提醒 agent 归纳沉淀**，另有 Web GUI 可视化面板浏览、检索与维护记忆。
+**dsh-memoir 是 DeepSeek Harness 的本地项目记忆层：把 Agent 的工作结论、经验教训和后续行动持久化，并通过有界 Hot Memory 自动继承、按需排序召回和 Web GUI 管理，实现跨会话项目记忆。**
 
-- **自动收尾（auto-distill）**：监听 `agent/turn-stopping`，一轮有工具调用、且尚未记录过记忆的回合结束时，自动 steer 一句归纳提示，让 agent 用 `memoir_record` 把该轮工作沉淀为项目记忆（无实质工作的回合不打扰、子代理会话不打扰、每回合最多一次）。
-- **归纳总结**：`memoir_record` 归纳工作记录、经验教训与行动指南。
-- **持久记忆**：项目级写入 `<工作区>/PROJECT_MEMORY.md`（随 git 提交）；结构化源数据存全局索引 `~/.dsh/dsh-memoir.json`（跨项目检索）。
-- **自动行动指南**：新会话开始时，插件把本项目的 `PROJECT_MEMORY.md` 自动注入 system prompt，未来 AGENTS 无需手翻文档即可继承既往经验。
-- **可视化面板**：侧边栏「记忆」入口，中心面板提供项目 / 全局两个视图、全文检索、手动记录与删除。
+> Cache-aware local project memory for DeepSeek Harness.
 
-## 设计背景
+- **Local-only**：全部数据留在本机（`~/.dsh/dsh-memoir.json` + 项目内 `PROJECT_MEMORY.md`）
+- **Zero external memory service**：无向量数据库、无 embedding API、无云端记忆服务
+- **Bounded hot-memory injection**：token 预算内的 Hot Memory 自动注入 system prompt（默认 900/1200）
+- **Ranked local recall**：倒排索引 + BM25 本地排序召回，`memoir_read` 按需检索长尾历史
+- **Web GUI**：侧边栏「记忆」面板——项目/全局浏览、相关排序搜索、Hot Memory Inspector、Retrieval Diagnostics
 
-DSH 的 agent 会话本身是「失忆」的：新会话不记得上一个会话踩过的坑。现实中的典型代价是**反复排查同类问题**——控制台中文乱码要查一次、某个终端的转义错误要查一次、某个工具的环境配置又要查一次；`AGENTS.md` 这类人工维护的说明文件要么没人更新、要么被塞得臃肿。社区已有的记忆类插件各有侧重：`dsh-memory` 侧重无损引用式检索、`dsh-mnemon` 依赖外部 Mnemon 服务、`distill` 自动蒸馏但落成 skill 文件、缺少可视化面板。
+## Quick Start
 
-dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的记忆层，把「记录 → 存储 → 自动注入 → 可视化维护」串成闭环：
+```bash
+# 安装到 web profile
+dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
 
-1. **记录**：agent 在任务收尾调用 `memoir_record`（或插件每轮工作结束自动提醒）；
-2. **存储**：结构化 JSON 全局索引为源，`PROJECT_MEMORY.md` 为可读渲染（随 git 提交、人也能看）；
-3. **注入**：新会话开始时按项目自动注入记忆，未来 AGENTS 无需手翻文档即继承经验；
-4. **维护**：Web 面板可检索、补录、删除，与 agent 写的是同一份数据。
+# 或本地开发（克隆后）
+dsh plugin --profile web add file:/绝对路径/dsh-memoir
+```
 
-## 能力
+安装后重启 DSH 生效（`dsh web`）。正常使用即可：
+
+```text
+正常使用 Agent
+      ↓
+有实际工作的回合结束自动提醒归纳
+      ↓
+memoir_record 沉淀工作 / 教训 / 下一步
+      ↓
+未来 session 自动继承 Hot Memory（有界、排序、会话内冻结）
+      ↓
+需要长尾历史时 memoir_read（本地相关性排序召回）
+```
+
+## Architecture
+
+```text
+                   ~/.dsh/dsh-memoir.json
+                            │
+                            │ SSOT（单一事实源）
+                            ▼
+                      MemoirStore
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+        PROJECT_MEMORY.md          Retrieval Index
+         human-readable             ranked recall
+         （git 可提交）                   │
+              │                           ▼
+              │                       memoir_read
+              │                       GUI /search
+              │
+              ▼
+       Hot Memory Selector
+         （token 预算）
+              │
+              ▼
+       Session Snapshot
+         （每会话冻结）
+              │
+              ▼
+         System Prompt
+```
+
+## Memory Model：Full Memory vs Hot Memory
+
+**Full Memory（完整历史）**——结构化 JSON SSOT + 自动重新生成的 `PROJECT_MEMORY.md` 投影。用途：完整历史、GUI 浏览、git 提交、人工检查、排序召回的数据源。
+
+**Hot Memory（有界注入）**——selector 在 token 预算内选出的高价值记忆，注入 system prompt。特点：**bounded / ranked / compact / session-frozen**。
+
+> v0.4+ 不再把完整 PROJECT_MEMORY.md 注入模型：Hot Memory 进 prompt，长尾历史走排序召回。
+
+**Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
+
+## Tools
 
 | 工具 | 作用 |
 | --- | --- |
-| `memoir_record(section, title?, content)` | 记录一条记忆，`section` 取值 `work` / `lessons` / `actions` / `note` |
-| `memoir_read(scope?, section?, query?, limit?, detail?)` | 读取记忆，`scope` 取值 `project`（默认）/ `global` / `all`；`query` 走本地 BM25 排序召回（中文 2-gram / 英文单词 / 代码标识符分词，标题加权 + 短语加权 + 分类权重 + 时间衰减，LRU 查询缓存）；`limit` 默认 8（最大 30）；`detail` 取值 `compact`（默认，单行摘要）/ `full`（完整正文） |
+| `memoir_record` | 写入 work（工作记录）/ lessons（经验教训）/ actions（行动指南）/ note（备注） |
+| `memoir_read` | project（默认）/ global / all 的本地相关性检索，limit + compact/full 输出形态 |
 
-面板（`/api/dsh-memoir/*`）：
+`memoir_read` 的 query 描述与真实行为一致：**本地相关性检索标题与正文，支持中文短语、英文关键词、代码标识符与路径，并按相关性排序**。
 
-| 界面 | 说明 |
-| --- | --- |
-| 项目记忆 tab | 当前项目会话的记忆，按 工作记录 / 经验教训 / 行动指南 / 备注 分组，显示时间、标题、正文与会话来源 |
-| 全局记忆 tab | 所有项目的记忆桶（项目名、路径、更新时间、条数），支持跨项目检索 |
-| 搜索框 | 标题与正文的实时模糊过滤 |
-| 添加记忆 | 手动记录一条（分类 + 标题 + 正文），与 agent 的 `memoir_record` 写入同一份数据 |
-| 删除 | 每条记忆可单独删除，删除后自动重新生成项目记忆文件 |
-| Memory Diagnostics | 面板底部可展开的诊断区：store revision、会话快照数量、缓存命中率（文件缓存 + 渲染缓存）、Hot Memory 选中/总数与估算注入 tokens |
+## Retrieval
+
+- 无 embedding、无向量库、无外部记忆服务
+- 中文 2/3-gram + 英文单词 + 代码/路径标识符分词
+- BM25（文档侧保留真实 term frequency；query 侧去重）
+- 标题 2.5× 加权、精确短语加权、分类权重、时间衰减
+- 标题与正文各自独立的长度归一化（v0.4.2）
+- epoch 感知 + 1 小时 time-bucket 的 LRU 查询缓存：limit/detail 不参与缓存键，所有输出形态共享同一份排序结果（v0.4.2）
+- Query cache 指标（hits/misses/evictions/hit rate）与 Last Query（latency/candidates/returned）可观测（v0.4.2）
+- 全局 recall 的 limit 是真正全局 Top-K，输出截断保留高分头部（v0.4.2）
+
+curated 查询 Top-5 命中率 100%（质量门禁 ≥90%，见 `test/recall-quality.test.ts`）。
+
+## GUI
+
+保留 v0.4 的 Project / Global / Search / Add / Delete / Diagnostics 架构，v0.4.2 起：
+
+- **搜索统一走 RetrievalEngine**：query 非空时面板调用 `GET /api/dsh-memoir/search`，与 agent 的 `memoir_read` 共用同一套 BM25 排序，结果按相关性排列并显示分数
+- **Hot Memory Inspector**：展开查看当前工作区实际会被注入的 Hot Memory（Actions / Lessons / Recent state），即「下一会话到底自动继承什么」
+- **Retrieval Diagnostics**：Retrieval Index（docs/terms/epoch）、Query Cache（hits/misses/evictions/hit rate/size/capacity）、Last Query（latency/returned）、Session Snapshot（hash/createdAt/storeRevision）
 
 ## 界面预览
 
@@ -43,7 +110,7 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 
 ![插件生效与整体 UI](picture/插件生效和UI效果1.png)
 
-**2. 项目记忆**：当前项目会话的持久记忆按 工作记录 / 经验教训 / 行动指南 / 备注 四个分类分组展示，每条带时间、分类标签、标题、正文与会话来源，支持全文检索、刷新与逐条删除。
+**2. 项目记忆**：当前项目会话的持久记忆按 工作记录 / 经验教训 / 行动指南 / 备注 分组展示，每条带时间、分类标签、标题、正文与会话来源，支持检索、刷新与逐条删除。
 
 ![项目记忆](picture/项目记忆2.png)
 
@@ -55,7 +122,20 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
 
 ![全局记忆管理](picture/全局记忆管理4.png)
 
-## 配置
+> v0.4.2 新增的带 query 的 ranked results 与 Hot Memory Inspector / Retrieval Diagnostics 截图将随版本发布补充。
+
+## Storage & Privacy
+
+```text
+~/.dsh/dsh-memoir.json   ← 结构化 JSON（唯一事实源 / SSOT）
+<工作区>/PROJECT_MEMORY.md ← 由 JSON 重新生成的人类可读投影（git 友好）
+
+No cloud memory DB · No embedding API · No vector DB
+```
+
+JSON 是 source of truth，Markdown 是 generated projection：面板、工具、agent 三条路径写同一份数据。v0.4.2 起，面板写 API 还受工作区授权保护——浏览器提交的绝对路径不等于授权，仅当前活动 cwd 或已有 store 项目可写。
+
+## Configuration
 
 在 `cordis.patch.yml` 的行上可加 `config`（全部可省略，默认值如下）：
 
@@ -67,42 +147,24 @@ dsh-memoir 想补的是一个**开箱即用、纯本地、零外部依赖**的�
         enabled: true            # 总开关（工具、路由、注入段）
         announceToAgent: true    # system prompt 公告段
         autoDistill: true        # 每轮有实际工作的回合结束自动提醒归纳
-        hotMemoryTokens: 900     # v0.4 注入 Hot Memory 的目标 token 数
-        hotMemoryMaxTokens: 1200 # v0.4 注入的硬上限（永不超过）
+        hotMemoryTokens: 900     # Hot Memory 目标 token 数
+        hotMemoryMaxTokens: 1200 # Hot Memory 硬上限（永不超过）
         readDefaultLimit: 8      # memoir_read 默认返回条数
         readMaxLimit: 30         # memoir_read 最大返回条数
         sessionSnapshotMax: 128  # 每会话快照的 LRU 上限
-        queryCacheSize: 128      # v0.4.1 memoir_read 排序查询的 LRU 缓存大小
+        queryCacheSize: 128      # 排序查询的 LRU 缓存大小
 ```
 
-## 安装
+## Design Trade-offs
 
-```bash
-# 从 GitHub 安装到 web profile
-dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
+- **有界注入 vs 全量注入**：v0.3 把完整历史注入 prompt，越用越膨胀；v0.4+ 只注入预算内的 Hot Memory，长尾历史按需召回。token 基准见下方 Benchmark。
+- **冻结 vs 新鲜**：session 内冻结注入文本换取 prompt-prefix cache 命中；没有唯一会话身份时不冻结（v0.4.2），保证新 session 一定看到新记忆。
+- **Hot Memory 配额**：Recent state（最新 work，1~3 条）保底、actions/lessons 排名填充，work 只进 Recent state 不重复注入（v0.4.2）。
+- **多进程安全**：store 的 record/remove 走 `~/.dsh/dsh-memoir.lock` 跨进程临界区（O_EXCL 独占创建 + 超时），临界区内强制从磁盘重读再改，两个 DSH 进程交错写入不丢更新（v0.4.2）。
+- **Windows 路径**：canonical key 全小写（`C:\A` / `c:\a\` / `C:/A` 一个桶），display path 保留原始大小写（v0.4.2）。
+- **GUI 与 Agent 同源**：面板搜索与 `memoir_read` 共用 RetrievalEngine，不再各写一套过滤逻辑（v0.4.2）。
 
-# 或本地开发（克隆后）
-dsh plugin --profile web add file:/绝对路径/dsh-memoir
-```
-
-安装后重启 DSH 生效（`dsh web`）。可运行 `dsh --profile web --dump-config` 确认插件已进入最终组合；刷新页面后侧边栏出现「记忆」入口。
-
-## 使用约定
-
-- **自动模式（默认）**：插件在每轮有实际工作的回合结束自动提醒归纳；agent 按提示调用 `memoir_record` 即可。
-- **手动模式（`autoDistill: false`）**：任务收尾时，归纳「做了什么 / 踩了什么坑 / 下一步怎么走」，分三条调用 `memoir_record`（`work`、`lessons`、`actions`）。
-- **接手项目**：新会话开始时先用 `memoir_read`（默认 `project`）读取项目记忆与行动指南；跨项目检索用 `memoir_read(scope: 'global', query: ...)` 或面板的全局 tab。
-- **人工维护**：面板里可随时手动补录、检索、删除。
-
-## 使用情况：它能解决什么，不能解决什么
-
-以「反复遇到控制台中文乱码、某种终端反复报转义错误」为例：
-
-**能解决「反复踩同一个坑」**。第一次解决后，把诊断结论与修复步骤记成一条 lessons（例如：`先 chcp 65001，脚本里设 $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8；写文件一律 UTF-8 无 BOM`）。此后**本项目的每一个新会话都会自动注入这条经验**，agent 直接照做，不再重新踩、重新查；跨项目也能用 `memoir_read(scope: 'global', query: '乱码')` 检索到。这正是本项目实际发生过的例子（见本仓库开发时沉淀的 `PROJECT_MEMORY.md`：PowerShell 管道中文乱码、终端 ANSI 转义错误、Get-Content 读无 BOM UTF-8 文件乱码三条 lessons 都来自真实踩坑）。
-
-**不能「根治」终端或控制台本身的编码缺陷**。乱码的根因是终端代码页（GBK）与输出编码（UTF-8）不匹配、或终端不支持 ANSI 转义——这些由终端、shell、控制台宿主的配置决定，记忆插件不会去改它们。插件做的是把「根因 + 修复命令」沉淀为项目知识，让 agent 每次都能直接套用正确解法；若某台机器/某个终端的配置本身就坏了，仍需要按经验里的命令修一次。
-
-其它典型使用场景：
+## Use Cases
 
 | 场景 | 怎么用 |
 | --- | --- |
@@ -110,73 +172,48 @@ dsh plugin --profile web add file:/绝对路径/dsh-memoir
 | 项目红线与约定（禁 emoji、发布前跑测试、分支规范） | 记入 `actions`，自动注入给接手者 |
 | 难查 bug 的根因与结论 | 记入 `lessons` / `work`，避免重复排查 |
 | 部署 / 上线的固定步骤清单 | 记入 `actions`，新会话照单执行 |
-| 跨项目复用经验 | 面板全局 tab 或 `memoir_read(scope: 'global', query: ...)` 检索 |
+| 跨项目复用经验 | 面板全局 tab 或 `memoir_read(scope: 'global', query: ...)` |
 
-## 记忆文件格式
+典型例子：第一次解决「控制台中文乱码」后把诊断结论与修复步骤记成一条 lessons（如 `先 chcp 65001 …写文件一律 UTF-8 无 BOM`），此后本项目每个新会话都自动继承这条经验，不再重复排查；跨项目用全局检索也能命中。记忆插件做的是把「根因 + 修复命令」沉淀为项目知识，不负责根治终端本身的编码缺陷。
 
-`PROJECT_MEMORY.md`（项目级，由结构化条目自动重新生成）：
+## Comparison
 
-```markdown
-# 项目持久记忆 Project Memory
+| 项目 | 主要定位 |
+| --- | --- |
+| dsh-memory | citation / 来源可追溯的引用式记忆 |
+| dsh-mnemon | 更重的长期记忆体系 |
+| distill | 会话蒸馏成 skill |
+| **dsh-memoir** | **轻量的项目工作流记忆：本地、有界注入、排序召回** |
 
-## 工作记录 Work Log
-- [2026-01-15 14:20] [工作记录] 修复 pet 悬停闪退 — 根因是 ...
+各插件定位不同，按需选择，不做谁强谁弱的比较。
 
-## 经验教训 Lessons Learned
-- [2026-01-15 14:21] [经验教训] ...
-
-## 行动指南 Action Guide
-- [2026-01-15 14:22] [行动指南] ...
-```
-
-全局索引 `~/.dsh/dsh-memoir.json` 以工作区路径为键，保存结构化条目（含 id、分类、标题、正文、时间、会话 id），是面板与工具共同读写的数据源；项目 markdown 文件是同一数据的可读渲染（git 友好）。
-
-## 设计参考
-
-面板形态与协议参照本机 dsh-web-ui 家族插件的既有约定（侧边栏 DOM 注入、中心列面板、`dsh-panel-activate` 互斥协调、`/api` JSON envelope + CSRF content-type 门禁、`__ModuleLoader__` 闭包工厂 client bundle），并吸收了社区同类高星插件的思路：
-
-- [dsh-memory](https://github.com/Jesse-njx/dsh-memory)（引用式记忆）—— 每条记忆携带会话来源，本插件的条目同样记录 `sessionId`；
-- [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon)（三层记忆）—— 本插件对应「自动注入的项目记忆 + 可检索的全局记忆」两层；
-- [DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) / [dsh-side-panel](https://github.com/ccq1/dsh-side-panel)（侧边栏工作台）—— 面板的多 tab + 检索式布局；
-- [distill](https://github.com/LoserFox/distill)（自动对话蒸馏）—— 「任务收尾时归纳沉淀」的实现（本插件用 `agent/turn-stopping` + `agent.steer` 的官方事件机制在进程内完成同样的事）；
-- [dsh-plugins: bounded cross-session memory](https://github.com/deepseek-ai/deepseek-harness/discussions/525) —— `MEMORY.md` 式有界跨会话记忆文件。
-
-## 设计思路
-
-- **Cache-aware 注入（v0.4）**：system prompt 不再注入完整历史，而是由 selector 在 token 预算（默认 900/1200）内选出 Hot Memory（pinned > actions > lessons > 近期 work，note 不注入）；每个 session 的注入文本只构建一次并冻结（snapshot.ts），同一 session 后续 assembly 复用同一快照——模型输入前缀稳定，最大化 prompt-prefix cache 命中率；新 session 才重建并继承新记忆。
-- **本地排序召回（v0.4.1）**：`memoir_read` 的 query 从「子串过滤」升级为倒排索引 + BM25 排序（中文 2-gram / 英文单词 / 代码与路径标识符分词；标题 2.5× 加权、精确短语加权、分类权重、时间衰减），无 embedding、无外部服务；查询结果进 epoch 感知的 LRU 缓存——store 任何写入（含外部进程修改）自动失效。curated 36 条查询 Top-5 命中率 100%（门禁 ≥90%，见 `test/recall-quality.test.ts`）。
-- **可观测性（v0.4）**：`/api/dsh-memoir/diagnostics` 与面板底部诊断区暴露 store revision、缓存命中率、快照数量与注入 token 估算，`npm run bench` 生成 benchmark 报告（见 `bench/report.md`）。
-- **单一数据源**：结构化 JSON（`~/.dsh/dsh-memoir.json`）是唯一事实源，`PROJECT_MEMORY.md` 由它重新生成——文件、面板、工具三者永远一致，人工编辑文件不会被意外覆盖（下次写入按源重新生成，但源里没有的内容会丢失，因此约定人工维护走面板/工具）。
-- **两层记忆，各司其职**：项目级（自动注入，成为行动指南）+ 全局级（按需检索，绝不注入，防止 prompt 膨胀与串项目）。
-- **官方事件机制做自动沉淀**：`agent/turn-stopping` + `agent.steer`（与 goal-round-driver 同款），不造轮子；配安全边界——只蒸馏有工具调用的回合、已记录过就跳过、子代理/嵌套委托/已取消回合不打扰、每回合至多一次。
-- **agent 与用户写同一份数据**：面板手动录入、`memoir_record` 工具、自动收尾，三条路径全部落到同一个 store。
-- **与家族插件协议对齐**：侧边栏入口与 SSH/任务看板同序自愈、中心列面板互斥（`dsh-panel-activate`）、`/api` JSON envelope + `application/json` CSRF 门禁、client 走 `__ModuleLoader__` 闭包工厂协议且外部依赖仅限平台模块表（构建期纯净性测试把关）。
-- **可测试性优先**：store / 决策函数 / 路由 handler / 面板纯逻辑全部依赖注入、脱离运行时单测；bundle 本身有协议与纯净性回归测试。
-
-## 实现说明
-
-- **TypeScript 全栈**：`src/host/*.ts`（store / tools / routes / autodistill / index，tsc 构建出 `lib/*.js` + 类型声明）+ `src/client/*.ts(x)`（esbuild 打出 `lib/client.js` 闭包工厂 bundle）。
-- **双面插件**：host 半注册 agent 工具、`/api/dsh-memoir` 路由、`agent/turn-stopping` 自动收尾监听与按项目求值的 system prompt 注入段；client 半提供面板。运行时仅依赖官方 NPM SDK（`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-client-runtime`）。
-- 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
-- 自动收尾的安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止的回合不打扰、每回合至多触发一次（`AutoDistillGate`）。
-
-## 开发与测试
+## Development / Benchmark / Tests
 
 ```bash
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 107 项测试：store（含缓存） / snapshot / selector / retrieval（含召回质量门禁） / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
-npm run bench         # benchmark（100/1k/10k 条目），结果写入 bench/report.md
+pnpm test             # 131 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
-v0.4.1 benchmark 摘要（node v22，budget 900/1200 tokens；完整报告见 `bench/report.md`）：
+质量门禁：**Top-5 recall ≥ 90% · Hot Memory ≤ 配置 hardMax · 同会话 prompt 前缀稳定 · 全局召回 ≤ limit · 多进程写入零丢失**。
 
-| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 冷查询 | 热查询(缓存) | 全量 markdown tokens | 注入 tokens | 降幅 |
-|---|---|---|---|---|---|---|---|---|---|
-| 100 | 1.3 ms | 2.8 µs | 0.55 ms | 2.3 ms | 0.012 ms | 0.98 µs | 3870 | 923 | 76.1% |
-| 1,000 | 1.4 ms | 0.4 µs | 0.58 ms | 14.4 ms | 0.002 ms | 1.0 µs | 38182 | 906 | 97.6% |
-| 10,000 | 21.6 ms | 0.5 µs | 1.73 ms | 150.1 ms | 0.002 ms | 1.1 µs | 385807 | 922 | 99.8% |
+v0.4.2 benchmark 摘要（node v22.23.2，budget 900/1200 tokens；完整报告见 `bench/report.md`。方法已修正：uncached 查询直测 `search()`、cached 查询先预热同一 query 再计时）：
+
+| 条目数 | 冷加载 | 热读取 | Hot Memory 构建 | 索引构建 | 未缓存查询 | 缓存查询 | 缓存命中率 | 全量 markdown tokens | 注入 tokens | 降幅 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 100 | 1.3 ms | 2.22 µs | 0.54 ms | 2.9 ms | 0.224 ms | 2.87 µs | 50.0% | 3870 | 902 | 76.7% |
+| 1,000 | 1.6 ms | 0.40 µs | 0.70 ms | 15.0 ms | 1.419 ms | 1.45 µs | 50.0% | 38182 | 916 | 97.6% |
+| 10,000 | 25.3 ms | 0.42 µs | 2.60 ms | 142.9 ms | 11.889 ms | 1.14 µs | 50.0% | 385807 | 902 | 99.8% |
+| 100,000 | 158.2 ms | 0.42 µs | 31.97 ms | 2238.7 ms | 153.551 ms | 1.15 µs | 50.0% | 3907057 | 917 | 100.0% |
+
+## 实现说明
+
+- **TypeScript 全栈**：`src/host/*.ts`（store / tools / retrieval / selector / snapshot / routes / autodistill / index，tsc 构建出 `lib/*.js`）+ `src/client/*.ts(x)`（esbuild 打出 `lib/client.js` 闭包工厂 bundle）。
+- **双面插件**：host 半注册 agent 工具、`/api/dsh-memoir` 路由、`agent/turn-stopping` 自动收尾监听与按项目求值的 system prompt 注入段；client 半提供面板。运行时仅依赖官方 NPM SDK。
+- 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
+- 自动收尾安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止回合不打扰、每回合至多一次。
 
 ## 许可
 
