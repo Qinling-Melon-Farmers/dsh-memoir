@@ -252,41 +252,47 @@ test('GET hot-memory returns the inspector preview', async () => {
 })
 
 test('panel writes outside the allowed workspace set are rejected', async () => {
-  const store = new MemoirStore(makeTempStorePath())
-  const allowed = (path: string) => path === 'C:\\ok'
-  const handler = makeRoutes(store, undefined, undefined, undefined, allowed)[0]!.handler
-  const rejected = await callRoute(handler, {
-    method: 'POST',
-    url: '/api/dsh-memoir/entries',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ path: 'C:\\evil', section: 'work', content: 'x' }),
-  })
-  assert.equal(rejected.status, 403)
-  assert.equal(rejected.envelope.error?.code, 'forbidden')
-  const accepted = await callRoute(handler, {
-    method: 'POST',
-    url: '/api/dsh-memoir/entries',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ path: 'C:\\ok', section: 'work', content: 'x' }),
-  })
-  assert.equal(accepted.status, 200)
-  // DELETE is gated the same way.
-  const deleteRejected = await callRoute(handler, {
-    method: 'DELETE',
-    url: '/api/dsh-memoir/entries',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ path: 'C:\\evil', id: 'e1' }),
-  })
-  assert.equal(deleteRejected.status, 403)
-  // Without a guard the legacy behavior is preserved (tests/embedded use).
-  const open = makeRoutes(store)[0]!.handler
-  const legacy = await callRoute(open, {
-    method: 'POST',
-    url: '/api/dsh-memoir/entries',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ path: 'C:\\evil', section: 'work', content: 'x' }),
-  })
-  assert.equal(legacy.status, 200)
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const allowed = (path: string) => path === ws.cwd
+    const handler = makeRoutes(store, undefined, undefined, undefined, allowed)[0]!.handler
+    // A browser-supplied absolute path is not authorization.
+    const rejected = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: 'C:\\evil', section: 'work', content: 'x' }),
+    })
+    assert.equal(rejected.status, 403)
+    assert.equal(rejected.envelope.error?.code, 'forbidden')
+    const accepted = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: ws.cwd, section: 'work', content: 'x' }),
+    })
+    assert.equal(accepted.status, 200)
+    // DELETE is gated the same way.
+    const deleteRejected = await callRoute(handler, {
+      method: 'DELETE',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: 'C:\\evil', id: 'e1' }),
+    })
+    assert.equal(deleteRejected.status, 403)
+    // Without a guard the legacy behavior is preserved (embedded use).
+    const open = makeRoutes(store)[0]!.handler
+    const legacy = await callRoute(open, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: ws.cwd, section: 'work', content: 'x' }),
+    })
+    assert.equal(legacy.status, 200)
+  } finally {
+    ws.cleanup()
+  }
 })
 
 test('GET diagnostics reports cache stats and hot-memory selection', async () => {
