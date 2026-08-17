@@ -47,6 +47,13 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'diag.cache': 'Store cache',
     'diag.render': 'Render cache',
     'diag.hot': 'Hot memory',
+    'diag.retrieval': 'Retrieval 索引',
+    'diag.qcache': 'Query cache',
+    'diag.lastQuery': '最近查询',
+    'diag.snapshotInfo': '会话快照',
+    'inspector.title': 'Hot Memory 预览',
+    'inspector.empty': '本工作区暂无 Hot Memory',
+    'search.ranked': '按相关性排序',
   },
   en: {
     'entry.label': 'Memory',
@@ -89,6 +96,13 @@ export const dictionaries: Record<Lang, Record<string, string>> = {
     'diag.cache': 'Store cache',
     'diag.render': 'Render cache',
     'diag.hot': 'Hot memory',
+    'diag.retrieval': 'Retrieval index',
+    'diag.qcache': 'Query cache',
+    'diag.lastQuery': 'Last query',
+    'diag.snapshotInfo': 'Session snapshot',
+    'inspector.title': 'Hot Memory Inspector',
+    'inspector.empty': 'No hot memory in this workspace yet',
+    'search.ranked': 'Ranked by relevance',
   },
 }
 

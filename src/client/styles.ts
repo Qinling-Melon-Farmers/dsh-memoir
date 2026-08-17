@@ -109,6 +109,22 @@ html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir
 .memoir-entry-row[data-active="true"] { background: var(--bg-hover, rgba(0,0,0,.08)); }
 .memoir-entry-icon { display: inline-flex; }
 
+/* v0.4.2 ranked search */
+.memoir-ranked-note { font-size: 11px; opacity: .65; margin: 4px 0 8px; }
+.memoir-score {
+  float: right; border-radius: 999px; padding: 0 7px; font-size: 10px; line-height: 16px;
+  background: var(--chip-bg, rgba(59,130,246,.12)); color: var(--chip-fg, #2563eb); opacity: .8;
+}
+
+/* v0.4.2 Hot Memory Inspector */
+.memoir-inspector { margin: 0 14px; border-top: 1px solid var(--border, rgba(0,0,0,.1)); padding-top: 8px; }
+.memoir-inspector-body {
+  font-size: 11px; opacity: .85; margin: 6px 0 0; padding: 8px 10px;
+  border: 1px solid var(--border, rgba(0,0,0,.1)); border-radius: 8px;
+  background: var(--bg-card, rgba(0,0,0,.02)); white-space: pre-wrap; word-break: break-word;
+  font-family: inherit; max-height: 220px; overflow-y: auto;
+}
+
 body[data-ds-dark-theme] [data-dsh-memoir-view] {
   background: var(--bg-panel, #16181d);
   color: var(--text-primary, #e6e6e6);
