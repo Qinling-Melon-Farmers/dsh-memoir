@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { memoirRecordTool, memoirReadTool, resolveWorkspace } from '../lib/tools.js'
+import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 test('resolveWorkspace extracts the agent session cwd', () => {
@@ -152,6 +153,43 @@ test('memoir_read default limit 8 with compact one-line entries', async () => {
     // compact shape: id prefix + content, no timestamps
     assert.match(value.text, /- \[[0-9a-f]+\] /)
     assert.ok(!/\d{4}-\d{2}-\d{2}/.test(value.text), 'no timestamps in compact')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('memoir_read global ranked limit is a true global Top-K (not per project)', async () => {
+  const workspaces = Array.from({ length: 20 }, () => makeTempWorkspace())
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    for (const ws of workspaces) {
+      store.record(ws.cwd, { section: 'lessons', content: '共享关键词' })
+    }
+    const retrieval = new RetrievalEngine(store)
+    const read = memoirReadTool(store, { defaultLimit: 8, maxLimit: 30 }, retrieval)
+    const value = (await read.execute({ scope: 'global', query: '共享关键词', limit: 8 }, makeExec(workspaces[0].cwd))) as { text: string }
+    const bullets = (value.text.match(/^- \[/gm) ?? []).length
+    assert.ok(bullets > 0, 'some ranked results present')
+    assert.ok(bullets <= 8, 'total entries ≤ limit across all projects, got ' + bullets)
+  } finally {
+    for (const ws of workspaces) ws.cleanup()
+  }
+})
+
+test('memoir_read output budget preserves the top-ranked head', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    // 30 entries, ~650 chars each → full output ≈ 20k chars > 16k budget.
+    for (let i = 0; i < 30; i++) {
+      store.record(ws.cwd, { section: 'lessons', content: 'key-' + i + ' ' + 'x'.repeat(600) })
+    }
+    const retrieval = new RetrievalEngine(store)
+    const read = memoirReadTool(store, { defaultLimit: 8, maxLimit: 30 }, retrieval)
+    const value = (await read.execute({ scope: 'project', query: 'key', limit: 30, detail: 'full' }, makeExec(ws.cwd))) as { text: string }
+    assert.ok(value.text.includes('已保留相关性最高'), 'budget clip note present')
+    assert.ok(value.text.includes('key-29'), 'newest (top-ranked) entry survives truncation')
+    assert.ok(!value.text.includes('key-0 '), 'oldest (lowest-ranked) entry dropped by the budget')
   } finally {
     ws.cleanup()
   }
