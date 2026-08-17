@@ -35,8 +35,12 @@ export interface RetrievalIndex {
   /** Store epoch this index was built from (cache invalidation key). */
   epoch: number
   docs: number
-  avgDocLength: number
-  docLengths: Map<string, number>
+  /** Body field length normalization (v0.4.2: independent of title). */
+  avgBodyLength: number
+  bodyLengths: Map<string, number>
+  /** Title field length normalization (v0.4.2: independent of body). */
+  avgTitleLength: number
+  titleLengths: Map<string, number>
   body: Postings
   title: Postings
 }
@@ -233,8 +237,10 @@ export class RetrievalEngine {
     if (this.index !== null && this.index.epoch === epoch) return this.index
     const body: Postings = new Map()
     const title: Postings = new Map()
-    const docLengths = new Map<string, number>()
-    let totalLength = 0
+    const bodyLengths = new Map<string, number>()
+    const titleLengths = new Map<string, number>()
+    let totalBodyLength = 0
+    let totalTitleLength = 0
     let docs = 0
     const add = (field: Postings, entryId: string, terms: string[]): void => {
       for (const term of terms) {
@@ -267,8 +273,10 @@ export class RetrievalEngine {
     this.index = {
       epoch,
       docs,
-      avgDocLength: docs === 0 ? 0 : totalLength / docs,
-      docLengths,
+      avgBodyLength: docs === 0 ? 0 : totalBodyLength / docs,
+      bodyLengths,
+      avgTitleLength: docs === 0 ? 0 : totalTitleLength / docs,
+      titleLengths,
       body,
       title,
     }
@@ -294,9 +302,11 @@ export class RetrievalEngine {
     const ranked: RankedEntry[] = []
     for (const entry of candidates) {
       if (options.section !== undefined && entry.section !== options.section) continue
-      const docLength = index.docLengths.get(entry.id) ?? 0
-      const bodyScore = bm25Field(index.body, queryTerms, entry.id, docLength, index.avgDocLength, index.docs)
-      const titleScore = bm25Field(index.title, queryTerms, entry.id, docLength, index.avgDocLength, index.docs)
+      // v0.4.2: body and title normalize against their own average lengths.
+      const bodyLength = index.bodyLengths.get(entry.id) ?? 0
+      const titleLength = index.titleLengths.get(entry.id) ?? 0
+      const bodyScore = bm25Field(index.body, queryTerms, entry.id, bodyLength, index.avgBodyLength, index.docs)
+      const titleScore = bm25Field(index.title, queryTerms, entry.id, titleLength, index.avgTitleLength, index.docs)
       let score = bodyScore + TITLE_BOOST * titleScore
       if (bodyScore === 0 && titleScore === 0) continue
       if (normalizedText(entry).includes(q)) score += EXACT_PHRASE_BOOST
