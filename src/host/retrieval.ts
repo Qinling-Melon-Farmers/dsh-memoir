@@ -53,10 +53,33 @@ export interface RankedEntry {
   score: number
 }
 
-/** A minimal LRU cache (Map insertion order = recency). */
+/** Time bucket size for the ranking cache (recency is part of the score). */
+export const QUERY_CACHE_TIME_BUCKET_MS = 3_600_000
+
+/** Retrieval observability snapshot (diagnostics endpoint, roadmap §6.3). */
+export interface RetrievalDiagnostics {
+  /** Inverted-index shape; null before the first build. */
+  index: { docs: number; terms: number; epoch: number } | null
+  /** Query LRU counters. */
+  cache: {
+    hits: number
+    misses: number
+    evictions: number
+    hitRate: number
+    size: number
+    capacity: number
+  }
+  /** The last executed search (a cache hit does not re-run the search). */
+  lastQuery: { query: string; latencyMs: number; candidates: number; returned: number; at: number } | null
+}
+
+/** A minimal LRU cache (Map insertion order = recency) with hit stats. */
 export class LruCache<V> {
   private readonly values = new Map<string, V>()
   private readonly max: number
+  private hitCount = 0
+  private missCount = 0
+  private evictionCount = 0
 
   constructor(max: number) {
     this.max = max
@@ -315,25 +338,37 @@ export class RetrievalEngine {
       ranked.push({ entry, projectPath: this.pathById.get(entry.id) ?? '', score })
     }
     ranked.sort((a, b) => b.score - a.score || b.entry.time - a.entry.time || a.entry.id.localeCompare(b.entry.id))
+    this.lastQuery = {
+      query,
+      latencyMs: Date.now() - startedAt,
+      candidates: candidates.length,
+      returned: ranked.length,
+      at: Date.now(),
+    }
     return ranked
   }
 
   /**
-   * Cached search: the key includes the store epoch, so any write (or
-   * external file change) invalidates the cache automatically.
+   * Cached search: the key is epoch + cwd + section + normalized query +
+   * 1-hour time bucket. v0.4.2: limit/detail are NOT part of the key — they
+   * only shape output, never the ranking — so every limit/detail variant
+   * shares the same full ranked result, and the tool layer slices from it.
+   * The time bucket stops the recency part of the score from freezing for
+   * the whole epoch.
    */
   cachedSearch(
     query: string,
     options: { section?: SectionKey; cwd?: string; now?: number; limit?: number; detail?: string } = {},
   ): RankedEntry[] {
+    const now = options.now ?? Date.now()
+    const timeBucket = Math.floor(now / QUERY_CACHE_TIME_BUCKET_MS)
     const epoch = this.ensureIndex().epoch
     const key = [
       String(epoch),
       options.cwd ?? '',
       options.section ?? '',
       query.toLowerCase().replace(/\s+/g, ' ').trim(),
-      String(options.limit ?? 0),
-      options.detail ?? '',
+      String(timeBucket),
     ].join('|')
     const hit = this.queryCache.get(key)
     if (hit !== undefined) return hit

@@ -188,3 +188,37 @@ test('title score is independent of body length', () => {
   }
 })
 
+test('limit/detail do not change the ranking cache key', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'lessons', content: '乱码先 chcp 65001' })
+    const engine = new RetrievalEngine(store)
+    engine.cachedSearch('乱码', { cwd: ws.cwd, limit: 3, detail: 'compact' })
+    const second = engine.cachedSearch('乱码', { cwd: ws.cwd, limit: 30, detail: 'full' })
+    assert.equal(second.length, 1)
+    assert.equal(engine.queryCache.size, 1, 'one shared cache entry across limit/detail variants')
+    assert.equal(engine.queryCache.misses, 1)
+    assert.equal(engine.queryCache.hits, 1)
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('time bucket refreshes recency ranking across hours', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'work', content: '统一关键词' })
+    const engine = new RetrievalEngine(store)
+    const t0 = 1_700_000_000_000
+    engine.cachedSearch('统一关键词', { cwd: ws.cwd, now: t0 })
+    engine.cachedSearch('统一关键词', { cwd: ws.cwd, now: t0 })
+    assert.equal(engine.queryCache.size, 1, 'same bucket → same key')
+    engine.cachedSearch('统一关键词', { cwd: ws.cwd, now: t0 + 2 * 3_600_000 })
+    assert.equal(engine.queryCache.size, 2, 'different hour bucket → fresh key')
+  } finally {
+    ws.cleanup()
+  }
+})
+
