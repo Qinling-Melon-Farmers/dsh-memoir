@@ -25,8 +25,12 @@ export interface RetrievalIndex {
     /** Store epoch this index was built from (cache invalidation key). */
     epoch: number;
     docs: number;
-    avgDocLength: number;
-    docLengths: Map<string, number>;
+    /** Body field length normalization (v0.4.2: independent of title). */
+    avgBodyLength: number;
+    bodyLengths: Map<string, number>;
+    /** Title field length normalization (v0.4.2: independent of body). */
+    avgTitleLength: number;
+    titleLengths: Map<string, number>;
     body: Postings;
     title: Postings;
 }
@@ -47,9 +51,17 @@ export declare class LruCache<V> {
     set(key: string, value: V): void;
 }
 /**
- * Tokenize text for indexing/querying. Both sides use the same function,
- * so n-gram sets always align.
+ * Tokenize one document for indexing: repeats are KEPT so the inverted
+ * index preserves true term frequency ("cache cache cache cache" indexes
+ * cache ×4, not ×1).
  */
+export declare function tokenizeDocument(text: string): string[];
+/**
+ * Tokenize a query: repeats are deduplicated (a query term counts once
+ * per document field, standard BM25 query semantics).
+ */
+export declare function tokenizeQuery(text: string): string[];
+/** v0.4.1 compat alias — query semantics (deduplicated). */
 export declare function tokenize(text: string): string[];
 /**
  * Ranked local retrieval over the store — rebuilt lazily per store epoch.

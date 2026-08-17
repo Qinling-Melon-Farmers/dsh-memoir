@@ -101,10 +101,10 @@ function splitCamel(token: string): string[] {
 }
 
 /**
- * Tokenize text for indexing/querying. Both sides use the same function,
- * so n-gram sets always align.
+ * Tokenize text for indexing/querying (shared n-gram rules so both sides
+ * align), optionally deduplicating the token list.
  */
-export function tokenize(text: string): string[] {
+function tokenizeInternal(text: string, dedupe: boolean): string[] {
   const tokens: string[] = []
   let cjk = ''
   let latin = ''
@@ -147,7 +147,29 @@ export function tokenize(text: string): string[] {
   }
   flushLatin()
   flushCjk()
-  return [...new Set(tokens)]
+  return dedupe ? [...new Set(tokens)] : tokens
+}
+
+/**
+ * Tokenize one document for indexing: repeats are KEPT so the inverted
+ * index preserves true term frequency ("cache cache cache cache" indexes
+ * cache ×4, not ×1).
+ */
+export function tokenizeDocument(text: string): string[] {
+  return tokenizeInternal(text, false)
+}
+
+/**
+ * Tokenize a query: repeats are deduplicated (a query term counts once
+ * per document field, standard BM25 query semantics).
+ */
+export function tokenizeQuery(text: string): string[] {
+  return tokenizeInternal(text, true)
+}
+
+/** v0.4.1 compat alias — query semantics (deduplicated). */
+export function tokenize(text: string): string[] {
+  return tokenizeQuery(text)
 }
 
 /** BM25 score of one doc field against the query terms. */
@@ -230,10 +252,13 @@ export class RetrievalEngine {
       for (const entry of project.entries) {
         this.entriesById.set(entry.id, entry)
         this.pathById.set(entry.id, project.path)
-        const bodyTerms = tokenize(entry.content)
-        const titleTerms = entry.title !== undefined ? tokenize(entry.title) : []
-        docLengths.set(entry.id, bodyTerms.length)
-        totalLength += bodyTerms.length
+        // v0.4.2: documents keep repeated tokens — true term frequency.
+        const bodyTerms = tokenizeDocument(entry.content)
+        const titleTerms = entry.title !== undefined ? tokenizeDocument(entry.title) : []
+        bodyLengths.set(entry.id, bodyTerms.length)
+        titleLengths.set(entry.id, titleTerms.length)
+        totalBodyLength += bodyTerms.length
+        totalTitleLength += titleTerms.length
         docs++
         add(body, entry.id, bodyTerms)
         add(title, entry.id, titleTerms)
@@ -257,7 +282,7 @@ export class RetrievalEngine {
   ): RankedEntry[] {
     const index = this.ensureIndex()
     const now = options.now ?? Date.now()
-    const queryTerms = tokenize(query)
+    const queryTerms = tokenizeQuery(query)
     if (queryTerms.length === 0) return []
     const q = query.toLowerCase().replace(/\s+/g, ' ').trim()
     const candidates: MemoirEntry[] = []

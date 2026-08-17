@@ -9,7 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { MemoirStore } from '../lib/store.js'
-import { LruCache, RetrievalEngine, tokenize } from '../lib/retrieval.js'
+import { LruCache, RetrievalEngine, tokenize, tokenizeDocument, tokenizeQuery } from '../lib/retrieval.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 test('tokenize: chinese 2-grams and 3-grams', () => {
@@ -134,6 +134,55 @@ test('empty query terms return no ranked results', () => {
     store.record(ws.cwd, { section: 'work', content: 'x' })
     const engine = new RetrievalEngine(store)
     assert.deepEqual(engine.search('---', { cwd: ws.cwd }), [])
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('tokenizeDocument keeps repeats (true TF), tokenizeQuery dedupes', () => {
+  const doc = tokenizeDocument('cache cache cache cache')
+  const query = tokenizeQuery('cache cache cache cache')
+  assert.equal(doc.length, 4, 'document keeps term frequency')
+  assert.equal(doc.filter((t) => t === 'cache').length, 4)
+  assert.equal(query.length, 1, 'query dedupes')
+  assert.deepEqual(tokenize('cache cache'), ['cache'], 'tokenize alias stays query-like')
+})
+
+test('BM25 term frequency: repeated terms outrank a single occurrence', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'work', content: 'cache' })
+    store.record(ws.cwd, { section: 'work', content: 'cache cache cache cache cache' })
+    const engine = new RetrievalEngine(store)
+    const ranked = engine.search('cache', { cwd: ws.cwd })
+    assert.equal(ranked.length, 2)
+    assert.ok(
+      ranked[0].entry.content.includes('cache cache cache'),
+      'the high-TF doc ranks first: ' + ranked.map((r) => r.entry.content).join(' | '),
+    )
+    assert.ok(ranked[0].score > ranked[1].score, 'score(' + ranked[0].score + ') > score(' + ranked[1].score + ')')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('title score is independent of body length', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    // Same title, wildly different body lengths; neither body contains "cache".
+    store.record(ws.cwd, { section: 'work', title: 'SSH cache', content: '短' })
+    store.record(ws.cwd, { section: 'work', title: 'SSH cache', content: '无关正文'.repeat(200) })
+    const engine = new RetrievalEngine(store)
+    const ranked = engine.search('SSH cache', { cwd: ws.cwd })
+    assert.equal(ranked.length, 2)
+    // Record timestamps may differ by a few ms (recency term), so compare the
+    // title/body-driven part with an epsilon rather than strict equality.
+    assert.ok(
+      Math.abs(ranked[0].score - ranked[1].score) < 1e-6,
+      'title contribution identical regardless of body length: ' + ranked[0].score + ' vs ' + ranked[1].score,
+    )
   } finally {
     ws.cleanup()
   }
