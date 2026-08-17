@@ -64,8 +64,14 @@ export declare class MemorySnapshotManager {
 /**
  * Derive a stable session key from the system-prompt assemble context:
  * prefer the session id, then the agent id; always scoped by the workspace
- * cwd. Returns undefined when neither is known (no freezing then — every
- * assembly builds fresh, which is still correct, just less cache-friendly).
+ * cwd. Returns undefined when no unique identity is known — no freezing then,
+ * every assembly builds fresh.
+ *
+ * v0.4.2: the cwd-only fallback was removed. A key of the form "cwd:<path>"
+ * is shared by every session of that workspace, so session A's frozen
+ * snapshot would be served to session B, hiding memory session A itself
+ * wrote. Without a unique session identity, cache miss beats cache
+ * corruption: freeze nothing, rebuild every assembly.
  */
 export declare function sessionKeyOf(context: {
     agent?: {

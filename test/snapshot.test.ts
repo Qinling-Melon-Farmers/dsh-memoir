@@ -9,6 +9,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { MemorySnapshotManager, sessionKeyOf, snapshotHash } from '../lib/snapshot.js'
+import { memoirSectionText, MEMOIR_GUIDANCE } from '../lib/index.js'
+import { MemoirStore } from '../lib/store.js'
+import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 test('getOrCreate freezes the first snapshot for a session', () => {
   const manager = new MemorySnapshotManager()
@@ -48,13 +51,31 @@ test('forget drops one session snapshot', () => {
   assert.equal(manager.size, 0)
 })
 
+test('without a unique session identity, new memory is visible on the next assembly', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const context = { agent: { session: { header: { cwd: ws.cwd } } } }
+    const first = memoirSectionText(store, context)
+    assert.ok(first.includes(MEMOIR_GUIDANCE))
+    assert.ok(!first.includes('新写的记忆'), 'nothing recorded yet')
+    // Same cwd, still no session/agent id: the section must NOT be frozen.
+    store.record(ws.cwd, { section: 'lessons', content: '新写的记忆：不可跨会话复用快照' })
+    const second = memoirSectionText(store, context)
+    assert.ok(second.includes('新写的记忆'), 'fresh build sees the memory written after the first assembly')
+    assert.notEqual(second, first)
+  } finally {
+    ws.cleanup()
+  }
+})
+
 test('snapshotHash is deterministic', () => {
   assert.equal(snapshotHash('同一段文本'), snapshotHash('同一段文本'))
   assert.notEqual(snapshotHash('a'), snapshotHash('b'))
   assert.equal(snapshotHash('').length, 16)
 })
 
-test('sessionKeyOf prefers session id, then agent id, then cwd', () => {
+test('sessionKeyOf prefers session id, then agent id; cwd alone never freezes', () => {
   assert.equal(sessionKeyOf({}), undefined)
   assert.equal(sessionKeyOf({ agent: { session: { header: {} } } }), undefined)
   assert.equal(
@@ -65,9 +86,12 @@ test('sessionKeyOf prefers session id, then agent id, then cwd', () => {
     sessionKeyOf({ agent: { id: 'agent-2', session: { header: { cwd: '/p' } } } }),
     'agent-2|/p',
   )
+  // v0.4.2: a cwd-only key would be shared by every session of the same
+  // workspace and could serve stale frozen memory across sessions.
   assert.equal(
     sessionKeyOf({ agent: { session: { header: { cwd: '/p' } } } }),
-    'cwd:/p',
+    undefined,
+    'no unique identity → no snapshot key → fresh build every assembly',
   )
 })
 
