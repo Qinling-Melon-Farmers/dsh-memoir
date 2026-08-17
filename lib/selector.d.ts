@@ -19,7 +19,11 @@ export interface MemoryBudget {
 export declare const DEFAULT_MEMORY_BUDGET: MemoryBudget;
 /** Section weights for the v0.4 scoring (roadmap §2.3). */
 export declare const SECTION_WEIGHTS: Record<SectionKey, number>;
-/** Canonical render order inside the injected text. */
+/**
+ * Canonical group render order inside the injected text. v0.4.2: work is
+ * intentionally NOT a rendered group — work entries appear only in the
+ * "Recent state" block, so the same work line is never injected twice.
+ */
 export declare const HOT_SECTION_ORDER: SectionKey[];
 /** Recent-work entries shown in the "Recent state" block. */
 export declare const RECENT_WORK_COUNT = 3;
@@ -61,10 +65,21 @@ export interface HotMemoryResult {
     estimatedTokens: number;
 }
 /**
- * Select hot memory under the budget: iterate ranked candidates, add while
- * the estimate stays below targetTokens, never exceed hardMaxTokens (a first
- * entry that alone exceeds the hard cap is truncated into place so the
- * injected text always stays bounded).
+ * Truncate one entry's content so the rendered single-entry block fits the
+ * hard token ceiling. Binary-searches the largest fitting code-point length
+ * (monotone in the token estimate). Used only for the degenerate case of an
+ * oversized FIRST candidate — normal selection never exceeds hardMax.
+ */
+export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number): MemoirEntry;
+/**
+ * Select hot memory under the budget. v0.4.2 quota-based order:
+ *   1. newest work entries (Recent-state floor, 1~RECENT_WORK_COUNT)
+ *   2. ranked actions
+ *   3. ranked lessons
+ *   4. remaining work entries, newest first
+ * Each candidate is added while the rendered estimate stays below
+ * targetTokens; hardMaxTokens is never exceeded (an oversized first
+ * candidate is truncated into place via truncateEntryToBudget).
  *
  * @param entries - one project's entries.
  * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).

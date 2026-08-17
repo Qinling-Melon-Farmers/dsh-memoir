@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { MemoirStore } from '../lib/store.js'
 import {
   DEFAULT_MEMORY_BUDGET, estimateTokens, rankEntries, renderHotMemory,
-  selectHotMemory, compactLine, HOT_MEMORY_HEADER,
+  selectHotMemory, compactLine, HOT_MEMORY_HEADER, truncateEntryToBudget,
 } from '../lib/selector.js'
 import type { MemoirEntry } from '../lib/store.js'
 import { makeTempStorePath } from './helpers.ts'
@@ -135,5 +135,55 @@ test('oversized single entry is truncated into the hard cap', () => {
   assert.ok(result.estimatedTokens <= DEFAULT_MEMORY_BUDGET.hardMaxTokens)
   assert.equal(result.selected.length, 1)
   assert.ok(result.text.includes('…'), 'truncation marker present')
+})
+
+test('work entries are injected exactly once (Recent state only)', () => {
+  const entries: MemoirEntry[] = [
+    { id: 'w1', section: 'work', content: '做了插件', time: 300 },
+    { id: 'a1', section: 'actions', content: '发布前跑测试', time: 200 },
+    { id: 'l1', section: 'lessons', content: '先查契约', time: 100 },
+  ]
+  const result = selectHotMemory(entries, DEFAULT_MEMORY_BUDGET, 400)
+  assert.ok(result.text.includes('做了插件'))
+  assert.equal((result.text.match(/做了插件/g) ?? []).length, 1, 'work appears once')
+  assert.ok(!result.text.includes('Work:'), 'no legacy Work: group')
+  assert.ok(result.text.includes('Recent state:'))
+})
+
+test('newest work survives a flood of actions/lessons (Recent-state floor)', () => {
+  const now = 1_700_000_000_000 + 10_000_000
+  const entries: MemoirEntry[] = [
+    { id: 'newest-work', section: 'work', content: '保底的工作状态', time: now - 1 },
+  ]
+  for (let i = 0; i < 60; i++) {
+    entries.push({ id: 'a' + i, section: 'actions', content: '行动' + i, time: now - 60_000 * i })
+    entries.push({ id: 'l' + i, section: 'lessons', content: '教训' + i, time: now - 60_000 * i })
+  }
+  const result = selectHotMemory(entries, DEFAULT_MEMORY_BUDGET, now)
+  assert.ok(
+    result.selected.some((e) => e.id === 'newest-work'),
+    'newest work entry is selected despite 120 ranked actions/lessons',
+  )
+})
+
+test('custom hardMax 50/100/200 is never exceeded', () => {
+  const now = 1_700_000_000_000 + 200 * 60_000
+  for (const hardMaxTokens of [50, 100, 200]) {
+    const budget = { targetTokens: hardMaxTokens, hardMaxTokens }
+    const result = selectHotMemory(fixture(200), budget, now)
+    assert.ok(
+      result.estimatedTokens <= hardMaxTokens,
+      'hardMax ' + hardMaxTokens + ' exceeded: ' + result.estimatedTokens,
+    )
+    assert.ok(result.selected.length > 0, 'selection is non-empty for hardMax ' + hardMaxTokens)
+  }
+})
+
+test('truncateEntryToBudget fits an oversized entry into a small ceiling', () => {
+  const entry: MemoirEntry = { id: 'big', section: 'lessons', content: '长'.repeat(10000), time: 1 }
+  const truncated = truncateEntryToBudget(entry, 50)
+  assert.ok(truncated.content.length < entry.content.length, 'content shortened')
+  assert.ok(truncated.content.endsWith('…'), 'truncation marker present')
+  assert.ok(estimateTokens(renderHotMemory([truncated])) <= 50, 'rendered single-entry block fits 50 tokens')
 })
 
