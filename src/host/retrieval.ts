@@ -89,9 +89,39 @@ export class LruCache<V> {
     return this.values.size
   }
 
+  /** Configured entry cap. */
+  get capacity(): number {
+    return this.max
+  }
+
+  /** Successful lookups since construction. */
+  get hits(): number {
+    return this.hitCount
+  }
+
+  /** Failed lookups since construction. */
+  get misses(): number {
+    return this.missCount
+  }
+
+  /** Entries evicted past the cap since construction. */
+  get evictions(): number {
+    return this.evictionCount
+  }
+
+  /** hits / (hits + misses), in [0, 1]. */
+  get hitRate(): number {
+    const total = this.hitCount + this.missCount
+    return total === 0 ? 0 : this.hitCount / total
+  }
+
   get(key: string): V | undefined {
     const value = this.values.get(key)
-    if (value === undefined) return undefined
+    if (value === undefined) {
+      this.missCount++
+      return undefined
+    }
+    this.hitCount++
     // Refresh recency.
     this.values.delete(key)
     this.values.set(key, value)
@@ -105,6 +135,7 @@ export class LruCache<V> {
       const oldest = this.values.keys().next().value as string | undefined
       if (oldest === undefined) break
       this.values.delete(oldest)
+      this.evictionCount++
     }
   }
 }
@@ -244,6 +275,7 @@ export class RetrievalEngine {
   private readonly pathById = new Map<string, string>()
   private readonly store: MemoirStore
   readonly queryCache: LruCache<RankedEntry[]>
+  private lastQuery: RetrievalDiagnostics['lastQuery'] = null
 
   /**
    * @param store - the structured store (epoch drives rebuilds).
@@ -311,6 +343,7 @@ export class RetrievalEngine {
     query: string,
     options: { section?: SectionKey; cwd?: string; now?: number } = {},
   ): RankedEntry[] {
+    const startedAt = Date.now()
     const index = this.ensureIndex()
     const now = options.now ?? Date.now()
     const queryTerms = tokenizeQuery(query)
@@ -375,6 +408,25 @@ export class RetrievalEngine {
     const result = this.search(query, options)
     this.queryCache.set(key, result)
     return result
+  }
+
+  /** Retrieval observability snapshot for the diagnostics endpoint. */
+  diagnostics(): RetrievalDiagnostics {
+    const index = this.index
+    return {
+      index: index === null
+        ? null
+        : { docs: index.docs, terms: index.body.size + index.title.size, epoch: index.epoch },
+      cache: {
+        hits: this.queryCache.hits,
+        misses: this.queryCache.misses,
+        evictions: this.queryCache.evictions,
+        hitRate: this.queryCache.hitRate,
+        size: this.queryCache.size,
+        capacity: this.queryCache.capacity,
+      },
+      lastQuery: this.lastQuery,
+    }
   }
 }
 

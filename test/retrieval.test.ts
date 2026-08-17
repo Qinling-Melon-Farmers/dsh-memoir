@@ -167,6 +167,45 @@ test('BM25 term frequency: repeated terms outrank a single occurrence', () => {
   }
 })
 
+test('LruCache tracks hits, misses, evictions and hit rate', () => {
+  const cache = new LruCache<string>(2)
+  assert.equal(cache.hitRate, 0)
+  cache.get('none')
+  cache.set('a', 'A')
+  cache.set('b', 'B')
+  cache.get('a')
+  cache.get('a')
+  cache.set('c', 'C') // evicts b
+  cache.get('b') // miss (b was evicted)
+  assert.equal(cache.hits, 2)
+  assert.equal(cache.misses, 2)
+  assert.equal(cache.evictions, 1)
+  assert.equal(cache.capacity, 2)
+  assert.equal(cache.hitRate, 0.5)
+})
+
+test('engine diagnostics report index, cache and last query', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'work', content: '诊断数据' })
+    const engine = new RetrievalEngine(store)
+    const empty = engine.diagnostics()
+    assert.equal(empty.index, null)
+    assert.equal(empty.lastQuery, null)
+    engine.search('诊断', { cwd: ws.cwd })
+    const d = engine.diagnostics()
+    assert.equal(d.index?.docs, 1)
+    assert.ok((d.index?.terms ?? 0) > 0)
+    assert.ok((d.lastQuery?.candidates ?? 0) >= 1)
+    assert.ok((d.lastQuery?.latencyMs ?? -1) >= 0)
+    assert.equal(d.cache.capacity, 128)
+    assert.equal(d.cache.hitRate, 0)
+  } finally {
+    ws.cleanup()
+  }
+})
+
 test('title score is independent of body length', () => {
   const ws = makeTempWorkspace()
   try {

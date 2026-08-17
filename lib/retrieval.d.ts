@@ -41,12 +41,53 @@ export interface RankedEntry {
     projectPath: string;
     score: number;
 }
-/** A minimal LRU cache (Map insertion order = recency). */
+/** Time bucket size for the ranking cache (recency is part of the score). */
+export declare const QUERY_CACHE_TIME_BUCKET_MS = 3600000;
+/** Retrieval observability snapshot (diagnostics endpoint, roadmap §6.3). */
+export interface RetrievalDiagnostics {
+    /** Inverted-index shape; null before the first build. */
+    index: {
+        docs: number;
+        terms: number;
+        epoch: number;
+    } | null;
+    /** Query LRU counters. */
+    cache: {
+        hits: number;
+        misses: number;
+        evictions: number;
+        hitRate: number;
+        size: number;
+        capacity: number;
+    };
+    /** The last executed search (a cache hit does not re-run the search). */
+    lastQuery: {
+        query: string;
+        latencyMs: number;
+        candidates: number;
+        returned: number;
+        at: number;
+    } | null;
+}
+/** A minimal LRU cache (Map insertion order = recency) with hit stats. */
 export declare class LruCache<V> {
     private readonly values;
     private readonly max;
+    private hitCount;
+    private missCount;
+    private evictionCount;
     constructor(max: number);
     get size(): number;
+    /** Configured entry cap. */
+    get capacity(): number;
+    /** Successful lookups since construction. */
+    get hits(): number;
+    /** Failed lookups since construction. */
+    get misses(): number;
+    /** Entries evicted past the cap since construction. */
+    get evictions(): number;
+    /** hits / (hits + misses), in [0, 1]. */
+    get hitRate(): number;
     get(key: string): V | undefined;
     set(key: string, value: V): void;
 }
@@ -74,6 +115,7 @@ export declare class RetrievalEngine {
     private readonly pathById;
     private readonly store;
     readonly queryCache: LruCache<RankedEntry[]>;
+    private lastQuery;
     /**
      * @param store - the structured store (epoch drives rebuilds).
      * @param options.cacheSize - query LRU cap (config queryCacheSize).
@@ -90,8 +132,12 @@ export declare class RetrievalEngine {
         now?: number;
     }): RankedEntry[];
     /**
-     * Cached search: the key includes the store epoch, so any write (or
-     * external file change) invalidates the cache automatically.
+     * Cached search: the key is epoch + cwd + section + normalized query +
+     * 1-hour time bucket. v0.4.2: limit/detail are NOT part of the key — they
+     * only shape output, never the ranking — so every limit/detail variant
+     * shares the same full ranked result, and the tool layer slices from it.
+     * The time bucket stops the recency part of the score from freezing for
+     * the whole epoch.
      */
     cachedSearch(query: string, options?: {
         section?: SectionKey;
@@ -100,4 +146,6 @@ export declare class RetrievalEngine {
         limit?: number;
         detail?: string;
     }): RankedEntry[];
+    /** Retrieval observability snapshot for the diagnostics endpoint. */
+    diagnostics(): RetrievalDiagnostics;
 }
