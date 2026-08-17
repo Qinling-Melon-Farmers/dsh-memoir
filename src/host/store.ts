@@ -191,16 +191,17 @@ export function formatTime(ms: number): string {
 
 /**
  * Normalize one workspace path into a stable key:
- * strip trailing separators, lowercase the drive letter, unify separators to
- * '/', so `C:\A` / `c:\a\` / `C:/A` map to one bucket. POSIX paths are
- * unchanged apart from trailing separators.
+ * strip trailing separators, unify separators to '/'. Windows drive paths
+ * are FULLY lowercased (v0.4.2) — the canonical bucket key of C:\A /
+ * c:\a\ / C:/A is 'c:/a', so all case variants share one bucket. The
+ * display path stored on the project keeps its original case. POSIX paths
+ * are unchanged apart from trailing separators.
  */
 export function projectKey(cwd: string): string {
   const raw = String(cwd).replace(/[\\/]+$/, '')
   const drive = /^([A-Za-z]):/.exec(raw)
-  const prefix = drive === null ? '' : drive[1].toLowerCase() + ':'
-  const body = drive === null ? raw : raw.slice(2)
-  return prefix + body.replace(/\\/g, '/')
+  if (drive === null) return raw
+  return (drive[1] + ':' + raw.slice(2)).toLowerCase().replace(/\\/g, '/')
 }
 
 /** Project display title: the last path segment. */

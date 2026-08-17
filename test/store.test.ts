@@ -175,6 +175,32 @@ test('corrupted store file recovers to an empty store', () => {
   }
 })
 
+test('projectKey fully lowercases windows drive paths (one bucket)', () => {
+  assert.equal(projectKey('C:\\A'), 'c:/a')
+  assert.equal(projectKey('c:\\a\\'), 'c:/a')
+  assert.equal(projectKey('C:/A'), 'c:/a')
+  assert.equal(projectKey('c:\\A\\Sub'), 'c:/a/sub')
+  // POSIX stays case-sensitive.
+  assert.equal(projectKey('/Home/User'), '/Home/User')
+})
+
+test('windows case variants merge into one store bucket, display path kept', () => {
+  const path = makeTempStorePath()
+  writeFileSync(path, JSON.stringify({
+    version: 2,
+    projects: {
+      'C:\\A': { path: 'C:\\A', title: 'proj', updatedAt: 1, entries: [{ id: 'e1', section: 'work', content: 'one', time: 1 }] },
+      'c:\\a\\': { path: 'c:\\a\\', title: 'proj', updatedAt: 2, entries: [{ id: 'e2', section: 'work', content: 'two', time: 2 }] },
+      'C:/A': { path: 'C:/A', title: 'proj', updatedAt: 3, entries: [{ id: 'e3', section: 'work', content: 'three', time: 3 }] },
+    },
+  }))
+  const store = new MemoirStore(path)
+  const projects = store.listProjects()
+  assert.equal(projects.length, 1, 'one canonical bucket')
+  assert.equal(store.entries('c:\\a').length, 3, 'all three case variants merged')
+  assert.equal(store.project('C:/A')?.path, 'C:\\A', 'first display path kept')
+})
+
 test('withFileLock releases the lock when fn throws', () => {
   const ws = makeTempWorkspace()
   try {
