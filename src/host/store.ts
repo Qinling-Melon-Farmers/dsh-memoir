@@ -15,7 +15,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -128,6 +128,60 @@ export function defaultStorePath(): string {
   return join(homedir(), '.dsh', 'dsh-memoir.json')
 }
 
+/** Cross-process mutation lock defaults (roadmap §2.2). */
+export const DEFAULT_LOCK_RETRY_MS = 25
+export const DEFAULT_LOCK_TIMEOUT_MS = 5000
+
+/** Blocking sleep for short lock retries. */
+function sleepSync(ms: number): void {
+  const buffer = new Int32Array(new SharedArrayBuffer(4))
+  Atomics.wait(buffer, 0, 0, ms)
+}
+
+/**
+ * Run fn while holding an exclusive lock file created with openSync('wx')
+ * (atomic O_EXCL create, no race window). Retries every retryMs until
+ * timeoutMs, then throws. The lock is always released in finally — even
+ * when fn throws. Used to serialize read-modify-write store mutations
+ * across processes sharing one ~/.dsh/dsh-memoir.json.
+ */
+export function withFileLock<T>(
+  lockPath: string,
+  fn: () => T,
+  options: { retryMs?: number; timeoutMs?: number } = {},
+): T {
+  const retryMs = options.retryMs ?? DEFAULT_LOCK_RETRY_MS
+  const timeoutMs = options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
+  const started = Date.now()
+  let fd: number | null = null
+  for (;;) {
+    try {
+      fd = openSync(lockPath, 'wx')
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (Date.now() - started >= timeoutMs) {
+        throw new Error('dsh-memoir: store lock timeout after ' + timeoutMs + 'ms (' + lockPath + ') — another process may hold a stale lock')
+      }
+      sleepSync(retryMs)
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    try {
+      closeSync(fd)
+    } catch {
+      // already closed
+    }
+    try {
+      unlinkSync(lockPath)
+    } catch {
+      // already released
+    }
+  }
+}
+
 /** `YYYY-MM-DD HH:mm` in local time. */
 export function formatTime(ms: number): string {
   const d = new Date(ms)
@@ -212,6 +266,12 @@ export class MemoirStore {
   /** How often warm load() calls re-probe the file mtime (0 = every call). */
   readonly mtimeCheckIntervalMs: number
 
+  /** Cross-process mutation lock retry interval (withFileLock). */
+  readonly lockRetryMs: number
+
+  /** Cross-process mutation lock acquisition timeout (withFileLock). */
+  readonly lockTimeoutMs: number
+
   /** The in-memory snapshot backing warm reads. */
   private snapshot: StoreSnapshot | null = null
   /** Write counter; bumped on every save() (record/remove). */
@@ -238,10 +298,39 @@ export class MemoirStore {
    * @param path - store file path (defaults to the standard location).
    * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
    *   every load (tests), defaults to a low-frequency 2000ms.
+   * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
+   *   tuning (tests shrink these; defaults 25ms / 5000ms).
    */
-  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number }) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number }) {
     this.path = path ?? defaultStorePath()
     this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
+    this.lockRetryMs = options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS
+    this.lockTimeoutMs = options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
+  }
+
+  /** The cross-process lock file guarding mutations of this store. */
+  private lockFilePath(): string {
+    return this.path.replace(/\.json$/, '') + '.lock'
+  }
+
+  /**
+   * Run one read-modify-write mutation inside the cross-process lock.
+   * Inside the critical section the in-memory snapshot is dropped and the
+   * store is re-read from disk, so a process whose snapshot went stale
+   * mutates the latest on-disk state (no lost update between processes).
+   */
+  private mutateLocked<T>(mutate: () => T): T {
+    const lockPath = this.lockFilePath()
+    const dir = dirname(lockPath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+    return withFileLock(
+      lockPath,
+      () => {
+        this.invalidate()
+        return mutate()
+      },
+      { retryMs: this.lockRetryMs, timeoutMs: this.lockTimeoutMs },
+    )
   }
 
   /** Current store revision (0 before the first load/save). */
@@ -344,7 +433,10 @@ export class MemoirStore {
         .map((e) => ({
               id: typeof e.id === 'string' && e.id !== '' ? e.id : mintId(),
               section: typeof e.section === 'string' && Object.prototype.hasOwnProperty.call(SECTIONS, e.section) ? (e.section as SectionKey) : 'note',
-              title: typeof e.title === 'string' && e.title !== '' ? e.title : undefined,
+              // Conditional spread (not "title: undefined"): the in-memory
+              // shape must round-trip the serialized JSON exactly, so
+              // snapshot.file stays deep-equal to the on-disk file.
+              ...(typeof e.title === 'string' && e.title !== '' ? { title: e.title } : {}),
               content: typeof e.content === 'string' ? e.content : '',
               time: typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now(),
               ...(typeof e.sessionId === 'string' && e.sessionId !== '' ? { sessionId: e.sessionId } : {}),
@@ -441,42 +533,48 @@ export class MemoirStore {
   record(cwd: string, payload: EntryPayload, sessionId?: string): MemoirEntry {
     const error = validateEntryPayload(payload)
     if (error !== undefined) throw new Error(error)
-    const store = this.load()
-    const key = projectKey(cwd)
-    const project = (store.projects[key] ??= {
-      path: key,
-      title: projectTitle(key),
-      updatedAt: Date.now(),
-      entries: [],
+    return this.mutateLocked(() => {
+      const store = this.load()
+      const key = projectKey(cwd)
+      const project = (store.projects[key] ??= {
+        // Display path keeps the caller's original case; the bucket key is
+        // the canonical (lowercased for Windows) projectKey(cwd).
+        path: cwd,
+        title: projectTitle(key),
+        updatedAt: Date.now(),
+        entries: [],
+      })
+      const entry: MemoirEntry = {
+        id: mintId(),
+        section: payload.section,
+        ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
+        content: payload.content.trim(),
+        time: Date.now(),
+        ...(typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {}),
+      }
+      project.entries.push(entry)
+      project.updatedAt = entry.time
+      this.save(store)
+      this.writeProjectFile(cwd)
+      return entry
     })
-    const entry: MemoirEntry = {
-      id: mintId(),
-      section: payload.section,
-      ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
-      content: payload.content.trim(),
-      time: Date.now(),
-      ...(typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {}),
-    }
-    project.entries.push(entry)
-    project.updatedAt = entry.time
-    this.save(store)
-    this.writeProjectFile(cwd)
-    return entry
   }
 
   /** Remove one entry by id; regenerates the project markdown. */
   remove(cwd: string, id: string): boolean {
-    const store = this.load()
-    const key = projectKey(cwd)
-    const project = store.projects[key]
-    if (project === undefined) return false
-    const index = project.entries.findIndex((e) => e.id === id)
-    if (index < 0) return false
-    project.entries.splice(index, 1)
-    project.updatedAt = Date.now()
-    this.save(store)
-    this.writeProjectFile(cwd)
-    return true
+    return this.mutateLocked(() => {
+      const store = this.load()
+      const key = projectKey(cwd)
+      const project = store.projects[key]
+      if (project === undefined) return false
+      const index = project.entries.findIndex((e) => e.id === id)
+      if (index < 0) return false
+      project.entries.splice(index, 1)
+      project.updatedAt = Date.now()
+      this.save(store)
+      this.writeProjectFile(cwd)
+      return true
+    })
   }
 
   /** Render one entry as a markdown bullet line. */

@@ -107,13 +107,29 @@ export interface CacheStats {
 export declare const DEFAULT_MTIME_CHECK_MS = 2000;
 /** Default store location: <home>/.dsh/dsh-memoir.json. */
 export declare function defaultStorePath(): string;
+/** Cross-process mutation lock defaults (roadmap §2.2). */
+export declare const DEFAULT_LOCK_RETRY_MS = 25;
+export declare const DEFAULT_LOCK_TIMEOUT_MS = 5000;
+/**
+ * Run fn while holding an exclusive lock file created with openSync('wx')
+ * (atomic O_EXCL create, no race window). Retries every retryMs until
+ * timeoutMs, then throws. The lock is always released in finally — even
+ * when fn throws. Used to serialize read-modify-write store mutations
+ * across processes sharing one ~/.dsh/dsh-memoir.json.
+ */
+export declare function withFileLock<T>(lockPath: string, fn: () => T, options?: {
+    retryMs?: number;
+    timeoutMs?: number;
+}): T;
 /** `YYYY-MM-DD HH:mm` in local time. */
 export declare function formatTime(ms: number): string;
 /**
  * Normalize one workspace path into a stable key:
- * strip trailing separators, lowercase the drive letter, unify separators to
- * '/', so `C:\A` / `c:\a\` / `C:/A` map to one bucket. POSIX paths are
- * unchanged apart from trailing separators.
+ * strip trailing separators, unify separators to '/'. Windows drive paths
+ * are FULLY lowercased (v0.4.2) — the canonical bucket key of C:\A /
+ * c:\a\ / C:/A is 'c:/a', so all case variants share one bucket. The
+ * display path stored on the project keeps its original case. POSIX paths
+ * are unchanged apart from trailing separators.
  */
 export declare function projectKey(cwd: string): string;
 /** Project display title: the last path segment. */
@@ -132,6 +148,10 @@ export declare class MemoirStore {
     readonly path: string;
     /** How often warm load() calls re-probe the file mtime (0 = every call). */
     readonly mtimeCheckIntervalMs: number;
+    /** Cross-process mutation lock retry interval (withFileLock). */
+    readonly lockRetryMs: number;
+    /** Cross-process mutation lock acquisition timeout (withFileLock). */
+    readonly lockTimeoutMs: number;
     /** The in-memory snapshot backing warm reads. */
     private snapshot;
     /** Write counter; bumped on every save() (record/remove). */
@@ -154,10 +174,23 @@ export declare class MemoirStore {
      * @param path - store file path (defaults to the standard location).
      * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
      *   every load (tests), defaults to a low-frequency 2000ms.
+     * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
+     *   tuning (tests shrink these; defaults 25ms / 5000ms).
      */
     constructor(path?: string, options?: {
         mtimeCheckIntervalMs?: number;
+        lockRetryMs?: number;
+        lockTimeoutMs?: number;
     });
+    /** The cross-process lock file guarding mutations of this store. */
+    private lockFilePath;
+    /**
+     * Run one read-modify-write mutation inside the cross-process lock.
+     * Inside the critical section the in-memory snapshot is dropped and the
+     * store is re-read from disk, so a process whose snapshot went stale
+     * mutates the latest on-disk state (no lost update between processes).
+     */
+    private mutateLocked;
     /** Current store revision (0 before the first load/save). */
     currentRevision(): number;
     /** Stat the store file into the snapshot signature (null when absent). */

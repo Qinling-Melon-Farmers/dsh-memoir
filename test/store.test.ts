@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import {
   MemoirStore, FORMAT_VERSION, SECTIONS, SECTION_KEYS, PROJECT_FILE,
   projectKey, projectTitle, formatTime, bounded, validateEntryPayload,
+  withFileLock,
 } from '../lib/store.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
@@ -169,6 +170,48 @@ test('corrupted store file recovers to an empty store', () => {
   try {
     store.record(ws.cwd, { section: 'work', content: 'recovered' })
     assert.equal(new MemoirStore(path).entries(ws.cwd).length, 1)
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('withFileLock releases the lock when fn throws', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const lockPath = join(ws.dir, 'test.lock')
+    assert.throws(() => withFileLock(lockPath, () => { throw new Error('boom') }), /boom/)
+    assert.ok(!existsSync(lockPath), 'lock file removed after the exception')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('withFileLock times out when the lock is held elsewhere', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const lockPath = join(ws.dir, 'test.lock')
+    writeFileSync(lockPath, 'held')
+    assert.throws(
+      () => withFileLock(lockPath, () => 'never', { retryMs: 10, timeoutMs: 120 }),
+      /lock timeout/,
+    )
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('two store instances mutating one file lose no updates', () => {
+  const path = makeTempStorePath()
+  const ws = makeTempWorkspace()
+  try {
+    const a = new MemoirStore(path, { mtimeCheckIntervalMs: 0 })
+    const b = new MemoirStore(path, { mtimeCheckIntervalMs: 0 })
+    a.record(ws.cwd, { section: 'work', content: 'entry A' })
+    b.record(ws.cwd, { section: 'work', content: 'entry B' })
+    a.record(ws.cwd, { section: 'lessons', content: 'entry C' })
+    const contents = new MemoirStore(path).entries(ws.cwd).map((e) => e.content)
+    assert.deepEqual(contents.sort(), ['entry A', 'entry B', 'entry C'])
+    assert.ok(!existsSync(path.replace(/\.json$/, '') + '.lock'), 'lock released after mutation')
   } finally {
     ws.cleanup()
   }
