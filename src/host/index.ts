@@ -27,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
-import { MemoirStore } from './store.js'
+import { MemoirStore, projectKey } from './store.js'
 import { memoirReadTool, memoirRecordTool } from './tools.js'
 import { makeRoutes } from './routes.js'
 import { installAutoDistill } from './autodistill.js'
@@ -176,6 +176,14 @@ export function apply(ctx: Context, config?: Config): void {
   const snapshotManager = new MemorySnapshotManager({ max: value.sessionSnapshotMax })
   const retrieval = new RetrievalEngine(store, { cacheSize: value.queryCacheSize })
 
+  // Workspaces seen through system-prompt assemblies / panel requests: the
+  // write-authorization guard allows only these (plus existing store
+  // projects) — a browser-supplied absolute path is not authorization.
+  const recentWorkspaces = new Set<string>()
+  const touchWorkspace = (path: string): void => {
+    if (typeof path === 'string' && path !== '') recentWorkspaces.add(projectKey(path))
+  }
+
   ctx.effect(() => {
     const tools = [
       memoirRecordTool(store),
@@ -192,6 +200,7 @@ export function apply(ctx: Context, config?: Config): void {
       const entries = typeof path === 'string' && path !== '' ? store.entries(path) : []
       const hot = entries.length === 0 ? null : selectHotMemory(entries, value.budget)
       const stats = store.stats()
+      const latest = snapshotManager.latest()
       return {
         storeRevision: stats.revision,
         snapshotEpoch: stats.epoch,
@@ -203,6 +212,12 @@ export function apply(ctx: Context, config?: Config): void {
           total: hot.total,
           estimatedTokens: hot.estimatedTokens,
         },
+        retrieval: retrieval.diagnostics(),
+        snapshot: latest === undefined ? null : {
+          hash: latest.hash,
+          createdAt: latest.createdAt,
+          storeRevision: latest.storeRevision,
+        },
         config: {
           hotMemoryTokens: value.budget.targetTokens,
           hotMemoryMaxTokens: value.budget.hardMaxTokens,
@@ -213,7 +228,21 @@ export function apply(ctx: Context, config?: Config): void {
         },
       }
     }
-    const disposers = makeRoutes(store, diagnostics).map((route) => ctx.webServer.register(route))
+    const hotMemoryPreview = (path: string) => {
+      if (typeof path !== 'string' || path === '') return null
+      const entries = store.entries(path)
+      if (entries.length === 0) return null
+      const hot = selectHotMemory(entries, value.budget)
+      return {
+        text: hot.text,
+        selected: hot.selected,
+        total: hot.total,
+        estimatedTokens: hot.estimatedTokens,
+      }
+    }
+    const allowedWorkspace = (path: string): boolean =>
+      recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
+    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, touchWorkspace).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
@@ -231,8 +260,13 @@ export function apply(ctx: Context, config?: Config): void {
       name: 'plugin:dsh-memoir',
       order: SECTION_ORDER,
       // text is a provider evaluated per assembly, so each project's memory is
-      // injected for its own session and not for unrelated workspaces.
-      text: (context) => memoirSectionText(store, context, snapshotManager, value.budget),
+      // injected for its own session and not for unrelated workspaces. The
+      // assembly also registers the workspace for panel write authorization.
+      text: (context) => {
+        const cwd = context?.agent?.session?.header?.cwd
+        if (typeof cwd === 'string' && cwd !== '') touchWorkspace(cwd)
+        return memoirSectionText(store, context, snapshotManager, value.budget)
+      },
     })
   }
 }

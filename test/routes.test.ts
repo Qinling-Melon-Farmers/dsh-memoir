@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
+import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeRoutes, json, readJsonBody } from '../lib/routes.js'
 import { callRoute, makeReq, makeRes, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
@@ -202,6 +203,92 @@ test('unknown routes 404 and wrong methods 405', async () => {
   assert.equal(method.status, 405)
 })
 
+test('GET search returns RetrievalEngine-ranked results', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'work', content: 'cache 普通记录' })
+    store.record(ws.cwd, { section: 'lessons', title: 'cache 失效策略', content: '按 epoch 失效 query cache' })
+    const engine = new RetrievalEngine(store)
+    const seen: string[] = []
+    const handler = makeRoutes(store, undefined, engine, undefined, undefined, (path) => seen.push(path))[0]!.handler
+    const { status, envelope } = await callRoute(handler, {
+      url: '/api/dsh-memoir/search?scope=project&path=' + encodeURIComponent(ws.cwd) + '&query=' + encodeURIComponent('cache') + '&limit=8',
+    })
+    assert.equal(status, 200)
+    const results = (envelope.value as { results: Array<{ entry: { title?: string }; projectPath: string; score: number }> }).results
+    assert.equal(results.length, 2)
+    assert.equal(results[0]?.entry.title, 'cache 失效策略', 'title boost ranks first')
+    assert.ok((results[0]?.score ?? 0) >= (results[1]?.score ?? 0), 'scores descending')
+    assert.equal(results[0]?.projectPath, ws.cwd)
+    assert.deepEqual(seen, [ws.cwd], 'touchWorkspace saw the searched path')
+    // Without an engine the endpoint is a 404.
+    const plain = makeRoutes(store)[0]!.handler
+    const missing = await callRoute(plain, { url: '/api/dsh-memoir/search?query=x' })
+    assert.equal(missing.status, 404)
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('GET hot-memory returns the inspector preview', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'actions', content: '发布前跑测试' })
+    const preview = { text: '[Project memory]\nActions:\n- 发布前跑测试', selected: store.entries(ws.cwd), total: 1, estimatedTokens: 20 }
+    const handler = makeRoutes(store, undefined, undefined, (path) => (path === ws.cwd ? preview : null))[0]!.handler
+    const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/hot-memory?path=' + encodeURIComponent(ws.cwd) })
+    assert.equal(status, 200)
+    const value = (envelope.value as { hotMemory: { text: string; total: number } | null }).hotMemory
+    assert.equal(value?.total, 1)
+    assert.ok((value?.text ?? '').includes('发布前跑测试'))
+    const plain = makeRoutes(store)[0]!.handler
+    const missing = await callRoute(plain, { url: '/api/dsh-memoir/hot-memory?path=' + encodeURIComponent(ws.cwd) })
+    assert.equal(missing.status, 404, 'provider absent → 404')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('panel writes outside the allowed workspace set are rejected', async () => {
+  const store = new MemoirStore(makeTempStorePath())
+  const allowed = (path: string) => path === 'C:\\ok'
+  const handler = makeRoutes(store, undefined, undefined, undefined, allowed)[0]!.handler
+  const rejected = await callRoute(handler, {
+    method: 'POST',
+    url: '/api/dsh-memoir/entries',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ path: 'C:\\evil', section: 'work', content: 'x' }),
+  })
+  assert.equal(rejected.status, 403)
+  assert.equal(rejected.envelope.error?.code, 'forbidden')
+  const accepted = await callRoute(handler, {
+    method: 'POST',
+    url: '/api/dsh-memoir/entries',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ path: 'C:\\ok', section: 'work', content: 'x' }),
+  })
+  assert.equal(accepted.status, 200)
+  // DELETE is gated the same way.
+  const deleteRejected = await callRoute(handler, {
+    method: 'DELETE',
+    url: '/api/dsh-memoir/entries',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ path: 'C:\\evil', id: 'e1' }),
+  })
+  assert.equal(deleteRejected.status, 403)
+  // Without a guard the legacy behavior is preserved (tests/embedded use).
+  const open = makeRoutes(store)[0]!.handler
+  const legacy = await callRoute(open, {
+    method: 'POST',
+    url: '/api/dsh-memoir/entries',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ path: 'C:\\evil', section: 'work', content: 'x' }),
+  })
+  assert.equal(legacy.status, 200)
+})
+
 test('GET diagnostics reports cache stats and hot-memory selection', async () => {
   const ws = makeTempWorkspace()
   try {
@@ -217,7 +304,13 @@ test('GET diagnostics reports cache stats and hot-memory selection', async () =>
         snapshotCount: 3,
         snapshotMax: 128,
         hotMemory: { selected: 1, total: 1, estimatedTokens: 42 },
-        config: { hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128 },
+        retrieval: {
+          index: { docs: 1, terms: 2, epoch: store.stats().epoch },
+          cache: { hits: 1, misses: 0, evictions: 0, hitRate: 1, size: 1, capacity: 128 },
+          lastQuery: { query: 'q', latencyMs: 0.1, candidates: 1, returned: 1, at: 1 },
+        },
+        snapshot: { hash: 'abc123', createdAt: 1, storeRevision: 1 },
+        config: { hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
       }
     })[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })

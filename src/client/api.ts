@@ -66,7 +66,7 @@ export interface WireProject {
   entries: WireEntry[]
 }
 
-/** The host /diagnostics payload (v0.4 observability). */
+/** The host /diagnostics payload (v0.4 observability, v0.4.2 extended). */
 export interface WireDiagnostics {
   storeRevision: number
   snapshotEpoch: number
@@ -88,13 +88,37 @@ export interface WireDiagnostics {
   snapshotCount: number
   snapshotMax: number
   hotMemory: { selected: number; total: number; estimatedTokens: number } | null
+  /** v0.4.2: retrieval index / query cache / last query. */
+  retrieval: {
+    index: { docs: number; terms: number; epoch: number } | null
+    cache: { hits: number; misses: number; evictions: number; hitRate: number; size: number; capacity: number }
+    lastQuery: { query: string; latencyMs: number; candidates: number; returned: number; at: number } | null
+  }
+  /** v0.4.2: the most recently frozen session snapshot. */
+  snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
     hotMemoryTokens: number
     hotMemoryMaxTokens: number
     readDefaultLimit: number
     readMaxLimit: number
     sessionSnapshotMax: number
+    queryCacheSize: number
   }
+}
+
+/** One ranked /search hit (v0.4.2: shared RetrievalEngine order). */
+export interface WireSearchResult {
+  projectPath: string
+  entry: WireEntry
+  score: number
+}
+
+/** The /hot-memory inspector payload (v0.4.2). */
+export interface WireHotMemory {
+  text: string
+  selected: WireEntry[]
+  total: number
+  estimatedTokens: number
 }
 
 export interface RecordPayload {
@@ -133,6 +157,27 @@ export class MemoirApi {
   async diagnostics(path?: string): Promise<WireDiagnostics> {
     const response = await this.fetchImpl('/api/dsh-memoir/diagnostics' + query({ path }))
     return readEnvelope(response) as Promise<WireDiagnostics>
+  }
+
+  /**
+   * Ranked search over the host RetrievalEngine (v0.4.2) — the same ranking
+   * memoir_read uses, so the GUI search and the agent recall never diverge.
+   */
+  async search(options: { scope: 'project' | 'global' | 'all'; path?: string; section?: SectionKey; query: string; limit?: number }): Promise<{ results: WireSearchResult[] }> {
+    const response = await this.fetchImpl('/api/dsh-memoir/search' + query({
+      scope: options.scope,
+      path: options.path,
+      section: options.section,
+      query: options.query,
+      limit: options.limit === undefined ? undefined : String(options.limit),
+    }))
+    return readEnvelope(response) as Promise<{ results: WireSearchResult[] }>
+  }
+
+  /** Hot-memory preview for one workspace (the inspector). */
+  async hotMemory(path: string): Promise<{ hotMemory: WireHotMemory | null }> {
+    const response = await this.fetchImpl('/api/dsh-memoir/hot-memory' + query({ path }))
+    return readEnvelope(response) as Promise<{ hotMemory: WireHotMemory | null }>
   }
 
   /** Record one entry (host regenerates PROJECT_MEMORY.md). */

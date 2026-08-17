@@ -3,14 +3,19 @@
  * error) over the structured store. Reads are GET with query params; writes
  * require an explicit application/json content-type (blocks form-based CSRF,
  * same stance as the sibling aionui-panel routes).
+ *
+ * v0.4.2 additions: ranked /search (shared RetrievalEngine with memoir_read),
+ * /hot-memory preview, extended diagnostics (retrieval index + query cache +
+ * last query + session snapshot), and workspace authorization on writes.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { SECTIONS, SECTION_KEYS, projectKey, projectTitle } from './store.js'
 import type { CacheStats, MemoirEntry, MemoirStore } from './store.js'
+import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
 
-/** Diagnostics payload shape (v0.4 observability, roadmap §4). */
+/** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
   storeRevision: number
   snapshotEpoch: number
@@ -18,17 +23,25 @@ export interface DiagnosticsValue {
   snapshotCount: number
   snapshotMax: number
   hotMemory: { selected: number; total: number; estimatedTokens: number } | null
+  /** v0.4.2: retrieval index / query cache / last query observability. */
+  retrieval: RetrievalDiagnostics
+  /** v0.4.2: the most recently frozen session snapshot, if any. */
+  snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
     hotMemoryTokens: number
     hotMemoryMaxTokens: number
     readDefaultLimit: number
     readMaxLimit: number
     sessionSnapshotMax: number
+    queryCacheSize: number
   }
 }
 
 /** Supplies the runtime diagnostics snapshot (closed over plugin state). */
 export type DiagnosticsProvider = (path?: string) => DiagnosticsValue
+
+/** Hot-memory preview for one workspace (the inspector endpoint). */
+export type HotMemoryProvider = (path: string) => { text: string; selected: MemoirEntry[]; total: number; estimatedTokens: number } | null
 
 export interface Envelope<T = unknown> {
   ok: boolean
@@ -110,9 +123,22 @@ function wireProject(
  * Build the /api/dsh-memoir prefix route.
  * @param store - the structured MemoirStore.
  * @param diagnostics - optional runtime diagnostics provider.
+ * @param retrieval - optional RetrievalEngine (ranked /search endpoint).
+ * @param hotMemory - optional hot-memory preview provider (inspector).
+ * @param allowedWorkspace - optional write guard: only paths it accepts may
+ *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
+ * @param touchWorkspace - optional hook recording seen workspace paths
+ *   (feeds the plugin's active-workspace set for write authorization).
  * @returns route definitions for ctx.webServer.register.
  */
-export function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider): WebRoute[] {
+export function makeRoutes(
+  store: MemoirStore,
+  diagnostics?: DiagnosticsProvider,
+  retrieval?: RetrievalEngine,
+  hotMemory?: HotMemoryProvider,
+  allowedWorkspace?: (path: string) => boolean,
+  touchWorkspace?: (path: string) => void,
+): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://x')
     const pathname = url.pathname
@@ -120,12 +146,58 @@ export function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider
 
     // ------------------------------------------------------------ reads
     if (method === 'GET') {
+      if (pathname === '/api/dsh-memoir/search') {
+        // v0.4.2: the GUI and memoir_read share this RetrievalEngine.
+        if (retrieval === undefined) {
+          json(res, FAIL(NOT_FOUND), 404)
+          return
+        }
+        const scope = url.searchParams.get('scope') ?? 'all'
+        const path = url.searchParams.get('path') ?? undefined
+        const section = url.searchParams.get('section') ?? undefined
+        if (section !== undefined && !SECTION_KEYS.includes(section as never)) {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
+        const query = url.searchParams.get('query') ?? ''
+        if (query === '') {
+          json(res, OK({ results: [] }))
+          return
+        }
+        if (scope === 'project' && (path === undefined || path === '')) {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
+        if (touchWorkspace !== undefined && path !== undefined && path !== '') touchWorkspace(path)
+        const rawLimit = Number(url.searchParams.get('limit') ?? 30)
+        const limit = Math.min(100, Math.max(1, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 30))
+        const cwd = scope === 'project' ? path : undefined
+        const ranked = retrieval.cachedSearch(query, { section: section as never, cwd }).slice(0, limit)
+        json(res, OK({ results: ranked }))
+        return
+      }
+      if (pathname === '/api/dsh-memoir/hot-memory') {
+        // v0.4.2: inspector preview of what the next session inherits.
+        if (hotMemory === undefined) {
+          json(res, FAIL(NOT_FOUND), 404)
+          return
+        }
+        const path = url.searchParams.get('path') ?? ''
+        if (path === '') {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
+        if (touchWorkspace !== undefined) touchWorkspace(path)
+        json(res, OK({ hotMemory: hotMemory(path) }))
+        return
+      }
       if (pathname === '/api/dsh-memoir/diagnostics') {
         if (diagnostics === undefined) {
           json(res, FAIL(NOT_FOUND), 404)
           return
         }
         const path = url.searchParams.get('path') ?? undefined
+        if (touchWorkspace !== undefined && path !== undefined && path !== '') touchWorkspace(path)
         json(res, OK(diagnostics(path)))
         return
       }
@@ -135,6 +207,7 @@ export function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
+        if (touchWorkspace !== undefined) touchWorkspace(path)
         const section = url.searchParams.get('section') ?? undefined
         if (section !== undefined && !SECTION_KEYS.includes(section as never)) {
           json(res, FAIL(BAD_REQUEST), 400)
@@ -193,6 +266,13 @@ export function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider
     const path = strField(payload, 'path')
     if (path === null || !validPath(path)) {
       json(res, FAIL({ code: 'bad-request', message: 'path must be an absolute workspace path' }), 400)
+      return
+    }
+    // v0.4.2 workspace authorization: a browser-submitted absolute path is
+    // not authorization — writes are limited to the active workspace(s) or
+    // projects already in the store.
+    if (allowedWorkspace !== undefined && !allowedWorkspace(path)) {
+      json(res, FAIL({ code: 'forbidden', message: 'path 不在允许的工作区中：仅当前活动 cwd 或已有 store 项目可写' }), 403)
       return
     }
 

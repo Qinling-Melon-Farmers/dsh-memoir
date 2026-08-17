@@ -58,6 +58,8 @@ export declare class MemorySnapshotManager {
     }): SessionSnapshot;
     /** Peek at a session's snapshot (undefined when not frozen yet). */
     peek(sessionKey: string): SessionSnapshot | undefined;
+    /** The most recently created snapshot (diagnostics / inspector). */
+    latest(): SessionSnapshot | undefined;
     /** Drop one session's snapshot (disposal hygiene). */
     forget(sessionKey: string): void;
 }

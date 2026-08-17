@@ -136,6 +136,31 @@ test('MemoirApi.global aggregates via the global route', async () => {
   assert.equal(value.projects.length, 1)
 })
 
+test('MemoirApi.search queries the ranked endpoint with scope and path', async () => {
+  const calls: string[] = []
+  const fetchImpl = async (url: string) => {
+    calls.push(url)
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: { results: [{ projectPath: 'C:\\x', entry: { id: 'e1', section: 'work', content: 'c', time: 1 }, score: 4.2 }] } }))
+  }
+  const api = new MemoirApi(fetchImpl)
+  const value = await api.search({ scope: 'project', path: 'C:\\x', query: 'cache', limit: 8 })
+  assert.equal(value.results.length, 1)
+  assert.equal(value.results[0]?.score, 4.2)
+  assert.equal(calls[0], '/api/dsh-memoir/search?scope=project&path=' + encodeURIComponent('C:\\x') + '&query=cache&limit=8')
+})
+
+test('MemoirApi.hotMemory reads the inspector preview', async () => {
+  const calls: string[] = []
+  const fetchImpl = async (url: string) => {
+    calls.push(url)
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: { hotMemory: { text: 't', selected: [], total: 1, estimatedTokens: 9 } } }))
+  }
+  const api = new MemoirApi(fetchImpl)
+  const value = await api.hotMemory('C:\\x')
+  assert.equal(value.hotMemory?.total, 1)
+  assert.equal(calls[0], '/api/dsh-memoir/hot-memory?path=' + encodeURIComponent('C:\\x'))
+})
+
 // -------------------------------------------------------------------- cwd
 
 /** Mock client sessions service: snapshot + subscription, like the runtime's. */

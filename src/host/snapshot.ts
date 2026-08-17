@@ -101,6 +101,13 @@ export class MemorySnapshotManager {
     return this.snapshots.get(sessionKey)
   }
 
+  /** The most recently created snapshot (diagnostics / inspector). */
+  latest(): SessionSnapshot | undefined {
+    let latest: SessionSnapshot | undefined
+    for (const snapshot of this.snapshots.values()) latest = snapshot
+    return latest
+  }
+
   /** Drop one session's snapshot (disposal hygiene). */
   forget(sessionKey: string): void {
     this.snapshots.delete(sessionKey)
