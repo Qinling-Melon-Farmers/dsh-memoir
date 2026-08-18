@@ -7,6 +7,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
@@ -56,6 +57,7 @@
   "files": [
     "lib/*.js",
     "lib/*.js.map",
+    "lib/*.d.ts",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -71,6 +73,6 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Qinling-Melon-Farmers/dsh-memoir.git"
+    "url": "git+https://github.com/Qinling-Melon-Farmers/dsh-memoir.git"
   }
 }

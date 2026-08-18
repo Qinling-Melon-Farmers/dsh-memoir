@@ -1,5 +1,7 @@
 # dsh-memoir
 
+[![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
+
 **dsh-memoir 是 DeepSeek Harness 的本地项目记忆层：把 Agent 的工作结论、经验教训和后续行动持久化，并通过有界 Hot Memory 自动继承、按需排序召回和 Web GUI 管理，实现跨会话项目记忆。**
 
 > Cache-aware local project memory for DeepSeek Harness.
@@ -13,11 +15,14 @@
 ## Quick Start
 
 ```bash
-# 安装到 web profile
+# 从 npm 安装到 web profile（推荐）
+dsh plugin --profile web add dsh-memoir
+
+# 或从 GitHub 安装最新源码
 dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
 
 # 或本地开发（克隆后）
-dsh plugin --profile web add file:/绝对路径/dsh-memoir
+dsh plugin --profile web add link:/绝对路径/dsh-memoir
 ```
 
 安装后重启 DSH 生效（`dsh web`）。正常使用即可：
