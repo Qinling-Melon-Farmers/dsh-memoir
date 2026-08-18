@@ -13,7 +13,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { MemoirStore, PROJECT_FILE, writeFileAtomic } from '../lib/store.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
@@ -107,7 +107,7 @@ test('corrupt store file is backed up and the store starts fresh', () => {
   assert.equal(store.stats().corruptBackups, 1)
   // The corrupt file was renamed away, never silently overwritten.
   assert.ok(!existsSync(path), 'corrupt file moved to a backup')
-  const base = join(path).split('/').pop() ?? path
+  const base = basename(path)
   const backups = readdirSync(dirname(path)).filter((f) => f.startsWith(base + '.corrupt.'))
   assert.equal(backups.length, 1)
   // The next save writes a fresh file.
