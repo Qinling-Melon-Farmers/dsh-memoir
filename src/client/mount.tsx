@@ -1,9 +1,14 @@
 /**
  * Panel view mounting (the dsh-ssh / task-board center-column precedent).
  * The panel takes over the center column at the DOM level: a container is
- * appended inside the [data-pane="conversation"] grid item and a stylesheet
- * rule hides the conversation content while the panel is active. Toggling is
- * a data attribute on <html> — the conversation subtree stays mounted.
+ * appended inside the center-column grid item and a stylesheet rule hides
+ * the conversation content while the panel is active. Toggling is a data
+ * attribute on <html> — the conversation subtree stays mounted.
+ *
+ * Center-column selector: the legacy shell exposed
+ * [data-pane="conversation"]; current shells render the frame with CSS
+ * modules ([hash]_centerCol). Both are matched so the panel mounts on the
+ * source-run shell and older builds alike.
  *
  * Cross-plugin coordination: opening this panel evicts the sibling panels'
  * visibility attributes (data-dsh-ssh-active / data-dsh-taskboard-active)
@@ -20,7 +25,7 @@ import type { PanelController } from './controller.js'
 /** The injected panel container (kept in the DOM, hidden when inactive). */
 export const PANEL_VIEW_SELECTOR = '[data-dsh-memoir-view]'
 
-const CONVERSATION_COLUMN_SELECTOR = '[data-pane="conversation"]'
+const CONVERSATION_COLUMN_SELECTOR = '[data-pane="conversation"], [class*="centerCol"]'
 const ACTIVE_ATTR = 'data-dsh-memoir-active'
 /** Sibling panels' activation attributes, removed when this panel opens. */
 const SIBLING_ATTRS = ['data-dsh-ssh-active', 'data-dsh-taskboard-active']
