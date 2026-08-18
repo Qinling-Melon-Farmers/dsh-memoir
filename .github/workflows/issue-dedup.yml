@@ -1,0 +1,138 @@
+name: Detect Duplicate Issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dedup:
+    name: Close duplicate issues
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Detect duplicate issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              return;
+            }
+
+            const title = (issue.title || '').trim();
+            if (title.length < 4) {
+              return;
+            }
+
+            const STOPWORDS = new Set([
+              'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'on', 'for', 'and', 'or',
+            ]);
+
+            const tokens = (title.match(/[\p{L}\p{N}]+/gu) || [])
+              .filter((t) => !STOPWORDS.has(t.toLowerCase()));
+
+            const sanitize = (value) =>
+              value.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+
+            const query = sanitize(tokens.length > 0 ? tokens.slice(0, 8).join(' ') : title);
+            if (!query) {
+              return;
+            }
+
+            const { data: search } = await github.rest.search.issuesAndPullRequests({
+              q: 'repo:' + context.repo.owner + '/' + context.repo.repo +
+                ' is:issue is:open in:title ' + query,
+              per_page: 30,
+            });
+
+            const candidates = (search.items || []).filter(
+              (item) => item.number !== issue.number && !item.pull_request,
+            );
+
+            const levenshtein = (a, b) => {
+              const m = a.length;
+              const n = b.length;
+              if (m === 0) return n;
+              if (n === 0) return m;
+              const dp = new Array(n + 1);
+              for (let j = 0; j <= n; j += 1) dp[j] = j;
+              for (let i = 1; i <= m; i += 1) {
+                let prev = dp[0];
+                dp[0] = i;
+                for (let j = 1; j <= n; j += 1) {
+                  const tmp = dp[j];
+                  dp[j] = Math.min(
+                    dp[j] + 1,
+                    dp[j - 1] + 1,
+                    prev + (a[i - 1] === b[j - 1] ? 0 : 1),
+                  );
+                  prev = tmp;
+                }
+              }
+              return dp[n];
+            };
+
+            const normalize = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+            const similarity = (a, b) => {
+              const maxLen = Math.max(a.length, b.length);
+              if (maxLen === 0) return 1;
+              return 1 - levenshtein(a, b) / maxLen;
+            };
+
+            const target = normalize(title);
+            const SIM_THRESHOLD = 0.7;
+
+            const duplicate = candidates.find((candidate) => {
+              const ct = normalize(candidate.title);
+              const contained =
+                (target.includes(ct) || ct.includes(target)) &&
+                Math.abs(target.length - ct.length) <=
+                  Math.max(4, Math.min(target.length, ct.length) * 0.3);
+              return contained || similarity(target, ct) >= SIM_THRESHOLD;
+            });
+
+            if (!duplicate) {
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const comment = [
+              '该 Issue 疑似与已有 Issue 重复，已自动关闭。',
+              '',
+              '- 原 Issue：#' + duplicate.number + '「' + duplicate.title + '」',
+              '- 链接：' + duplicate.html_url,
+              '',
+              '如果确认不是重复（现象不同、版本不同等），请回复说明差异，我们会重新打开；或直接到原 Issue 下补充信息。',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issue.number,
+              body: comment,
+            });
+
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issue.number,
+                labels: ['duplicate'],
+              });
+            } catch (error) {
+              // `duplicate` label 可能不存在，忽略，不影响关闭。
+            }
+
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: issue.number,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });

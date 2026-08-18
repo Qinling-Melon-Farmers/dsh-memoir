@@ -1,0 +1,102 @@
+name: Enforce Issue Template
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  enforce:
+    name: Close issues that skip the template
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate issue template
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (issue.pull_request) {
+              return;
+            }
+
+            const baseRequiredSections = [
+              '涉及模块',
+              'Issue 类型',
+              '摘要',
+              '预期结果',
+              '详情 / 复现步骤',
+              '环境信息',
+            ];
+
+            const body = issue.body || '';
+            const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const readSection = (label) => {
+              const heading = escapeRegExp(label);
+              const pattern = new RegExp(`(?:^|\\n)###\\s+${heading}\\s*\\n+([\\s\\S]*?)(?=\\n###\\s+|$)`, 'i');
+              const match = body.match(pattern);
+              return match ? match[1].replace(/<!--[\s\S]*?-->/g, '').trim() : '';
+            };
+
+            const isBlank = (value) => {
+              const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
+              return normalized === '' || normalized === 'no response' || normalized === '_no response_';
+            };
+
+            const hasScreenshotEvidence = (value) => {
+              return /!\[[^\]]*]\([^)]+\)/i.test(value)
+                || /https?:\/\/\S*(?:github\.com\/user-attachments\/assets\/|github\.com\/[^)\s]+\/assets\/|githubusercontent\.com\/|[./][^)\s]+\.(?:png|jpe?g|gif|webp))(?:[?#]\S*)?/i.test(value);
+            };
+
+            const issueType = readSection('Issue 类型').trim().toLowerCase();
+            const hasBugLabel = (issue.labels || []).some((label) => String(label.name || '').toLowerCase() === 'bug');
+            const isBug = issueType === 'bug 报告' || hasBugLabel;
+            const requiredSections = isBug
+              ? [...baseRequiredSections, '证据截图 / 日志', '冒烟测试', '引用代码', '补丁']
+              : baseRequiredSections;
+
+            const missingSections = requiredSections.filter((label) => isBlank(readSection(label)));
+            const invalidSections = [];
+            if (isBug && !hasBugLabel) {
+              invalidSections.push('Bug 报告必须附带 bug 标签：请通过「Bug 报告」表单提交，该表单会自动附加 bug 标签。');
+            }
+            const bugEvidence = readSection('证据截图 / 日志');
+            if (isBug && !isBlank(bugEvidence) && !hasScreenshotEvidence(bugEvidence)) {
+              invalidSections.push('证据截图 / 日志必须包含上传的图片、Markdown 图片或图片链接。');
+            }
+            const missingSectionMessages = missingSections.length > 0
+              ? [`缺少或为空的必填部分：${missingSections.join(', ')}`]
+              : [];
+
+            if (missingSections.length === 0 && invalidSections.length === 0) {
+              return;
+            }
+
+            const comment = [
+              '该 Issue 因未使用仓库要求的 Issue 模板而被自动关闭。',
+              '',
+              '请从仓库的 Issue 表单重新发起，并填写所有必填部分：',
+              '',
+              ...requiredSections.map((label) => `- ${label}`),
+              '',
+              ...missingSectionMessages,
+              ...invalidSections,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: comment,
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });

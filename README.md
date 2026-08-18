@@ -224,6 +224,17 @@ v0.4.2 benchmark 摘要（node v22.23.2，budget 900/1200 tokens；完整报告�
 - 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
 - 自动收尾安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止回合不打扰、每回合至多一次。
 
+## 贡献
+
+PR 与 Issue 采用模板化 + 自动化管理：
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — PR 范围、提交规范与检查清单；
+- [ISSUE_TRIAGE.md](ISSUE_TRIAGE.md) — Issue 标签体系、分类与关闭标准；
+- `.github/ISSUE_TEMPLATE` — Bug / 功能请求模板；`.github/pull_request_template.md` — PR 模板。
+
+Bug 报告需附截图 / 日志证据、冒烟测试、引用代码与补丁；全新功能与仅文档类
+PR 请先提 Issue 讨论。
+
 ## Release
 
 版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test，再发布到 npm。仓库需配置以下任一认证方式：

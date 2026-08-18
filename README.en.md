@@ -224,6 +224,16 @@ v0.4.2 benchmark summary (node v22.23.2, budget 900/1200 tokens; full report in 
 - Mounted via the `dsh.bundle.patch` manifest (`insert` row in `cordis.patch.yml`); no DSH source changes.
 - Auto-distill safety boundaries: top-level sessions only (subagents / nested delegations skipped), turns with tool activity that haven't recorded yet, aborted turns skipped, at most one steer per turn.
 
+## Contributing
+
+PRs and issues are managed with templates and automation:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — PR scope, commit conventions and checklist;
+- [ISSUE_TRIAGE.md](ISSUE_TRIAGE.md) — issue labels, classification and closing criteria;
+- `.github/ISSUE_TEMPLATE` — bug / request templates; `.github/pull_request_template.md` — PR template.
+
+Bug reports must include screenshot / log evidence, a smoke test, code references and a patch. New features and documentation-only PRs must first be discussed in an issue.
+
 ## Release
 
 Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, then publish to npm. Configure either of these auth options in the repo:
