@@ -220,6 +220,23 @@ v0.4.2 benchmark 摘要（node v22.23.2，budget 900/1200 tokens；完整报告�
 - 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
 - 自动收尾安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止回合不打扰、每回合至多一次。
 
+## Release
+
+版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test，再发布到 npm。仓库需配置以下任一认证方式：
+
+- npm Trusted Publishing：GitHub 仓库 `Qinling-Melon-Farmers/dsh-memoir`，workflow `publish.yml`
+- GitHub Actions secret `NPM_TOKEN`：使用具有发布权限且允许绕过发布 2FA 的 granular token
+
+发布 patch 版本：
+
+```bash
+npm version patch
+git push
+git push origin vX.Y.Z  # 使用 npm version 输出的实际版本号
+```
+
+`npm version patch` 会修改 `package.json`、创建版本提交并创建对应 tag；无需再次执行 `git tag` 或在本机执行 `npm publish`。
+
 ## 许可
 
 Apache-2.0
