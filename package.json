@@ -59,7 +59,8 @@
     "lib/*.js.map",
     "lib/*.d.ts",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "license": "Apache-2.0",
   "keywords": [

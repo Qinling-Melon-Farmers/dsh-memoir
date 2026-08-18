@@ -2,6 +2,8 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 
+[English](./README.en.md) · 中文
+
 **dsh-memoir 是 DeepSeek Harness 的本地项目记忆层：把 Agent 的工作结论、经验教训和后续行动持久化，并通过有界 Hot Memory 自动继承、按需排序召回和 Web GUI 管理，实现跨会话项目记忆。**
 
 > Cache-aware local project memory for DeepSeek Harness.
@@ -127,7 +129,9 @@ curated 查询 Top-5 命中率 100%（质量门禁 ≥90%，见 `test/recall-qua
 
 ![全局记忆管理](picture/全局记忆管理4.png)
 
-> v0.4.2 新增的带 query 的 ranked results 与 Hot Memory Inspector / Retrieval Diagnostics 截图将随版本发布补充。
+**5. 排序搜索 + Hot Memory 预览 + 记忆诊断（v0.4.2）**：搜索框输入 query 后走 RetrievalEngine 排序召回，每条结果带相关性分数；底部可展开「Hot Memory 预览」（查看当前工作区下一会话将自动继承的内容）与扩展后的 Memory Diagnostics（Retrieval 索引 / Query cache / 最近查询 / 会话快照）。
+
+![排序搜索与 Hot Memory 预览 / 记忆诊断](picture/hot%20memory预览与记忆诊断5.png)
 
 ## Storage & Privacy
 
