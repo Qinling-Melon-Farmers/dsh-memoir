@@ -22,6 +22,10 @@ html[data-dsh-memoir-active] [data-dsh-memoir-view] {
 html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir-view]) {
   display: none;
 }
+/* Current shell renders the center column as [hash]_centerCol (CSS modules). */
+html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]) {
+  display: none;
+}
 
 .memoir-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .memoir-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
