@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint:latest
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      # `pnpm test` rebuilds host + client and runs the full node --test suite.
+      - name: Test
+        run: pnpm test
+
+      # Committed client bundle must match the source; a PR touching
+      # src/client/** without committing lib/client.js fails here.
+      - name: Client bundle consistency
+        run: |
+          pnpm run build
+          if ! git diff --exit-code -- lib/client.js; then
+            echo "::error::lib/client.js is out of sync with src/client; run 'pnpm run build' and commit the artifact."
+            exit 1
+          fi
+
+      - name: No emoji rule
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          ranges = [
+              (0x1F000, 0x1FAFF),   # extended-B emoji
+              (0x2600, 0x27BF),     # misc symbols + dingbats
+              (0x2B00, 0x2BFF),     # supplemental arrows and misc symbols
+              (0x1F1E6, 0x1F1FF),   # regional indicators
+          ]
+          singles = {0xFE0F, 0x200D}
+          skip_dirs = {'.git', 'node_modules'}
+          skip_names = {'pnpm-lock.yaml'}
+          skip_suffixes = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.pdf', '.zip', '.gz'}
+          bad = []
+          for p in pathlib.Path('.').rglob('*'):
+              if not p.is_file():
+                  continue
+              if any(part in skip_dirs for part in p.parts):
+                  continue
+              if p.name in skip_names or p.suffix.lower() in skip_suffixes:
+                  continue
+              try:
+                  text = p.read_text(encoding='utf-8')
+              except Exception:
+                  continue
+              for i, ch in enumerate(text):
+                  o = ord(ch)
+                  if o in singles or any(lo <= o <= hi for lo, hi in ranges):
+                      bad.append(f'{p}:{i + 1} U+{o:04X} {ch}')
+          if bad:
+              print('emoji rule violation:')
+              for line in bad:
+                  print('  ' + line)
+              sys.exit(1)
+          print('emoji rule passed')
+          PY
