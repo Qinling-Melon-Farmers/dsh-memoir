@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "Cache-aware local project memory for DeepSeek Harness (DSH): agents distill session work, lessons and next actions into a local JSON store (~/.dsh/dsh-memoir.json, source of truth) with a per-project PROJECT_MEMORY.md projection; bounded hot-memory (ranked, session-frozen) is auto-injected into the system prompt while long-tail history is served by ranked BM25 retrieval (memoir_read, no embeddings / no external services); a web-GUI 'Memory' panel offers ranked search, hot-memory inspection and retrieval diagnostics over /api/dsh-memoir routes. TypeScript, mounted via the dsh.bundle.patch manifest, no dsh source changes.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

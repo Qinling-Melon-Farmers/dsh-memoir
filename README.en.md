@@ -81,7 +81,7 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
-## v0.5.0 lifecycle and rc8 compatibility
+## v0.5.1 lifecycle completion and rc8 compatibility
 
 - The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.0-rc.8`.
 - Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
@@ -213,7 +213,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 141 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity
+pnpm test             # 142 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -247,7 +247,9 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.0** (2026-08-20) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.0). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.1** (2026-08-20) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.1). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+
+Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 
 Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, publish to npm, then create a same-tag GitHub Release with the tarball asset. Configure either of these auth options in the repo:
 

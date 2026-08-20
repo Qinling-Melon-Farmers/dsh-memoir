@@ -94,11 +94,7 @@ jobs:
           fi
 
           notes_file="$(mktemp)"
-          awk -v version="${RELEASE_TAG#v}" '
-            $0 ~ "^## \\[" version "\\]" { found=1; next }
-            found && $0 ~ "^## \\[" { exit }
-            found { print }
-          ' CHANGELOG.md > "$notes_file"
+          node scripts/render-release-notes.mjs "${RELEASE_TAG#v}" > "$notes_file"
 
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \

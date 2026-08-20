@@ -81,7 +81,7 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
 
-## v0.5.0 生命周期与 rc8 兼容性
+## v0.5.1 生命周期完成与 rc8 兼容性
 
 - 当前开发基线为 `@deepseek-ai/dsh-* 0.1.0-rc.8`；peer dependency 与开发依赖已统一到 rc8。
 - 存储格式从 v2 迁移到 v3：旧条目保持原有 `id`、内容和时间，首次变更时补齐 `importance`、`pinned`、`status`、`supersedes` 与 `tags`；启动读取不会重写旧文件。
@@ -213,7 +213,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 141 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 142 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性 / 发布说明
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
@@ -248,7 +248,9 @@ PR 请先提 Issue 讨论。
 
 ## Release
 
-当前稳定版：**v0.5.0**（2026-08-20） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.0)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+当前稳定版：**v0.5.1**（2026-08-20） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.1)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+
+每个版本的更新日志均同步维护中英文；GitHub Release 默认展开中文，英文说明收纳在可折叠的 `English` 区域。
 
 版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test、发布 npm，并创建同 tag 的 GitHub Release 和 tarball 资产。仓库需配置以下任一认证方式：
 
