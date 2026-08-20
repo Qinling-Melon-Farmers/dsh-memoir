@@ -226,6 +226,37 @@ test('withFileLock times out when the lock is held elsewhere', () => {
   }
 })
 
+test('withFileLock conservatively reclaims an old dead-owner lock', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const lockPath = join(ws.dir, 'stale.lock')
+    writeFileSync(lockPath, JSON.stringify({ pid: 999999, createdAt: Date.now() - 1000, nonce: 'stale-owner' }))
+    assert.equal(withFileLock(lockPath, () => 'reclaimed', { retryMs: 5, timeoutMs: 100, staleAfterMs: 10 }), 'reclaimed')
+    assert.ok(!existsSync(lockPath))
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('v2 entries migrate to lifecycle defaults and first mutation persists v3', () => {
+  const path = makeTempStorePath()
+  writeFileSync(path, JSON.stringify({
+    version: 2,
+    projects: { 'C:\\legacy': { path: 'C:\\legacy', title: 'legacy', updatedAt: 1, entries: [{ id: 'old-id', section: 'work', content: 'old', time: 1 }] } },
+  }))
+  const store = new MemoirStore(path)
+  const old = store.entries('C:\\legacy')[0]!
+  assert.equal(old.id, 'old-id')
+  assert.equal(old.importance, 3)
+  assert.equal(old.pinned, false)
+  assert.equal(old.status, 'active')
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 2, 'startup read does not rewrite the legacy file')
+  store.record('C:\\legacy', { section: 'lessons', content: 'new', importance: 5, pinned: true, supersedes: ['old-id'] })
+  const persisted = JSON.parse(readFileSync(path, 'utf8')) as { version: number; projects: Record<string, { entries: Array<{ id: string; status: string }> }> }
+  assert.equal(persisted.version, 3)
+  assert.equal(persisted.projects['c:/legacy']?.entries.find((entry) => entry.id === 'old-id')?.status, 'superseded')
+})
+
 test('two store instances mutating one file lose no updates', () => {
   const path = makeTempStorePath()
   const ws = makeTempWorkspace()

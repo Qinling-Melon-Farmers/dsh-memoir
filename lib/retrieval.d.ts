@@ -8,7 +8,7 @@
  *     section weight + recency decay
  *   - revision/epoch-aware LRU query cache (default 128 entries)
  */
-import type { MemoirEntry, MemoirStore, SectionKey } from './store.js';
+import type { MemoirEntry, MemoirStatus, MemoirStore, SectionKey } from './store.js';
 /** BM25 constants (standard defaults). */
 export declare const BM25_K1 = 1.5;
 export declare const BM25_B = 0.75;
@@ -130,6 +130,7 @@ export declare class RetrievalEngine {
         section?: SectionKey;
         cwd?: string;
         now?: number;
+        status?: MemoirStatus | 'all';
     }): RankedEntry[];
     /**
      * Cached search: the key is epoch + cwd + section + normalized query +
@@ -145,6 +146,7 @@ export declare class RetrievalEngine {
         now?: number;
         limit?: number;
         detail?: string;
+        status?: MemoirStatus | 'all';
     }): RankedEntry[];
     /** Retrieval observability snapshot for the diagnostics endpoint. */
     diagnostics(): RetrievalDiagnostics;

@@ -139,6 +139,21 @@ test('empty query terms return no ranked results', () => {
   }
 })
 
+test('retrieval defaults to active entries and can include lifecycle history', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const active = store.record(ws.cwd, { section: 'work', content: '同一个关键词 active' })
+    const archived = store.record(ws.cwd, { section: 'work', content: '同一个关键词 archived' })
+    store.update(ws.cwd, archived.id, { status: 'archived' })
+    const engine = new RetrievalEngine(store)
+    assert.deepEqual(engine.search('关键词', { cwd: ws.cwd }).map((r) => r.entry.id), [active.id])
+    assert.equal(engine.search('关键词', { cwd: ws.cwd, status: 'all' }).length, 2)
+  } finally {
+    ws.cleanup()
+  }
+})
+
 test('tokenizeDocument keeps repeats (true TF), tokenizeQuery dedupes', () => {
   const doc = tokenizeDocument('cache cache cache cache')
   const query = tokenizeQuery('cache cache cache cache')

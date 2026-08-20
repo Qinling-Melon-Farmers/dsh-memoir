@@ -71,6 +71,9 @@ html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir
 }
 .memoir-entry-title { font-weight: 600; margin-bottom: 2px; }
 .memoir-entry-content { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.memoir-entry-actions { display: flex; gap: 4px; margin: 4px 0; }
+.memoir-status-filter { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; }
+.memoir-status-filter select { max-width: 110px; }
 .memoir-delete {
   float: right; border: none; background: transparent; color: inherit; opacity: .45;
   cursor: pointer; border-radius: 4px; padding: 2px 6px; font-size: 12px;
@@ -108,6 +111,14 @@ html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir
 .memoir-entry-row:hover { background: var(--bg-hover, rgba(0,0,0,.06)); }
 .memoir-entry-row[data-active="true"] { background: var(--bg-hover, rgba(0,0,0,.08)); }
 .memoir-entry-icon { display: inline-flex; }
+
+/* The host keeps sidebar rows mounted in its narrow rail. Hide only the
+   visible label there; aria-label/title remain available to assistive tech
+   and hover users. */
+[data-dsh-frame][data-sidebar-collapsed] .memoir-entry-row {
+  justify-content: center; gap: 0; padding-inline: 0;
+}
+[data-dsh-frame][data-sidebar-collapsed] .memoir-entry-label { display: none; }
 
 /* v0.4.2 ranked search */
 .memoir-ranked-note { font-size: 11px; opacity: .65; margin: 4px 0 8px; }

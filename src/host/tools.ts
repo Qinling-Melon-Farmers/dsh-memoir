@@ -140,6 +140,18 @@ export function memoirRecordTool(store: MemoirStore) {
         required: true,
         description: '记忆正文：具体做了什么、结论、教训或下一步怎么做。建议精炼、可执行。',
       },
+      importance: {
+        type: 'number',
+        description: 'Optional importance from 1 to 5; defaults to 3.',
+      },
+      pinned: {
+        type: 'boolean',
+        description: 'Optional flag keeping this entry prominent.',
+      },
+      supersedes: {
+        type: 'array',
+        description: 'Optional ids of entries this record explicitly supersedes.',
+      },
     },
     output: {
       schema: {
@@ -165,7 +177,14 @@ export function memoirRecordTool(store: MemoirStore) {
         throw new Error('无法确定会话工作区（缺少 agent cwd）；请在项目会话内调用 memoir_record')
       }
       const sessionId = exec?.agent?.id ? String(exec.agent.id) : undefined
-      const entry = store.record(cwd, args, sessionId)
+      const entry = store.record(cwd, {
+        section: args.section,
+        ...(args.title !== undefined ? { title: args.title } : {}),
+        content: args.content,
+        ...(args.importance !== undefined ? { importance: args.importance } : {}),
+        ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
+        ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
+      }, sessionId)
       return {
         section: entry.section,
         id: entry.id,
@@ -233,13 +252,15 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
       const query = typeof args.query === 'string' ? args.query.toLowerCase() : ''
       const matches = (s: string): boolean => (query === '' ? true : String(s).toLowerCase().includes(query))
       const filterEntry = (e: MemoirEntry): boolean =>
+        (e.status ?? 'active') === 'active' &&
         (args.section === undefined || e.section === args.section) && matches((e.title ?? '') + ' ' + e.content)
 
       // v0.4.2: output is assembled through a rank-order budget — the top of
       // the ranked list always survives truncation.
       const budget = new OutputBudget(READ_OUTPUT_MAX_CHARS)
+      const renderedIds = new Set<string>()
 
-      if (scope === 'project' || scope === 'all') {
+      if (scope === 'project' || (scope === 'all' && cwd !== undefined)) {
         if (cwd === undefined) {
           budget.add('（无法确定会话工作区，跳过项目记忆）')
         } else {
@@ -249,6 +270,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
             : []
           if (ranked.length > 0) {
             const entries = ranked.slice(0, limit).map((r) => r.entry)
+            for (const entry of entries) renderedIds.add(entry.id)
             appendGrouped(budget, entries, renderEntry)
             if (ranked.length > entries.length) budget.add(clippedNote(ranked.length, entries.length))
           } else {
@@ -257,6 +279,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
               budget.add('本项目（' + cwd + '）暂无' + (query !== '' || args.section !== undefined ? '匹配的' : '') + '持久记忆。可用 memoir_record 沉淀。')
             } else {
               const entries = matched.slice(-limit)
+              for (const entry of entries) renderedIds.add(entry.id)
               appendGrouped(budget, entries, renderEntry)
               if (matched.length > entries.length) budget.add(clippedNote(matched.length, entries.length))
             }
@@ -271,7 +294,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
         if (ranked.length > 0) {
           // v0.4.2: the limit is a true global Top-K — slice first, then
           // group by project for rendering (never per-project × limit).
-          const top = ranked.slice(0, limit)
+          const top = ranked.filter((result) => !renderedIds.has(result.entry.id)).slice(0, limit)
           const grouped = new Map<string, MemoirEntry[]>()
           for (const result of top) {
             const bucket = grouped.get(result.projectPath) ?? []
@@ -288,7 +311,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
         } else {
           const projects = store.listProjects()
           for (const project of projects) {
-            const matched = store.entries(project.path).filter(filterEntry)
+            const matched = store.entries(project.path).filter((entry) => !renderedIds.has(entry.id) && filterEntry(entry))
             if (matched.length === 0) continue
             const entries = matched.slice(-Math.min(limit, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
             if (!budget.add(['### ' + (project.title || projectTitle(project.path)), 'path: ' + project.path + '  updated: ' + formatTime(project.updatedAt)].join('\n'))) break

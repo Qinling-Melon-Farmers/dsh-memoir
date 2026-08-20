@@ -4,3 +4,4 @@
  */
 
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note'
+export type MemoirStatus = 'active' | 'superseded' | 'archived'

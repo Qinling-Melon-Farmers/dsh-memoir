@@ -43,7 +43,7 @@ function createEntry(controller: PanelController, t: (key: string) => string): H
   entry.className = 'memoir-entry-row'
   entry.setAttribute('aria-label', t('entry.label'))
   entry.setAttribute('title', t('entry.tooltip'))
-  entry.innerHTML = '<span class="memoir-entry-icon">' + ICON + '</span><span>' + t('entry.label') + '</span>'
+  entry.innerHTML = '<span class="memoir-entry-icon">' + ICON + '</span><span class="memoir-entry-label">' + t('entry.label') + '</span>'
   entry.addEventListener('click', () => {
     controller.toggle()
   })

@@ -86,10 +86,10 @@ interface ScoredEntry {
  */
 export function rankEntries(entries: MemoirEntry[], now = Date.now()): ScoredEntry[] {
   return entries
-    .filter((e) => e.section !== 'note')
+    .filter((e) => e.section !== 'note' && (e.status ?? 'active') === 'active')
     .map((entry) => ({
       entry,
-      score: SECTION_WEIGHTS[entry.section] + recencyBoost(entry.time, now),
+      score: SECTION_WEIGHTS[entry.section] + recencyBoost(entry.time, now) + (entry.importance ?? 3) * 0.2 + (entry.pinned === true ? 2.5 : 0),
     }))
     .sort((a, b) => b.score - a.score || b.entry.time - a.entry.time || a.entry.id.localeCompare(b.entry.id))
 }
@@ -182,7 +182,7 @@ export function selectHotMemory(
   now = Date.now(),
 ): HotMemoryResult {
   const work = entries
-    .filter((e) => e.section === 'work')
+    .filter((e) => e.section === 'work' && (e.status ?? 'active') === 'active')
     .sort((a, b) => b.time - a.time || a.id.localeCompare(b.id))
   const actions = rankEntries(entries.filter((e) => e.section === 'actions'), now).map((s) => s.entry)
   const lessons = rankEntries(entries.filter((e) => e.section === 'lessons'), now).map((s) => s.entry)

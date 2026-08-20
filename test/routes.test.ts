@@ -195,6 +195,30 @@ test('DELETE removes an entry and updates the file', async () => {
   }
 })
 
+test('PATCH updates lifecycle metadata and active is the default read filter', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const entry = store.record(ws.cwd, { section: 'work', content: '可归档' })
+    const handler = makeRoutes(store)[0]!.handler
+    const updated = await callRoute(handler, {
+      method: 'PATCH',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: ws.cwd, id: entry.id, status: 'archived', pinned: true }),
+    })
+    assert.equal(updated.status, 200)
+    assert.equal((updated.envelope.value as { entry: { status: string; pinned: boolean } }).entry.status, 'archived')
+    assert.equal((updated.envelope.value as { entry: { status: string; pinned: boolean } }).entry.pinned, true)
+    const active = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) })
+    assert.deepEqual((active.envelope.value as { project: { entries: unknown[] } }).project.entries, [])
+    const archived = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) + '&status=archived' })
+    assert.equal((archived.envelope.value as { project: { entries: Array<{ id: string }> } }).project.entries[0]?.id, entry.id)
+  } finally {
+    ws.cleanup()
+  }
+})
+
 test('unknown routes 404 and wrong methods 405', async () => {
   const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   const notFound = await callRoute(handler, { url: '/api/dsh-memoir/bogus' })
@@ -221,7 +245,7 @@ test('GET search returns RetrievalEngine-ranked results', async () => {
     assert.equal(results[0]?.entry.title, 'cache 失效策略', 'title boost ranks first')
     assert.ok((results[0]?.score ?? 0) >= (results[1]?.score ?? 0), 'scores descending')
     assert.equal(results[0]?.projectPath, ws.cwd)
-    assert.deepEqual(seen, [ws.cwd], 'touchWorkspace saw the searched path')
+    assert.deepEqual(seen, [], 'GET search must not authorize the browser-supplied path')
     // Without an engine the endpoint is a 404.
     const plain = makeRoutes(store)[0]!.handler
     const missing = await callRoute(plain, { url: '/api/dsh-memoir/search?query=x' })
@@ -229,6 +253,22 @@ test('GET search returns RetrievalEngine-ranked results', async () => {
   } finally {
     ws.cleanup()
   }
+})
+
+test('GET on an arbitrary path does not grant later POST authorization', async () => {
+  const store = new MemoirStore(makeTempStorePath())
+  const seen = new Set<string>()
+  const handler = makeRoutes(store, undefined, undefined, undefined, (path) => seen.has(path), (path) => seen.add(path))[0]!.handler
+  const path = 'C:\\untrusted'
+  const read = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(path) })
+  assert.equal(read.status, 200)
+  const write = await callRoute(handler, {
+    method: 'POST',
+    url: '/api/dsh-memoir/entries',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ path, section: 'work', content: 'must reject' }),
+  })
+  assert.equal(write.status, 403)
 })
 
 test('GET hot-memory returns the inspector preview', async () => {

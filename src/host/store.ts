@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
 /** Global index format version. */
-export const FORMAT_VERSION = 2
+export const FORMAT_VERSION = 3
 
 /** Project memory file name (workspace root, git-committable). */
 export const PROJECT_FILE = 'PROJECT_MEMORY.md'
@@ -46,6 +46,10 @@ export const INJECT_LIMIT = 16000
 
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note'
 
+/** Lifecycle state for one memory entry (v0.5.0). */
+export type MemoirStatus = 'active' | 'superseded' | 'archived'
+export const MEMOIR_STATUSES: MemoirStatus[] = ['active', 'superseded', 'archived']
+
 /** One structured memory entry. */
 export interface MemoirEntry {
   id: string
@@ -54,6 +58,13 @@ export interface MemoirEntry {
   content: string
   time: number
   sessionId?: string
+  // Optional in the TypeScript shape for source compatibility with legacy
+  // callers; normalize() materializes these fields before persistence.
+  importance?: number
+  pinned?: boolean
+  status?: MemoirStatus
+  supersedes?: string[]
+  tags?: string[]
 }
 
 /** One project's bucket in the global index. */
@@ -75,6 +86,10 @@ export interface EntryPayload {
   section: SectionKey
   title?: string
   content: string
+  importance?: number
+  pinned?: boolean
+  supersedes?: string[]
+  tags?: string[]
 }
 
 /** An in-memory snapshot of the store at one revision. */
@@ -131,6 +146,7 @@ export function defaultStorePath(): string {
 /** Cross-process mutation lock defaults (roadmap §2.2). */
 export const DEFAULT_LOCK_RETRY_MS = 25
 export const DEFAULT_LOCK_TIMEOUT_MS = 5000
+export const DEFAULT_LOCK_STALE_AFTER_MS = 60_000
 
 /** Blocking sleep for short lock retries. */
 function sleepSync(ms: number): void {
@@ -148,18 +164,28 @@ function sleepSync(ms: number): void {
 export function withFileLock<T>(
   lockPath: string,
   fn: () => T,
-  options: { retryMs?: number; timeoutMs?: number } = {},
+  options: { retryMs?: number; timeoutMs?: number; staleAfterMs?: number } = {},
 ): T {
   const retryMs = options.retryMs ?? DEFAULT_LOCK_RETRY_MS
   const timeoutMs = options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
+  const staleAfterMs = options.staleAfterMs ?? DEFAULT_LOCK_STALE_AFTER_MS
   const started = Date.now()
   let fd: number | null = null
   for (;;) {
     try {
-      fd = openSync(lockPath, 'wx')
+      const candidate = openSync(lockPath, 'wx')
+      try {
+        writeFileSync(candidate, JSON.stringify({ pid: process.pid, createdAt: Date.now(), nonce: randomBytes(8).toString('hex') }))
+      } catch (error) {
+        try { closeSync(candidate) } catch { /* best effort */ }
+        try { unlinkSync(lockPath) } catch { /* best effort */ }
+        throw error
+      }
+      fd = candidate
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (reclaimableStaleLock(lockPath, staleAfterMs)) continue
       if (Date.now() - started >= timeoutMs) {
         throw new Error('dsh-memoir: store lock timeout after ' + timeoutMs + 'ms (' + lockPath + ') — another process may hold a stale lock')
       }
@@ -179,6 +205,31 @@ export function withFileLock<T>(
     } catch {
       // already released
     }
+  }
+}
+
+/** Return true only for a well-formed, old lock owned by a dead process. */
+function reclaimableStaleLock(lockPath: string, staleAfterMs: number): boolean {
+  try {
+    const raw = JSON.parse(readFileSync(lockPath, 'utf8')) as unknown
+    if (typeof raw !== 'object' || raw === null) return false
+    const metadata = raw as { pid?: unknown; createdAt?: unknown; nonce?: unknown }
+    if (!Number.isInteger(metadata.pid) || (metadata.pid as number) <= 0 || typeof metadata.createdAt !== 'number' || !Number.isFinite(metadata.createdAt) || typeof metadata.nonce !== 'string' || metadata.nonce === '') return false
+    if (Date.now() - metadata.createdAt <= staleAfterMs) return false
+    try {
+      process.kill(metadata.pid as number, 0)
+      return false
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') return false
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false
+    }
+    const confirm = JSON.parse(readFileSync(lockPath, 'utf8')) as { nonce?: unknown; createdAt?: unknown }
+    if (confirm.nonce !== metadata.nonce || confirm.createdAt !== metadata.createdAt) return false
+    unlinkSync(lockPath)
+    return true
+  } catch {
+    // Malformed/unreadable locks are fail-safe and will expire by timeout.
+    return false
   }
 }
 
@@ -254,7 +305,27 @@ export function validateEntryPayload(payload: unknown): string | undefined {
   if (record.title !== undefined && (typeof record.title !== 'string' || record.title.length > 200)) {
     return 'title must be a string of at most 200 chars'
   }
+  if (record.importance !== undefined && (!Number.isInteger(record.importance) || (record.importance as number) < 1 || (record.importance as number) > 5)) {
+    return 'importance must be an integer from 1 to 5'
+  }
+  if (record.pinned !== undefined && typeof record.pinned !== 'boolean') return 'pinned must be a boolean'
+  if (record.supersedes !== undefined && (!Array.isArray(record.supersedes) || record.supersedes.some((id) => typeof id !== 'string' || id.trim() === ''))) {
+    return 'supersedes must be an array of entry ids'
+  }
+  if (record.tags !== undefined && (!Array.isArray(record.tags) || record.tags.some((tag) => typeof tag !== 'string' || tag.trim() === ''))) {
+    return 'tags must be an array of non-empty strings'
+  }
   return undefined
+}
+
+function normalizedImportance(value: unknown): number {
+  return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 5 ? value as number : 3
+}
+
+function normalizedStrings(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const values = [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map((item) => item.trim()))]
+  return values.length > 0 ? values : undefined
 }
 
 /**
@@ -272,6 +343,8 @@ export class MemoirStore {
 
   /** Cross-process mutation lock acquisition timeout (withFileLock). */
   readonly lockTimeoutMs: number
+  /** Cross-process stale lock reclaim threshold. */
+  readonly lockStaleAfterMs: number
 
   /** The in-memory snapshot backing warm reads. */
   private snapshot: StoreSnapshot | null = null
@@ -302,11 +375,12 @@ export class MemoirStore {
    * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
    *   tuning (tests shrink these; defaults 25ms / 5000ms).
    */
-  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number }) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number }) {
     this.path = path ?? defaultStorePath()
     this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
     this.lockRetryMs = options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS
     this.lockTimeoutMs = options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
+    this.lockStaleAfterMs = options?.lockStaleAfterMs ?? DEFAULT_LOCK_STALE_AFTER_MS
   }
 
   /** The cross-process lock file guarding mutations of this store. */
@@ -330,7 +404,7 @@ export class MemoirStore {
         this.invalidate()
         return mutate()
       },
-      { retryMs: this.lockRetryMs, timeoutMs: this.lockTimeoutMs },
+      { retryMs: this.lockRetryMs, timeoutMs: this.lockTimeoutMs, staleAfterMs: this.lockStaleAfterMs },
     )
   }
 
@@ -441,6 +515,11 @@ export class MemoirStore {
               content: typeof e.content === 'string' ? e.content : '',
               time: typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now(),
               ...(typeof e.sessionId === 'string' && e.sessionId !== '' ? { sessionId: e.sessionId } : {}),
+              importance: normalizedImportance(e.importance),
+              pinned: e.pinned === true,
+              status: e.status === 'active' || e.status === 'superseded' || e.status === 'archived' ? e.status : 'active',
+              ...(normalizedStrings(e.supersedes) !== undefined ? { supersedes: normalizedStrings(e.supersedes) } : {}),
+              ...(normalizedStrings(e.tags) !== undefined ? { tags: normalizedStrings(e.tags) } : {}),
             }))
       const normalized: MemoirProject = {
         path: typeof project.path === 'string' && project.path !== '' ? project.path : rawKey,
@@ -552,6 +631,17 @@ export class MemoirStore {
         content: payload.content.trim(),
         time: Date.now(),
         ...(typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {}),
+        importance: normalizedImportance(payload.importance),
+        pinned: payload.pinned === true,
+        status: 'active',
+        ...(normalizedStrings(payload.supersedes) !== undefined ? { supersedes: normalizedStrings(payload.supersedes) } : {}),
+        ...(normalizedStrings(payload.tags) !== undefined ? { tags: normalizedStrings(payload.tags) } : {}),
+      }
+      const superseded = new Set(entry.supersedes ?? [])
+      if (superseded.size > 0) {
+        for (const existing of project.entries) {
+          if (superseded.has(existing.id)) existing.status = 'superseded'
+        }
       }
       project.entries.push(entry)
       project.updatedAt = entry.time
@@ -575,6 +665,23 @@ export class MemoirStore {
       this.save(store)
       this.writeProjectFile(cwd)
       return true
+    })
+  }
+
+  /** Update lifecycle metadata without deleting the entry. */
+  update(cwd: string, id: string, patch: { pinned?: boolean; status?: MemoirStatus }): MemoirEntry | undefined {
+    return this.mutateLocked(() => {
+      const store = this.load()
+      const project = store.projects[projectKey(cwd)]
+      const entry = project?.entries.find((candidate) => candidate.id === id)
+      if (entry === undefined) return undefined
+      if (patch.pinned !== undefined) entry.pinned = patch.pinned
+      if (patch.status !== undefined) entry.status = patch.status
+      if (patch.pinned === undefined && patch.status === undefined) return entry
+      project.updatedAt = Date.now()
+      this.save(store)
+      this.writeProjectFile(cwd)
+      return entry
     })
   }
 
@@ -613,7 +720,8 @@ export class MemoirStore {
       '# 项目持久记忆 Project Memory',
       '',
       '> 本文件由 dsh-memoir 插件维护：记录本项目历次会话的工作归纳、经验教训与行动指南，',
-      '> 作为未来 AGENTS 接手本项目时的行动指南。会话开始时自动注入 system prompt。',
+      '> 作为未来 AGENTS 接手本项目时的行动指南；它是人类可读的投影，不是 system prompt 的完整注入内容。',
+      '> 新会话只注入有界的 Hot Memory，完整历史通过 memoir_read 按需检索。',
       '',
     ]
     const body: string[] = []

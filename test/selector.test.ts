@@ -66,6 +66,16 @@ test('recency boosts newer entries within the same section', () => {
   assert.equal(ranked[0].entry.id, 'new', 'recency wins within a section')
 })
 
+test('lifecycle selector excludes archived entries and boosts pinned importance', () => {
+  const now = 1_700_000_000_000
+  const ranked = rankEntries([
+    { id: 'normal', section: 'work', content: 'normal', time: now, importance: 1 },
+    { id: 'pinned', section: 'work', content: 'pinned', time: now, importance: 5, pinned: true },
+    { id: 'archived', section: 'work', content: 'archived', time: now, status: 'archived' },
+  ], now)
+  assert.deepEqual(ranked.map((item) => item.entry.id), ['pinned', 'normal'])
+})
+
 test('compact format has no ids-ts-style metadata leaks', () => {
   const line = compactLine({ id: 'x', section: 'work', title: '标题', content: '多\n行   正文', time: 1 })
   assert.equal(line, '- 标题：多 行 正文')

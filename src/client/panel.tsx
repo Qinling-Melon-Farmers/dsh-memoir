@@ -9,7 +9,7 @@ import { SECTION_KEYS } from './i18n.js'
 import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireProject, WireSearchResult } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
-import type { SectionKey } from './types.ts'
+import type { MemoirStatus, SectionKey } from './types.ts'
 
 interface PanelProps {
   controller: PanelController
@@ -27,6 +27,10 @@ function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string 
     <div className="memoir-entry-meta">
       <span>{timeText}</span>
       <span className="memoir-chip">{t('sections.' + entry.section)}</span>
+      {entry.status !== undefined && entry.status !== 'active'
+        ? <span className="memoir-chip">{t('status.' + entry.status)}</span>
+        : null}
+      {entry.pinned === true ? <span className="memoir-chip">{t('lifecycle.pin')}</span> : null}
       {entry.sessionId !== undefined
         ? <span title={`${t('session')}: ${entry.sessionId}`}>{entry.sessionId.slice(0, 12)}</span>
         : null}
@@ -34,10 +38,16 @@ function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string 
   )
 }
 
-function EntryCard({ entry, t, onDelete, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; score?: number }) {
+function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: { pinned?: boolean; status?: MemoirStatus }) => void; score?: number }) {
   return (
     <div className="memoir-entry">
       <button type="button" className="memoir-delete" title={t('delete.confirm')} onClick={() => onDelete(entry)}>×</button>
+      {onUpdate !== undefined
+        ? <div className="memoir-entry-actions">
+            <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { pinned: entry.pinned !== true })}>{entry.pinned === true ? t('lifecycle.unpin') : t('lifecycle.pin')}</button>
+            <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { status: entry.status === 'archived' ? 'active' : 'archived' })}>{entry.status === 'archived' ? t('lifecycle.restore') : t('lifecycle.archive')}</button>
+          </div>
+        : null}
       <EntryMeta entry={entry} t={t} />
       {score !== undefined
         ? <span className="memoir-score" title={t('search.ranked')}>{score.toFixed(3)}</span>
@@ -49,7 +59,7 @@ function EntryCard({ entry, t, onDelete, score }: { entry: WireEntry; t: (key: s
 }
 
 /** Sectioned entry list in canonical order. */
-function SectionedEntries({ entries, t, onDelete }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void }) {
+function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: { pinned?: boolean; status?: MemoirStatus }) => void }) {
   const groups = useMemo(
     () => SECTION_KEYS.map((key) => ({ key, entries: entries.filter((e) => e.section === key) })).filter((g) => g.entries.length > 0),
     [entries],
@@ -70,7 +80,7 @@ function SectionedEntries({ entries, t, onDelete }: { entries: WireEntry[]; t: (
             <span className="memoir-count">({group.entries.length})</span>
           </div>
           {group.entries.map((entry) => (
-            <EntryCard key={entry.id} entry={entry} t={t} onDelete={onDelete} />
+            <EntryCard key={entry.id} entry={entry} t={t} onDelete={onDelete} onUpdate={onUpdate} />
           ))}
         </Fragment>
       ))}
@@ -83,12 +93,13 @@ function SectionedEntries({ entries, t, onDelete }: { entries: WireEntry[]; t: (
  * the project tab or grouped by project for the global tab. Scores are
  * shown as chips so the ranking is inspectable.
  */
-function RankedResults({ results, pending, grouped, t, onDelete }: {
+function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
   results: WireSearchResult[]
   pending: boolean
   grouped: boolean
   t: (key: string) => string
   onDelete: (entry: WireEntry, path: string) => void
+  onUpdate?: (entry: WireEntry, path: string, patch: { pinned?: boolean; status?: MemoirStatus }) => void
 }) {
   if (pending) return <div className="memoir-empty">…</div>
   if (results.length === 0) {
@@ -104,7 +115,7 @@ function RankedResults({ results, pending, grouped, t, onDelete }: {
       <Fragment>
         <div className="memoir-ranked-note">{t('search.ranked')}</div>
         {results.map((r) => (
-          <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} />
+          <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} onUpdate={(entry, patch) => onUpdate?.(entry, r.projectPath, patch)} />
         ))}
       </Fragment>
     )
@@ -124,7 +135,7 @@ function RankedResults({ results, pending, grouped, t, onDelete }: {
             <span className="memoir-project-path">{path}</span>
           </div>
           {bucket.map((r) => (
-            <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, path)} />
+            <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, path)} onUpdate={(entry, patch) => onUpdate?.(entry, path, patch)} />
           ))}
         </div>
       ))}
@@ -172,6 +183,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const cwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
   const [tab, setTab] = useState<'project' | 'global'>('project')
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<MemoirStatus | 'all'>('active')
   const [formOpen, setFormOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [project, setProject] = useState<WireProject | null>(null)
@@ -196,13 +208,13 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         return undefined
       }
       setLoading(true)
-      api.project(cwd)
+      api.project(cwd, { status: statusFilter })
         .then((value) => { if (!cancelled) setProject(value.project) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     } else {
       setLoading(true)
-      api.global()
+      api.global({ status: statusFilter })
         .then((value) => { if (!cancelled) setProjects(value.projects) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -220,7 +232,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         .catch(() => { if (!cancelled) setHotMemory(null) })
     }
     return () => { cancelled = true }
-  }, [tab, cwd, refreshKey])
+  }, [tab, cwd, statusFilter, refreshKey])
 
   // v0.4.2: a non-empty query searches through the host RetrievalEngine —
   // the same BM25 ranking memoir_read uses. Debounced; empty query resets.
@@ -232,7 +244,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
     let cancelled = false
     const timer = setTimeout(() => {
       const scope = tab === 'project' ? 'project' : 'global'
-      api.search({ scope, path: tab === 'project' && cwd !== '' ? cwd : undefined, query: q })
+      api.search({ scope, path: tab === 'project' && cwd !== '' ? cwd : undefined, query: q, status: statusFilter })
         .then((value) => { if (!cancelled) setSearchResults(value.results) })
         .catch((e: Error) => {
           if (!cancelled) {
@@ -242,7 +254,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         })
     }, 200)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [q, tab, cwd, refreshKey])
+  }, [q, tab, cwd, statusFilter, refreshKey])
 
   const filterEntries = (entries: WireEntry[]) =>
     q === '' ? entries : entries.filter((e) => `${e.title ?? ''} ${e.content}`.toLowerCase().includes(q))
@@ -269,6 +281,14 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
       .finally(() => setBusy(false))
   }
 
+  const onUpdate = (entry: WireEntry, entryPath: string, patch: { pinned?: boolean; status?: MemoirStatus }) => {
+    setBusy(true)
+    api.update({ path: entryPath, id: entry.id, ...patch })
+      .then(() => reload())
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
   const projectEntries = project === null ? [] : filterEntries(project.entries)
 
   return (
@@ -287,6 +307,15 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
       </div>
       <div className="memoir-toolbar">
         <input className="memoir-search" placeholder={t('toolbar.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+        <label className="memoir-status-filter">
+          <span>{t('filter.status')}</span>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as MemoirStatus | 'all')}>
+            <option value="active">{t('status.active')}</option>
+            <option value="all">{t('filter.status')}: all</option>
+            <option value="superseded">{t('status.superseded')}</option>
+            <option value="archived">{t('status.archived')}</option>
+          </select>
+        </label>
         {tab === 'project' && cwd !== ''
           ? <button type="button" className="memoir-primary" onClick={() => setFormOpen((v) => !v)}>{formOpen ? t('toolbar.cancel') : t('toolbar.add')}</button>
           : null}
@@ -306,6 +335,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                   grouped={tab === 'global'}
                   t={t}
                   onDelete={(entry, path) => onDelete(entry, path)}
+                  onUpdate={onUpdate}
                 />
               )
             : tab === 'project'
@@ -323,7 +353,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                         <div className="memoir-empty-hint">{t('empty.projectHint')}</div>
                       </div>
                     )
-                  : <SectionedEntries entries={projectEntries} t={t} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} />
+                  : <SectionedEntries entries={projectEntries} t={t} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} onUpdate={(entry, patch) => onUpdate(entry, project?.path ?? cwd, patch)} />
               : projects.length === 0
                 ? (
                     <div className="memoir-empty">
@@ -344,7 +374,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                         <div className="memoir-project-meta">
                           {`${t('updated')} ${when.toISOString().slice(0, 16).replace('T', ' ')} · ${entries.length} ${t('entries')}`}
                         </div>
-                        <SectionedEntries entries={entries} t={t} onDelete={(entry) => onDelete(entry, p.path)} />
+                        <SectionedEntries entries={entries} t={t} onDelete={(entry) => onDelete(entry, p.path)} onUpdate={(entry, patch) => onUpdate(entry, p.path, patch)} />
                       </div>
                     )
                   })}

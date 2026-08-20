@@ -14,7 +14,7 @@
  * one bucket.
  */
 /** Global index format version. */
-export declare const FORMAT_VERSION = 2;
+export declare const FORMAT_VERSION = 3;
 /** Project memory file name (workspace root, git-committable). */
 export declare const PROJECT_FILE = "PROJECT_MEMORY.md";
 /** Section keys, human labels, and markdown headers (fixed order for rendering). */
@@ -32,6 +32,9 @@ export declare const SECTION_KEYS: SectionKey[];
  */
 export declare const INJECT_LIMIT = 16000;
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note';
+/** Lifecycle state for one memory entry (v0.5.0). */
+export type MemoirStatus = 'active' | 'superseded' | 'archived';
+export declare const MEMOIR_STATUSES: MemoirStatus[];
 /** One structured memory entry. */
 export interface MemoirEntry {
     id: string;
@@ -40,6 +43,11 @@ export interface MemoirEntry {
     content: string;
     time: number;
     sessionId?: string;
+    importance?: number;
+    pinned?: boolean;
+    status?: MemoirStatus;
+    supersedes?: string[];
+    tags?: string[];
 }
 /** One project's bucket in the global index. */
 export interface MemoirProject {
@@ -58,6 +66,10 @@ export interface EntryPayload {
     section: SectionKey;
     title?: string;
     content: string;
+    importance?: number;
+    pinned?: boolean;
+    supersedes?: string[];
+    tags?: string[];
 }
 /** An in-memory snapshot of the store at one revision. */
 export interface StoreSnapshot {
@@ -110,6 +122,7 @@ export declare function defaultStorePath(): string;
 /** Cross-process mutation lock defaults (roadmap §2.2). */
 export declare const DEFAULT_LOCK_RETRY_MS = 25;
 export declare const DEFAULT_LOCK_TIMEOUT_MS = 5000;
+export declare const DEFAULT_LOCK_STALE_AFTER_MS = 60000;
 /**
  * Run fn while holding an exclusive lock file created with openSync('wx')
  * (atomic O_EXCL create, no race window). Retries every retryMs until
@@ -120,6 +133,7 @@ export declare const DEFAULT_LOCK_TIMEOUT_MS = 5000;
 export declare function withFileLock<T>(lockPath: string, fn: () => T, options?: {
     retryMs?: number;
     timeoutMs?: number;
+    staleAfterMs?: number;
 }): T;
 /** `YYYY-MM-DD HH:mm` in local time. */
 export declare function formatTime(ms: number): string;
@@ -152,6 +166,8 @@ export declare class MemoirStore {
     readonly lockRetryMs: number;
     /** Cross-process mutation lock acquisition timeout (withFileLock). */
     readonly lockTimeoutMs: number;
+    /** Cross-process stale lock reclaim threshold. */
+    readonly lockStaleAfterMs: number;
     /** The in-memory snapshot backing warm reads. */
     private snapshot;
     /** Write counter; bumped on every save() (record/remove). */
@@ -181,6 +197,7 @@ export declare class MemoirStore {
         mtimeCheckIntervalMs?: number;
         lockRetryMs?: number;
         lockTimeoutMs?: number;
+        lockStaleAfterMs?: number;
     });
     /** The cross-process lock file guarding mutations of this store. */
     private lockFilePath;
@@ -231,6 +248,11 @@ export declare class MemoirStore {
     record(cwd: string, payload: EntryPayload, sessionId?: string): MemoirEntry;
     /** Remove one entry by id; regenerates the project markdown. */
     remove(cwd: string, id: string): boolean;
+    /** Update lifecycle metadata without deleting the entry. */
+    update(cwd: string, id: string, patch: {
+        pinned?: boolean;
+        status?: MemoirStatus;
+    }): MemoirEntry | undefined;
     /** Render one entry as a markdown bullet line. */
     renderEntryLine(entry: MemoirEntry): string;
     /** Cheap O(1) signature of one project's entries (count + tail id/time). */

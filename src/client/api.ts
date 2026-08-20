@@ -4,7 +4,7 @@
  * The fetch implementation is injectable for tests.
  */
 
-import type { SectionKey } from './types.ts'
+import type { MemoirStatus, SectionKey } from './types.ts'
 
 /** Error carrying the route's JSON error message. */
 export class MemoirApiError extends Error {
@@ -56,6 +56,11 @@ export interface WireEntry {
   content: string
   time: number
   sessionId?: string
+  importance?: number
+  pinned?: boolean
+  status?: MemoirStatus
+  supersedes?: string[]
+  tags?: string[]
 }
 
 export interface WireProject {
@@ -126,6 +131,10 @@ export interface RecordPayload {
   section: SectionKey
   title?: string
   content: string
+  importance?: number
+  pinned?: boolean
+  supersedes?: string[]
+  tags?: string[]
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<EnvelopeResponse>
@@ -142,13 +151,13 @@ export class MemoirApi {
   }
 
   /** Read one project's memory (empty project shape when unknown). */
-  async project(path: string, options: { section?: SectionKey; query?: string } = {}): Promise<{ project: WireProject }> {
+  async project(path: string, options: { section?: SectionKey; query?: string; status?: MemoirStatus | 'all' } = {}): Promise<{ project: WireProject }> {
     const response = await this.fetchImpl('/api/dsh-memoir/project' + query({ path, ...options }))
     return readEnvelope(response) as Promise<{ project: WireProject }>
   }
 
   /** Read the cross-project global index. */
-  async global(options: { section?: SectionKey; query?: string } = {}): Promise<{ projects: WireProject[] }> {
+  async global(options: { section?: SectionKey; query?: string; status?: MemoirStatus | 'all' } = {}): Promise<{ projects: WireProject[] }> {
     const response = await this.fetchImpl('/api/dsh-memoir/global' + query({ ...options }))
     return readEnvelope(response) as Promise<{ projects: WireProject[] }>
   }
@@ -163,13 +172,14 @@ export class MemoirApi {
    * Ranked search over the host RetrievalEngine (v0.4.2) — the same ranking
    * memoir_read uses, so the GUI search and the agent recall never diverge.
    */
-  async search(options: { scope: 'project' | 'global' | 'all'; path?: string; section?: SectionKey; query: string; limit?: number }): Promise<{ results: WireSearchResult[] }> {
+  async search(options: { scope: 'project' | 'global' | 'all'; path?: string; section?: SectionKey; query: string; limit?: number; status?: MemoirStatus | 'all' }): Promise<{ results: WireSearchResult[] }> {
     const response = await this.fetchImpl('/api/dsh-memoir/search' + query({
       scope: options.scope,
       path: options.path,
       section: options.section,
       query: options.query,
       limit: options.limit === undefined ? undefined : String(options.limit),
+      status: options.status,
     }))
     return readEnvelope(response) as Promise<{ results: WireSearchResult[] }>
   }
@@ -198,5 +208,15 @@ export class MemoirApi {
       body: JSON.stringify(payload),
     })
     return readEnvelope(response) as Promise<{ removed: boolean }>
+  }
+
+  /** Update lifecycle metadata (pin/archive/restore) without deleting. */
+  async update(payload: { path: string; id: string; pinned?: boolean; status?: MemoirStatus }): Promise<{ entry: WireEntry | null; updated: boolean }> {
+    const response = await this.fetchImpl('/api/dsh-memoir/entries', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return readEnvelope(response) as Promise<{ entry: WireEntry | null; updated: boolean }>
   }
 }

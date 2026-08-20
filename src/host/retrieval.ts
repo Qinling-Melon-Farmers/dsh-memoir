@@ -9,7 +9,7 @@
  *   - revision/epoch-aware LRU query cache (default 128 entries)
  */
 
-import type { MemoirEntry, MemoirStore, SectionKey } from './store.js'
+import type { MemoirEntry, MemoirStatus, MemoirStore, SectionKey } from './store.js'
 
 /** BM25 constants (standard defaults). */
 export const BM25_K1 = 1.5
@@ -341,7 +341,7 @@ export class RetrievalEngine {
   /** Rank all entries matching the section filter for a query. */
   search(
     query: string,
-    options: { section?: SectionKey; cwd?: string; now?: number } = {},
+    options: { section?: SectionKey; cwd?: string; now?: number; status?: MemoirStatus | 'all' } = {},
   ): RankedEntry[] {
     const startedAt = Date.now()
     const index = this.ensureIndex()
@@ -358,6 +358,7 @@ export class RetrievalEngine {
     const ranked: RankedEntry[] = []
     for (const entry of candidates) {
       if (options.section !== undefined && entry.section !== options.section) continue
+      if (options.status !== 'all' && (entry.status ?? 'active') !== (options.status ?? 'active')) continue
       // v0.4.2: body and title normalize against their own average lengths.
       const bodyLength = index.bodyLengths.get(entry.id) ?? 0
       const titleLength = index.titleLengths.get(entry.id) ?? 0
@@ -391,7 +392,7 @@ export class RetrievalEngine {
    */
   cachedSearch(
     query: string,
-    options: { section?: SectionKey; cwd?: string; now?: number; limit?: number; detail?: string } = {},
+    options: { section?: SectionKey; cwd?: string; now?: number; limit?: number; detail?: string; status?: MemoirStatus | 'all' } = {},
   ): RankedEntry[] {
     const now = options.now ?? Date.now()
     const timeBucket = Math.floor(now / QUERY_CACHE_TIME_BUCKET_MS)
@@ -400,6 +401,7 @@ export class RetrievalEngine {
       String(epoch),
       options.cwd ?? '',
       options.section ?? '',
+      options.status ?? 'active',
       query.toLowerCase().replace(/\s+/g, ' ').trim(),
       String(timeBucket),
     ].join('|')

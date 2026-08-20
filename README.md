@@ -81,6 +81,15 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
 
+## v0.5.0 生命周期与 rc8 兼容性
+
+- 当前开发基线为 `@deepseek-ai/dsh-* 0.1.0-rc.8`；peer dependency 与开发依赖已统一到 rc8。
+- 存储格式从 v2 迁移到 v3：旧条目保持原有 `id`、内容和时间，首次变更时补齐 `importance`、`pinned`、`status`、`supersedes` 与 `tags`；启动读取不会重写旧文件。
+- 默认只召回 `active` 条目；归档和被替代条目保留在历史中，可在 Web 面板切换状态查看。显式 `supersedes` 会把目标条目标记为 `superseded`，不会自动删除历史。
+- `PROJECT_MEMORY.md` 是人类可读投影；system prompt 只注入有界 Hot Memory，完整文件不会整体注入。
+- GET 路由不再把浏览器传入的路径登记为活动工作区；只有可信 system-prompt cwd 才能获得面板写权限。锁文件现在带 pid、创建时间和 nonce，只在超过 60 秒且 pid 已死亡时保守回收。
+- `memoir_read(scope: 'all')` 使用去重后的全局排序结果，避免当前项目与全局结果重复。
+
 ## Tools
 
 | 工具 | 作用 |

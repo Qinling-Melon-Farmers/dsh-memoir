@@ -242,7 +242,7 @@ export function apply(ctx: Context, config?: Config): void {
     }
     const allowedWorkspace = (path: string): boolean =>
       recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
-    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, touchWorkspace).map((route) => ctx.webServer.register(route))
+    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }

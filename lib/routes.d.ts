@@ -70,8 +70,8 @@ export declare function readJsonBody(req: IncomingMessage, limit?: number): Prom
  * @param hotMemory - optional hot-memory preview provider (inspector).
  * @param allowedWorkspace - optional write guard: only paths it accepts may
  *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
- * @param touchWorkspace - optional hook recording seen workspace paths
- *   (feeds the plugin's active-workspace set for write authorization).
+ * @param touchWorkspace - deprecated compatibility slot; GET requests never
+ *   use it for authorization because browser-supplied paths are untrusted.
  * @returns route definitions for ctx.webServer.register.
  */
 export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider, retrieval?: RetrievalEngine, hotMemory?: HotMemoryProvider, allowedWorkspace?: (path: string) => boolean, touchWorkspace?: (path: string) => void): WebRoute[];

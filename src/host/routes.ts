@@ -11,8 +11,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { SECTIONS, SECTION_KEYS, projectKey, projectTitle } from './store.js'
-import type { CacheStats, MemoirEntry, MemoirStore } from './store.js'
+import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload } from './store.js'
+import type { CacheStats, EntryPayload, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
@@ -97,10 +97,11 @@ function validPath(value: string): boolean {
 }
 
 /** Filter one entry by optional section + query. */
-function entryFilter(section: string | undefined, query: string): (entry: MemoirEntry) => boolean {
+function entryFilter(section: string | undefined, query: string, status: MemoirStatus | 'all' = 'active'): (entry: MemoirEntry) => boolean {
   const q = query.toLowerCase()
   return (entry) =>
     (section === undefined || entry.section === section) &&
+    (status === 'all' || (entry.status ?? 'active') === status) &&
     (q === '' || `${entry.title ?? ''} ${entry.content}`.toLowerCase().includes(q))
 }
 
@@ -127,8 +128,8 @@ function wireProject(
  * @param hotMemory - optional hot-memory preview provider (inspector).
  * @param allowedWorkspace - optional write guard: only paths it accepts may
  *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
- * @param touchWorkspace - optional hook recording seen workspace paths
- *   (feeds the plugin's active-workspace set for write authorization).
+ * @param touchWorkspace - deprecated compatibility slot; GET requests never
+ *   use it for authorization because browser-supplied paths are untrusted.
  * @returns route definitions for ctx.webServer.register.
  */
 export function makeRoutes(
@@ -160,6 +161,11 @@ export function makeRoutes(
           return
         }
         const query = url.searchParams.get('query') ?? ''
+        const rawStatus = url.searchParams.get('status') ?? 'active'
+        if (rawStatus !== 'all' && !MEMOIR_STATUSES.includes(rawStatus as MemoirStatus)) {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
         if (query === '') {
           json(res, OK({ results: [] }))
           return
@@ -168,11 +174,10 @@ export function makeRoutes(
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
-        if (touchWorkspace !== undefined && path !== undefined && path !== '') touchWorkspace(path)
         const rawLimit = Number(url.searchParams.get('limit') ?? 30)
         const limit = Math.min(100, Math.max(1, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 30))
         const cwd = scope === 'project' ? path : undefined
-        const ranked = retrieval.cachedSearch(query, { section: section as never, cwd }).slice(0, limit)
+        const ranked = retrieval.cachedSearch(query, { section: section as never, cwd, status: rawStatus as MemoirStatus | 'all' }).slice(0, limit)
         json(res, OK({ results: ranked }))
         return
       }
@@ -187,7 +192,6 @@ export function makeRoutes(
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
-        if (touchWorkspace !== undefined) touchWorkspace(path)
         json(res, OK({ hotMemory: hotMemory(path) }))
         return
       }
@@ -197,7 +201,6 @@ export function makeRoutes(
           return
         }
         const path = url.searchParams.get('path') ?? undefined
-        if (touchWorkspace !== undefined && path !== undefined && path !== '') touchWorkspace(path)
         json(res, OK(diagnostics(path)))
         return
       }
@@ -207,16 +210,20 @@ export function makeRoutes(
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
-        if (touchWorkspace !== undefined) touchWorkspace(path)
         const section = url.searchParams.get('section') ?? undefined
         if (section !== undefined && !SECTION_KEYS.includes(section as never)) {
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
         const query = url.searchParams.get('query') ?? ''
+        const rawStatus = url.searchParams.get('status') ?? 'active'
+        if (rawStatus !== 'all' && !MEMOIR_STATUSES.includes(rawStatus as MemoirStatus)) {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
         const key = projectKey(path)
         const project = store.project(path)
-        const filter = entryFilter(section, query)
+        const filter = entryFilter(section, query, rawStatus as MemoirStatus | 'all')
         const value = project === undefined
           ? { project: { key, path, title: projectTitle(path), updatedAt: 0, entries: [] } }
           : { project: wireProject(key, project, filter) }
@@ -230,7 +237,12 @@ export function makeRoutes(
           return
         }
         const query = url.searchParams.get('query') ?? ''
-        const filter = entryFilter(section, query)
+        const rawStatus = url.searchParams.get('status') ?? 'active'
+        if (rawStatus !== 'all' && !MEMOIR_STATUSES.includes(rawStatus as MemoirStatus)) {
+          json(res, FAIL(BAD_REQUEST), 400)
+          return
+        }
+        const filter = entryFilter(section, query, rawStatus as MemoirStatus | 'all')
         const storeFile = store.load()
         const projects = Object.entries(storeFile.projects)
           .map(([key, project]) => wireProject(key, project, filter))
@@ -245,7 +257,7 @@ export function makeRoutes(
     }
 
     // ----------------------------------------------------------- writes
-    if (method !== 'POST' && method !== 'DELETE') {
+    if (method !== 'POST' && method !== 'DELETE' && method !== 'PATCH') {
       json(res, FAIL(METHOD), 405)
       return
     }
@@ -289,8 +301,40 @@ export function makeRoutes(
       }
       const title = strField(payload, 'title', true) ?? undefined
       const sessionId = strField(payload, 'sessionId', true) ?? undefined
-      const entry = store.record(path, { section: section as never, title, content }, sessionId)
+      const recordPayload = {
+        section: section as never,
+        title,
+        content,
+        importance: (payload as Record<string, unknown>).importance,
+        pinned: (payload as Record<string, unknown>).pinned,
+        supersedes: (payload as Record<string, unknown>).supersedes,
+        tags: (payload as Record<string, unknown>).tags,
+      }
+      const validation = validateEntryPayload(recordPayload)
+      if (validation !== undefined) {
+        json(res, FAIL({ code: 'bad-request', message: validation }), 400)
+        return
+      }
+      const entry = store.record(path, recordPayload as EntryPayload, sessionId)
       json(res, OK({ entry }))
+      return
+    }
+
+    // PATCH lifecycle metadata
+    if (method === 'PATCH') {
+      const record = payload as Record<string, unknown>
+      const id = strField(payload, 'id')
+      const status = record.status
+      const pinned = record.pinned
+      if (id === null || (status !== undefined && (typeof status !== 'string' || !MEMOIR_STATUSES.includes(status as MemoirStatus))) || (pinned !== undefined && typeof pinned !== 'boolean')) {
+        json(res, FAIL(BAD_REQUEST), 400)
+        return
+      }
+      const entry = store.update(path, id, {
+        ...(pinned !== undefined ? { pinned: pinned as boolean } : {}),
+        ...(status !== undefined ? { status: status as MemoirStatus } : {}),
+      })
+      json(res, OK({ entry: entry ?? null, updated: entry !== undefined }))
       return
     }
 
