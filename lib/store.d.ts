@@ -71,6 +71,18 @@ export interface EntryPayload {
     supersedes?: string[];
     tags?: string[];
 }
+/** Mutable fields for an existing memory entry (v0.5 lifecycle). */
+export interface EntryUpdate {
+    section?: SectionKey;
+    /** Empty string or null removes the title. */
+    title?: string | null;
+    content?: string;
+    importance?: number;
+    pinned?: boolean;
+    status?: MemoirStatus;
+    supersedes?: string[];
+    tags?: string[];
+}
 /** An in-memory snapshot of the store at one revision. */
 export interface StoreSnapshot {
     /** Write revision this snapshot reflects (bumped only by save()). */
@@ -154,6 +166,8 @@ export declare function writeFileAtomic(path: string, content: string, mode?: nu
 export declare function bounded(value: string, limit: number): string;
 /** Validate one record payload; returns an error message or undefined. */
 export declare function validateEntryPayload(payload: unknown): string | undefined;
+/** Validate a partial update without requiring the immutable record fields. */
+export declare function validateEntryUpdate(payload: unknown): string | undefined;
 /**
  * The structured memory store.
  */
@@ -248,11 +262,8 @@ export declare class MemoirStore {
     record(cwd: string, payload: EntryPayload, sessionId?: string): MemoirEntry;
     /** Remove one entry by id; regenerates the project markdown. */
     remove(cwd: string, id: string): boolean;
-    /** Update lifecycle metadata without deleting the entry. */
-    update(cwd: string, id: string, patch: {
-        pinned?: boolean;
-        status?: MemoirStatus;
-    }): MemoirEntry | undefined;
+    /** Update an existing entry without deleting its id or creation time. */
+    update(cwd: string, id: string, patch: EntryUpdate): MemoirEntry | undefined;
     /** Render one entry as a markdown bullet line. */
     renderEntryLine(entry: MemoirEntry): string;
     /** Cheap O(1) signature of one project's entries (count + tail id/time). */

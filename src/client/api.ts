@@ -210,8 +210,8 @@ export class MemoirApi {
     return readEnvelope(response) as Promise<{ removed: boolean }>
   }
 
-  /** Update lifecycle metadata (pin/archive/restore) without deleting. */
-  async update(payload: { path: string; id: string; pinned?: boolean; status?: MemoirStatus }): Promise<{ entry: WireEntry | null; updated: boolean }> {
+  /** Update entry content or lifecycle metadata without deleting. */
+  async update(payload: { path: string; id: string; section?: SectionKey; title?: string | null; content?: string; importance?: number; pinned?: boolean; status?: MemoirStatus; supersedes?: string[]; tags?: string[] }): Promise<{ entry: WireEntry | null; updated: boolean }> {
     const response = await this.fetchImpl('/api/dsh-memoir/entries', {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },

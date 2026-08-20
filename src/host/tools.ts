@@ -1,8 +1,9 @@
 /**
  * Agent tools for dsh-memoir: memoir_record (persist one work / lesson /
- * action / note entry) and memoir_read (read project / global memory). Both
- * tools resolve the caller's workspace from the executing agent's session cwd
- * and delegate all persistence to the structured MemoirStore.
+ * action / note entry), memoir_update (edit lifecycle state), and memoir_read
+ * (read project / global memory). All tools resolve the caller's workspace
+ * from the executing agent's session cwd and delegate persistence to the
+ * structured MemoirStore.
  *
  * v0.3.1: section headers no longer duplicate "##"; project/global reads are
  * bounded by internal hard caps; descriptions and renders are trimmed.
@@ -13,8 +14,8 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { SECTIONS, SECTION_KEYS, formatTime, projectTitle } from './store.js'
-import type { MemoirEntry, MemoirStore } from './store.js'
+import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, formatTime, projectTitle, validateEntryUpdate } from './store.js'
+import type { EntryUpdate, MemoirEntry, MemoirStore } from './store.js'
 import type { RetrievalEngine } from './retrieval.js'
 
 /** One text content block (the only render shape these tools emit). */
@@ -152,6 +153,10 @@ export function memoirRecordTool(store: MemoirStore) {
         type: 'array',
         description: 'Optional ids of entries this record explicitly supersedes.',
       },
+      tags: {
+        type: 'array',
+        description: 'Optional tags for later filtering and explanation.',
+      },
     },
     output: {
       schema: {
@@ -184,6 +189,7 @@ export function memoirRecordTool(store: MemoirStore) {
         ...(args.importance !== undefined ? { importance: args.importance } : {}),
         ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
         ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
+        ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
       }, sessionId)
       return {
         section: entry.section,
@@ -194,6 +200,91 @@ export function memoirRecordTool(store: MemoirStore) {
         globalIndex: store.path,
         recordedAt: formatTime(entry.time),
       }
+    },
+  })
+}
+
+/** Update one existing entry while preserving its id and creation time. */
+export function memoirUpdateTool(store: MemoirStore) {
+  return defineTool({
+    name: 'memoir_update',
+    description:
+      '更新一条已有记忆的标题、正文、分类或生命周期状态，不删除历史。需要替换旧结论时优先更新或使用 status=superseded；' +
+      '更新后会同步 PROJECT_MEMORY.md 与 Hot Memory。Triggers: 修改记忆、纠正结论、归档记忆、标记过时、替代旧记忆。',
+    parameters: {
+      id: {
+        type: 'string',
+        required: true,
+        description: '要更新的记忆 id（先用 memoir_read 获取）。',
+      },
+      section: {
+        type: 'string',
+        enum: [...SECTION_KEYS],
+        description: '可选，新的记忆分类。',
+      },
+      title: {
+        type: 'string',
+        description: '可选，新的标题；传空字符串清除标题。',
+      },
+      content: {
+        type: 'string',
+        description: '可选，新的正文（不能为空）。',
+      },
+      importance: {
+        type: 'number',
+        description: '可选，重要性 1 到 5。',
+      },
+      pinned: {
+        type: 'boolean',
+        description: '可选，是否置顶。',
+      },
+      status: {
+        type: 'string',
+        enum: [...MEMOIR_STATUSES],
+        description: '可选，active / superseded / archived。',
+      },
+      supersedes: {
+        type: 'array',
+        description: '可选，此条目显式替代的旧记忆 id 列表；目标会标记为 superseded。',
+      },
+      tags: {
+        type: 'array',
+        description: '可选，替换标签列表；传空数组清除标签。',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          section: { type: 'string', required: true },
+          status: { type: 'string', required: true },
+          updated: { type: 'boolean', required: true },
+        },
+      },
+      render: (_args, value) => text('已更新记忆 [' + value.section + '] (id: ' + value.id + ', status: ' + value.status + ')'),
+    },
+    async execute(args, exec) {
+      const cwd = resolveWorkspace(exec)
+      if (cwd === undefined) {
+        throw new Error('无法确定会话工作区（缺少 agent cwd）；请在项目会话内调用 memoir_update')
+      }
+      const patch: EntryUpdate = {
+        ...(args.section !== undefined ? { section: args.section } : {}),
+        ...(args.title !== undefined ? { title: args.title } : {}),
+        ...(args.content !== undefined ? { content: args.content } : {}),
+        ...(args.importance !== undefined ? { importance: args.importance } : {}),
+        ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
+        ...(args.status !== undefined ? { status: args.status } : {}),
+        ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
+        ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
+      }
+      const validation = validateEntryUpdate(patch)
+      if (validation !== undefined) throw new Error(validation)
+      const entry = store.update(cwd, args.id, patch)
+      if (entry === undefined) throw new Error('找不到记忆条目：' + args.id)
+      return { id: entry.id, section: entry.section, status: entry.status ?? 'active', updated: true }
     },
   })
 }

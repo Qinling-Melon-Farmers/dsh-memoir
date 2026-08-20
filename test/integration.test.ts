@@ -55,10 +55,10 @@ function makeCtx() {
   return ctx
 }
 
-test('apply mounts two tools, one prefix route, one prompt section, and the auto-distill listener', () => {
+test('apply mounts lifecycle tools, one prefix route, one prompt section, and the auto-distill listener', () => {
   const ctx = makeCtx()
   apply(ctx as unknown as Context, { enabled: true, announceToAgent: true, autoDistill: true })
-  assert.deepEqual(ctx.registeredTools.map((t) => t.name), ['memoir_record', 'memoir_read'])
+  assert.deepEqual(ctx.registeredTools.map((t) => t.name), ['memoir_record', 'memoir_update', 'memoir_read'])
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.registeredRoutes[0]?.path, '/api/dsh-memoir')
   assert.equal(ctx.sections.length, 1)
@@ -80,7 +80,7 @@ test('apply with enabled=false mounts nothing', () => {
 test('apply with announceToAgent=false skips only the prompt section', () => {
   const ctx = makeCtx()
   apply(ctx as unknown as Context, { enabled: true, announceToAgent: false, autoDistill: true })
-  assert.equal(ctx.registeredTools.length, 2)
+  assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 0)
   assert.equal(ctx.listeners.length, 1)
@@ -89,7 +89,7 @@ test('apply with announceToAgent=false skips only the prompt section', () => {
 test('apply with autoDistill=false skips only the turn-end listener', () => {
   const ctx = makeCtx()
   apply(ctx as unknown as Context, { enabled: true, announceToAgent: true, autoDistill: false })
-  assert.equal(ctx.registeredTools.length, 2)
+  assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
   assert.equal(ctx.listeners.length, 0)
@@ -98,7 +98,7 @@ test('apply with autoDistill=false skips only the turn-end listener', () => {
 test('defaults: enabled and autoDistill are on when config is absent', () => {
   const ctx = makeCtx()
   apply(ctx as unknown as Context, undefined)
-  assert.equal(ctx.registeredTools.length, 2)
+  assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
   assert.equal(ctx.listeners.length, 1)
 })

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
-import { memoirRecordTool, memoirReadTool, resolveWorkspace } from '../lib/tools.js'
+import { memoirRecordTool, memoirReadTool, memoirUpdateTool, resolveWorkspace } from '../lib/tools.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
@@ -23,7 +23,8 @@ test('tool factories produce well-formed defineTool definitions', () => {
   const store = new MemoirStore(makeTempStorePath())
   const record = memoirRecordTool(store)
   const read = memoirReadTool(store)
-  for (const tool of [record, read]) {
+  const update = memoirUpdateTool(store)
+  for (const tool of [record, read, update]) {
     assert.ok(typeof tool.name === 'string' && tool.name.startsWith('memoir_'))
     assert.ok(typeof tool.description === 'string' && tool.description.length > 20)
     assert.ok(typeof tool.parameters === 'object' && tool.parameters !== null)
@@ -38,9 +39,31 @@ test('tool factories produce well-formed defineTool definitions', () => {
   assert.ok(params.required.includes('content'))
   const readParams = read.parameters as { properties: Record<string, { enum?: string[] }> }
   assert.ok(readParams.properties.scope?.enum?.includes('all'))
+  const updateParams = update.parameters as { properties: Record<string, { type?: string }>; required: string[] }
+  assert.equal(updateParams.properties.id?.type, 'string')
+  assert.ok(updateParams.required.includes('id'))
   // Render helpers produce text blocks.
   const blocks = record.output.render({}, { section: 'work', id: 'x', projectFile: 'p', globalIndex: 'g', recordedAt: 't' })
   assert.equal(blocks[0]?.type, 'text')
+})
+
+test('memoir_update edits an existing entry from the agent workspace', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const entry = store.record(ws.cwd, { section: 'work', title: '旧标题', content: '旧内容' })
+    const value = (await memoirUpdateTool(store).execute(
+      { id: entry.id, section: 'actions', title: '新标题', content: '新内容', status: 'archived' },
+      makeExec(ws.cwd),
+    )) as { id: string; section: string; status: string; updated: boolean }
+    assert.deepEqual(value, { id: entry.id, section: 'actions', status: 'archived', updated: true })
+    const updated = store.entries(ws.cwd).find((item) => item.id === entry.id)
+    assert.equal(updated?.title, '新标题')
+    assert.equal(updated?.content, '新内容')
+    assert.equal(updated?.status, 'archived')
+  } finally {
+    ws.cleanup()
+  }
 })
 
 test('memoir_record without a workspace throws a clear error', async () => {
