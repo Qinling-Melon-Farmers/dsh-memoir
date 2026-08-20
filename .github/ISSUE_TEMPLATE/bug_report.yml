@@ -1,0 +1,135 @@
+name: Bug 报告 (Bug report)
+description: 提交可复现的 Bug。必须附截图 / 日志证据，无证据将被关闭。
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请保持本模板完整并填写所有必填部分。缺少截图 / 日志证据、冒烟测试、代码引用或补丁的 Bug 报告将被自动关闭。
+
+        提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues?q=is%3Aissue)
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: 提交前查重
+      description: 提交前请先搜索确认没有重复的 Issue。
+      options:
+        - label: 我已搜索过 open/closed 的 Issue，确认本 Issue 没有重复。
+          required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: 涉及模块
+      description: 选择问题涉及的模块或区域。
+      options:
+        - 数据存储（store / SSOT / snapshot）
+        - 检索与排序（retrieval / BM25）
+        - Hot Memory 选择（selector / token 预算）
+        - 工具接口（memoir_record / memoir_read）
+        - 路由与 API（routes）
+        - Web GUI 面板（client）
+        - 打包与挂载（bundle patch / 构建）
+        - 自动收尾与会话钩子（autodistill）
+        - 测试 / bench
+        - 其他 / 不确定
+    validations:
+      required: true
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue 类型
+      description: 本表单仅用于可复现的 Bug；功能请求请使用另一个表单。
+      options:
+        - Bug 报告
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: 摘要
+      description: 用一两句话描述 Bug。
+      placeholder: 出了什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: expected-outcome
+    attributes:
+      label: 预期结果
+      description: 描述应该发生什么。
+      placeholder: 你期望的结果是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: details-reproduction
+    attributes:
+      label: 详情 / 复现步骤
+      description: 给出清晰的复现步骤。
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 出现 ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: DSH 版本、浏览器、插件版本与安装方式、操作系统及关键配置。
+      placeholder: |
+        - DSH 版本:
+        - 浏览器:
+        - dsh-memoir 版本 / 安装方式（github: / file:）:
+        - 操作系统:
+        - ~/.dsh/dsh-memoir.json 规模（条数 / 项目数，如相关）:
+    validations:
+      required: true
+  - type: textarea
+    id: bug-screenshot
+    attributes:
+      label: 证据截图 / 日志
+      description: 粘贴或上传展示 Bug 的截图；无可见界面的错误（store / 工具 / 路由）可用终端输出、日志或 PROJECT_MEMORY.md 异常内容的截图。无证据的 Bug 报告将被自动关闭。
+      placeholder: 将图片拖到此处，或粘贴 GitHub 图片 / 文件链接。
+    validations:
+      required: true
+  - type: textarea
+    id: smoke-test
+    attributes:
+      label: 冒烟测试
+      description: 说明你实际执行过的验证：按复现步骤在具体 DSH / 插件版本上的操作与观察结果、执行过的构建或命令（如 pnpm run build / pnpm test）、对照实验。未实际验证的描述视为无效。
+      placeholder: |
+        - 环境（DSH / dsh-memoir 版本）:
+        - 执行步骤与观察结果:
+        - 对照 / 历史版本差异:
+    validations:
+      required: true
+  - type: textarea
+    id: code-reference
+    attributes:
+      label: 引用代码
+      description: 指向仓库内相关代码的精确位置（文件路径 + 函数 / 行号，可附 GitHub 链接），便于维护者定位。
+      placeholder: |
+        src/host/store.ts:120-135
+        https://github.com/Qinling-Melon-Farmers/dsh-memoir/blob/main/src/host/store.ts#L120-L135
+    validations:
+      required: true
+  - type: textarea
+    id: patch
+    attributes:
+      label: 补丁
+      description: 提供你建议的修复补丁或实现草案（diff 或代码片段），即使不完整；只描述问题而不附补丁或草案的 Issue 将被关闭。
+      placeholder: |
+        ```diff
+        --- a/src/host/store.ts
+        +++ b/src/host/store.ts
+        @@ ... @@
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 补充信息
+      description: 如有日志、链接或其他上下文，请补充。
+    validations:
+      required: false

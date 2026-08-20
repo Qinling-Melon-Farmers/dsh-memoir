@@ -22,6 +22,10 @@ html[data-dsh-memoir-active] [data-dsh-memoir-view] {
 html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir-view]) {
   display: none;
 }
+/* Current shell renders the center column as [hash]_centerCol (CSS modules). */
+html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]) {
+  display: none;
+}
 
 .memoir-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .memoir-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
@@ -112,13 +116,26 @@ html[data-dsh-memoir-active] [data-pane="conversation"] > *:not([data-dsh-memoir
 .memoir-entry-row[data-active="true"] { background: var(--bg-hover, rgba(0,0,0,.08)); }
 .memoir-entry-icon { display: inline-flex; }
 
-/* The host keeps sidebar rows mounted in its narrow rail. Hide only the
-   visible label there; aria-label/title remain available to assistive tech
-   and hover users. */
-[data-dsh-frame][data-sidebar-collapsed] .memoir-entry-row {
-  justify-content: center; gap: 0; padding-inline: 0;
+/* Collapsed (rail) state: the shell flags the rail with data-sidebar-collapsed
+   on the frame root (AppFrame.tsx). The plain-DOM entry gets no wide prop, so
+   it mirrors the shell's rail treatment via ancestry — a centered 36x36
+   control box with an 18px icon (matching the New Session / Search rail
+   icons) and the text label hidden. The entry is a direct flex child of the
+   sidebar root, so it sits inline with the shell's own rail controls. */
+[data-sidebar-collapsed] [data-dsh-memoir-entry].memoir-entry-row {
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0 0 12px;
 }
-[data-dsh-frame][data-sidebar-collapsed] .memoir-entry-label { display: none; }
+[data-sidebar-collapsed] [data-dsh-memoir-entry] .memoir-entry-icon svg {
+  width: 18px;
+  height: 18px;
+}
+[data-sidebar-collapsed] [data-dsh-memoir-entry] .memoir-entry-label {
+  display: none;
+}
 
 /* v0.4.2 ranked search */
 .memoir-ranked-note { font-size: 11px; opacity: .65; margin: 4px 0 8px; }
