@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 
-[English](./README.en.md) · 中文
+[English](./README.en.md) · 中文 · [更新日志](./CHANGELOG.md) · [GitHub Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
 **dsh-memoir 是 DeepSeek Harness 的本地项目记忆层：把 Agent 的工作结论、经验教训和后续行动持久化，并通过有界 Hot Memory 自动继承、按需排序召回和 Web GUI 管理，实现跨会话项目记忆。**
 
@@ -211,7 +211,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 131 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 137 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
@@ -246,7 +246,9 @@ PR 请先提 Issue 讨论。
 
 ## Release
 
-版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test，再发布到 npm。仓库需配置以下任一认证方式：
+当前稳定版：**v0.5.0**（2026-08-20） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.0)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+
+版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test、发布 npm，并创建同 tag 的 GitHub Release 和 tarball 资产。仓库需配置以下任一认证方式：
 
 - npm Trusted Publishing：GitHub 仓库 `Qinling-Melon-Farmers/dsh-memoir`，workflow `publish.yml`
 - GitHub Actions secret `NPM_TOKEN`：使用具有发布权限且允许绕过发布 2FA 的 granular token

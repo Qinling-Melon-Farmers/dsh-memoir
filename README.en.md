@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 
-[中文](./README.md) · English
+[中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [GitHub Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
 **dsh-memoir is a local project-memory layer for DeepSeek Harness: it persists an agent's work conclusions, lessons learned, and next actions, then carries them across sessions through bounded Hot Memory injection, on-demand ranked recall, and Web GUI management.**
 
@@ -211,7 +211,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 131 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity
+pnpm test             # 137 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -245,7 +245,9 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, then publish to npm. Configure either of these auth options in the repo:
+Current stable release: **v0.5.0** (2026-08-20) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.0). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+
+Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, publish to npm, then create a same-tag GitHub Release with the tarball asset. Configure either of these auth options in the repo:
 
 - npm Trusted Publishing: GitHub repo `Qinling-Melon-Farmers/dsh-memoir`, workflow `publish.yml`
 - GitHub Actions secret `NPM_TOKEN`: a granular token with publish rights and 2FA bypass allowed
