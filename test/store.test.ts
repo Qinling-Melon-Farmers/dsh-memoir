@@ -10,7 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   MemoirStore, FORMAT_VERSION, SECTIONS, SECTION_KEYS, PROJECT_FILE,
-  projectKey, projectTitle, formatTime, bounded, validateEntryPayload,
+  projectKey, projectTitle, formatTime, bounded, validateEntryPayload, validateEntryUpdate,
   withFileLock,
 } from '../lib/store.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
@@ -23,6 +23,15 @@ test('validateEntryPayload rejects bad payloads', () => {
   assert.equal(typeof validateEntryPayload({ section: 'work', content: 'x', title: 42 }), 'string')
   assert.equal(validateEntryPayload({ section: 'work', content: 'x' }), undefined)
   assert.equal(validateEntryPayload({ section: 'note', content: 'x', title: 't' }), undefined)
+})
+
+test('validateEntryUpdate accepts partial lifecycle patches and rejects empty ones', () => {
+  assert.equal(typeof validateEntryUpdate(null), 'string')
+  assert.equal(typeof validateEntryUpdate({}), 'string')
+  assert.equal(typeof validateEntryUpdate({ content: '   ' }), 'string')
+  assert.equal(typeof validateEntryUpdate({ status: 'unknown' }), 'string')
+  assert.equal(validateEntryUpdate({ title: null }), undefined)
+  assert.equal(validateEntryUpdate({ section: 'actions', content: 'new conclusion', status: 'active' }), undefined)
 })
 
 test('projectKey / projectTitle handle windows and posix paths', () => {
@@ -123,6 +132,42 @@ test('remove deletes by id and regenerates', () => {
     const md = store.renderMarkdown(ws.cwd)
     assert.ok(md.includes('b'))
     assert.ok(!md.includes('> 暂无条目'), 'placeholder gone while entries exist')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('update edits an entry and explicitly supersedes selected history', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const old = store.record(ws.cwd, { section: 'lessons', title: '旧结论', content: '旧命令' })
+    const current = store.record(ws.cwd, { section: 'lessons', title: '当前结论', content: '当前命令' })
+    const originalTime = current.time
+    const updated = store.update(ws.cwd, current.id, {
+      section: 'actions',
+      title: '新结论',
+      content: '新命令',
+      importance: 5,
+      pinned: true,
+      tags: ['release'],
+      supersedes: [old.id],
+    })
+    assert.equal(updated?.id, current.id)
+    assert.equal(updated?.section, 'actions')
+    assert.equal(updated?.title, '新结论')
+    assert.equal(updated?.content, '新命令')
+    assert.equal(updated?.importance, 5)
+    assert.equal(updated?.pinned, true)
+    assert.deepEqual(updated?.tags, ['release'])
+    assert.deepEqual(updated?.supersedes, [old.id])
+    assert.equal(updated?.time, originalTime, 'editing preserves creation time')
+    assert.equal(store.entries(ws.cwd).find((entry) => entry.id === old.id)?.status, 'superseded')
+
+    const cleared = store.update(ws.cwd, current.id, { title: null, tags: [] })
+    assert.equal(cleared?.title, undefined)
+    assert.equal(cleared?.tags, undefined)
+    assert.ok(readFileSync(store.path, 'utf8').includes('新命令'))
   } finally {
     ws.cleanup()
   }

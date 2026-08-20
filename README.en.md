@@ -86,6 +86,7 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 - The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.0-rc.8`.
 - Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
 - Retrieval defaults to `active`. Archived and superseded history is retained and can be inspected from the Web panel. Explicit `supersedes` marks its targets as superseded; history is never deleted automatically.
+- Agents can use `memoir_update` to edit an entry's section, title, content, and lifecycle in place; the Web panel also supports editing, pinning, marking superseded, archiving, and restoring.
 - `PROJECT_MEMORY.md` is a human-readable projection. Only bounded Hot Memory enters the system prompt; the full file is not injected.
 - GET routes no longer register browser-supplied paths as active workspaces. Only the trusted system-prompt cwd grants panel write authorization. Lock metadata now includes pid, creation time, and nonce, with conservative reclaim only after 60 seconds and a dead owner.
 - `memoir_read(scope: 'all')` uses a deduplicated global ranking so project and global results are not repeated.
@@ -95,6 +96,7 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 | Tool | Purpose |
 | --- | --- |
 | `memoir_record` | write work / lessons / actions / note entries |
+| `memoir_update` | edit an existing entry while preserving its id and creation time; update content, tags, lifecycle, or explicitly supersede history |
 | `memoir_read` | local relevance retrieval across project (default) / global / all, with limit and compact/full output shapes |
 
 `memoir_read`'s query description matches its real behavior: **local relevance retrieval over titles and content — supports Chinese phrases, English keywords, code identifiers, and paths, ordered by relevance**.
@@ -211,7 +213,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 137 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity
+pnpm test             # 141 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 

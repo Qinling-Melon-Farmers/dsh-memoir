@@ -11,8 +11,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload } from './store.js'
-import type { CacheStats, EntryPayload, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
+import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload, validateEntryUpdate } from './store.js'
+import type { CacheStats, EntryPayload, EntryUpdate, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
@@ -320,20 +320,24 @@ export function makeRoutes(
       return
     }
 
-    // PATCH lifecycle metadata
+    // PATCH entry content and lifecycle metadata
     if (method === 'PATCH') {
       const record = payload as Record<string, unknown>
       const id = strField(payload, 'id')
-      const status = record.status
-      const pinned = record.pinned
-      if (id === null || (status !== undefined && (typeof status !== 'string' || !MEMOIR_STATUSES.includes(status as MemoirStatus))) || (pinned !== undefined && typeof pinned !== 'boolean')) {
+      if (id === null) {
         json(res, FAIL(BAD_REQUEST), 400)
         return
       }
-      const entry = store.update(path, id, {
-        ...(pinned !== undefined ? { pinned: pinned as boolean } : {}),
-        ...(status !== undefined ? { status: status as MemoirStatus } : {}),
-      })
+      const patch: Record<string, unknown> = {}
+      for (const field of ['section', 'title', 'content', 'importance', 'pinned', 'status', 'supersedes', 'tags']) {
+        if (Object.prototype.hasOwnProperty.call(record, field)) patch[field] = record[field]
+      }
+      const validation = validateEntryUpdate(patch)
+      if (validation !== undefined) {
+        json(res, FAIL({ code: 'bad-request', message: validation }), 400)
+        return
+      }
+      const entry = store.update(path, id, patch as EntryUpdate)
       json(res, OK({ entry: entry ?? null, updated: entry !== undefined }))
       return
     }

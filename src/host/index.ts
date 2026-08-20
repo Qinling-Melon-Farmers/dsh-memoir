@@ -17,6 +17,7 @@
  *
  * 提供的 agent 工具：
  *   - memoir_record(section, title?, content)  记录一条记忆
+ *   - memoir_update(id, patch)  编辑条目并更新生命周期
  *   - memoir_read(scope?, section?, query?, limit?, detail?)  读取记忆
  */
 
@@ -28,7 +29,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { MemoirStore, projectKey } from './store.js'
-import { memoirReadTool, memoirRecordTool } from './tools.js'
+import { memoirReadTool, memoirRecordTool, memoirUpdateTool } from './tools.js'
 import { makeRoutes } from './routes.js'
 import { installAutoDistill } from './autodistill.js'
 import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
@@ -187,6 +188,7 @@ export function apply(ctx: Context, config?: Config): void {
   ctx.effect(() => {
     const tools = [
       memoirRecordTool(store),
+      memoirUpdateTool(store),
       memoirReadTool(store, { defaultLimit: value.readDefaultLimit, maxLimit: value.readMaxLimit }, retrieval),
     ]
     const disposers = tools.map((tool) => ctx.tools.register(tool))

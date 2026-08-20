@@ -18,6 +18,17 @@ interface PanelProps {
   t: (key: string) => string
 }
 
+type EntryPatch = {
+  section?: SectionKey
+  title?: string | null
+  content?: string
+  importance?: number
+  pinned?: boolean
+  status?: MemoirStatus
+  supersedes?: string[]
+  tags?: string[]
+}
+
 /** One entry's meta line: time, section chip, session id tooltip. */
 function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string }) {
   const when = new Date(entry.time)
@@ -38,13 +49,26 @@ function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string 
   )
 }
 
-function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: { pinned?: boolean; status?: MemoirStatus }) => void; score?: number }) {
+function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; score?: number }) {
+  const [editing, setEditing] = useState(false)
+  const [section, setSection] = useState<SectionKey>(entry.section)
+  const [title, setTitle] = useState(entry.title ?? '')
+  const [content, setContent] = useState(entry.content)
+  const save = () => {
+    if (content.trim() === '' || onUpdate === undefined) return
+    onUpdate(entry, { section, title: title.trim() === '' ? null : title.trim(), content: content.trim() })
+    setEditing(false)
+  }
   return (
     <div className="memoir-entry">
       <button type="button" className="memoir-delete" title={t('delete.confirm')} onClick={() => onDelete(entry)}>×</button>
       {onUpdate !== undefined
         ? <div className="memoir-entry-actions">
+            <button type="button" className="memoir-iconbtn" onClick={() => setEditing((value) => !value)}>{editing ? t('toolbar.cancel') : t('lifecycle.edit')}</button>
             <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { pinned: entry.pinned !== true })}>{entry.pinned === true ? t('lifecycle.unpin') : t('lifecycle.pin')}</button>
+            {(entry.status ?? 'active') === 'active'
+              ? <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { status: 'superseded' })}>{t('lifecycle.supersede')}</button>
+              : <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { status: 'active' })}>{t('lifecycle.unsupersede')}</button>}
             <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { status: entry.status === 'archived' ? 'active' : 'archived' })}>{entry.status === 'archived' ? t('lifecycle.restore') : t('lifecycle.archive')}</button>
           </div>
         : null}
@@ -52,14 +76,37 @@ function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; 
       {score !== undefined
         ? <span className="memoir-score" title={t('search.ranked')}>{score.toFixed(3)}</span>
         : null}
-      {entry.title !== undefined ? <div className="memoir-entry-title">{entry.title}</div> : null}
-      <div className="memoir-entry-content">{entry.content}</div>
+      {editing
+        ? <div className="memoir-form memoir-entry-editor">
+            <div className="memoir-field">
+              <label>{t('form.section')}</label>
+              <select value={section} onChange={(e) => setSection(e.target.value as SectionKey)}>
+                {SECTION_KEYS.map((key) => <option key={key} value={key}>{t('sections.' + key)}</option>)}
+              </select>
+            </div>
+            <div className="memoir-field">
+              <label>{t('form.title')}</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="memoir-field">
+              <label>{t('form.content')}</label>
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} />
+            </div>
+            <div className="memoir-form-actions">
+              <button type="button" className="memoir-iconbtn" onClick={() => setEditing(false)}>{t('toolbar.cancel')}</button>
+              <button type="button" className="memoir-primary" onClick={save}>{t('lifecycle.save')}</button>
+            </div>
+          </div>
+        : <>
+            {entry.title !== undefined ? <div className="memoir-entry-title">{entry.title}</div> : null}
+            <div className="memoir-entry-content">{entry.content}</div>
+          </>}
     </div>
   )
 }
 
 /** Sectioned entry list in canonical order. */
-function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: { pinned?: boolean; status?: MemoirStatus }) => void }) {
+function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void }) {
   const groups = useMemo(
     () => SECTION_KEYS.map((key) => ({ key, entries: entries.filter((e) => e.section === key) })).filter((g) => g.entries.length > 0),
     [entries],
@@ -99,7 +146,7 @@ function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
   grouped: boolean
   t: (key: string) => string
   onDelete: (entry: WireEntry, path: string) => void
-  onUpdate?: (entry: WireEntry, path: string, patch: { pinned?: boolean; status?: MemoirStatus }) => void
+  onUpdate?: (entry: WireEntry, path: string, patch: EntryPatch) => void
 }) {
   if (pending) return <div className="memoir-empty">…</div>
   if (results.length === 0) {
@@ -281,11 +328,11 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
       .finally(() => setBusy(false))
   }
 
-  const onUpdate = (entry: WireEntry, entryPath: string, patch: { pinned?: boolean; status?: MemoirStatus }) => {
+  const onUpdate = (entry: WireEntry, entryPath: string, patch: EntryPatch) => {
     setBusy(true)
     api.update({ path: entryPath, id: entry.id, ...patch })
       .then(() => reload())
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => setError(`${t('update.failed')}: ${e.message}`))
       .finally(() => setBusy(false))
   }
 

@@ -31,5 +31,7 @@ export declare function renderEntryFull(entry: MemoirEntry): string;
 export declare function renderEntryCompact(entry: MemoirEntry, maxContent?: number): string;
 /** The record tool: persist one memory entry. */
 export declare function memoirRecordTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
+/** Update one existing entry while preserving its id and creation time. */
+export declare function memoirUpdateTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */
 export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, retrieval?: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;

@@ -92,6 +92,19 @@ export interface EntryPayload {
   tags?: string[]
 }
 
+/** Mutable fields for an existing memory entry (v0.5 lifecycle). */
+export interface EntryUpdate {
+  section?: SectionKey
+  /** Empty string or null removes the title. */
+  title?: string | null
+  content?: string
+  importance?: number
+  pinned?: boolean
+  status?: MemoirStatus
+  supersedes?: string[]
+  tags?: string[]
+}
+
 /** An in-memory snapshot of the store at one revision. */
 export interface StoreSnapshot {
   /** Write revision this snapshot reflects (bumped only by save()). */
@@ -313,6 +326,35 @@ export function validateEntryPayload(payload: unknown): string | undefined {
     return 'supersedes must be an array of entry ids'
   }
   if (record.tags !== undefined && (!Array.isArray(record.tags) || record.tags.some((tag) => typeof tag !== 'string' || tag.trim() === ''))) {
+    return 'tags must be an array of non-empty strings'
+  }
+  return undefined
+}
+
+/** Validate a partial update without requiring the immutable record fields. */
+export function validateEntryUpdate(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null) return 'patch must be a JSON object'
+  const patch = payload as Record<string, unknown>
+  const fields = ['section', 'title', 'content', 'importance', 'pinned', 'status', 'supersedes', 'tags']
+  if (!fields.some((field) => Object.prototype.hasOwnProperty.call(patch, field))) return 'at least one update field is required'
+  if (patch.section !== undefined && (typeof patch.section !== 'string' || !Object.prototype.hasOwnProperty.call(SECTIONS, patch.section))) {
+    return `section must be one of ${SECTION_KEYS.join('/')}`
+  }
+  if (patch.title !== undefined && patch.title !== null && (typeof patch.title !== 'string' || patch.title.length > 200)) {
+    return 'title must be a string of at most 200 chars, or null to clear it'
+  }
+  if (patch.content !== undefined && (typeof patch.content !== 'string' || patch.content.trim() === '')) return 'content cannot be empty'
+  if (patch.importance !== undefined && (!Number.isInteger(patch.importance) || (patch.importance as number) < 1 || (patch.importance as number) > 5)) {
+    return 'importance must be an integer from 1 to 5'
+  }
+  if (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') return 'pinned must be a boolean'
+  if (patch.status !== undefined && (typeof patch.status !== 'string' || !MEMOIR_STATUSES.includes(patch.status as MemoirStatus))) {
+    return `status must be one of ${MEMOIR_STATUSES.join('/')}`
+  }
+  if (patch.supersedes !== undefined && (!Array.isArray(patch.supersedes) || patch.supersedes.some((id) => typeof id !== 'string' || id.trim() === ''))) {
+    return 'supersedes must be an array of entry ids'
+  }
+  if (patch.tags !== undefined && (!Array.isArray(patch.tags) || patch.tags.some((tag) => typeof tag !== 'string' || tag.trim() === ''))) {
     return 'tags must be an array of non-empty strings'
   }
   return undefined
@@ -668,16 +710,39 @@ export class MemoirStore {
     })
   }
 
-  /** Update lifecycle metadata without deleting the entry. */
-  update(cwd: string, id: string, patch: { pinned?: boolean; status?: MemoirStatus }): MemoirEntry | undefined {
+  /** Update an existing entry without deleting its id or creation time. */
+  update(cwd: string, id: string, patch: EntryUpdate): MemoirEntry | undefined {
     return this.mutateLocked(() => {
       const store = this.load()
       const project = store.projects[projectKey(cwd)]
       const entry = project?.entries.find((candidate) => candidate.id === id)
       if (entry === undefined) return undefined
+      if (patch.section !== undefined) entry.section = patch.section
+      if (patch.title !== undefined) {
+        const title = patch.title?.trim() ?? ''
+        if (title === '') delete entry.title
+        else entry.title = title
+      }
+      if (patch.content !== undefined) entry.content = patch.content.trim()
+      if (patch.importance !== undefined) entry.importance = normalizedImportance(patch.importance)
       if (patch.pinned !== undefined) entry.pinned = patch.pinned
       if (patch.status !== undefined) entry.status = patch.status
-      if (patch.pinned === undefined && patch.status === undefined) return entry
+      if (patch.supersedes !== undefined) {
+        const supersedes = normalizedStrings(patch.supersedes)?.filter((target) => target !== entry.id)
+        if (supersedes === undefined || supersedes.length === 0) delete entry.supersedes
+        else {
+          entry.supersedes = supersedes
+          const targets = new Set(supersedes)
+          for (const candidate of project.entries) {
+            if (candidate.id !== entry.id && targets.has(candidate.id)) candidate.status = 'superseded'
+          }
+        }
+      }
+      if (patch.tags !== undefined) {
+        const tags = normalizedStrings(patch.tags)
+        if (tags === undefined) delete entry.tags
+        else entry.tags = tags
+      }
       project.updatedAt = Date.now()
       this.save(store)
       this.writeProjectFile(cwd)

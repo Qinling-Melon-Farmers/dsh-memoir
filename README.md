@@ -86,6 +86,7 @@ memoir_record 沉淀工作 / 教训 / 下一步
 - 当前开发基线为 `@deepseek-ai/dsh-* 0.1.0-rc.8`；peer dependency 与开发依赖已统一到 rc8。
 - 存储格式从 v2 迁移到 v3：旧条目保持原有 `id`、内容和时间，首次变更时补齐 `importance`、`pinned`、`status`、`supersedes` 与 `tags`；启动读取不会重写旧文件。
 - 默认只召回 `active` 条目；归档和被替代条目保留在历史中，可在 Web 面板切换状态查看。显式 `supersedes` 会把目标条目标记为 `superseded`，不会自动删除历史。
+- Agent 可用 `memoir_update` 原地编辑条目的分类、标题、正文和生命周期；Web 面板也支持编辑、置顶、标记过时、归档与恢复。
 - `PROJECT_MEMORY.md` 是人类可读投影；system prompt 只注入有界 Hot Memory，完整文件不会整体注入。
 - GET 路由不再把浏览器传入的路径登记为活动工作区；只有可信 system-prompt cwd 才能获得面板写权限。锁文件现在带 pid、创建时间和 nonce，只在超过 60 秒且 pid 已死亡时保守回收。
 - `memoir_read(scope: 'all')` 使用去重后的全局排序结果，避免当前项目与全局结果重复。
@@ -95,6 +96,7 @@ memoir_record 沉淀工作 / 教训 / 下一步
 | 工具 | 作用 |
 | --- | --- |
 | `memoir_record` | 写入 work（工作记录）/ lessons（经验教训）/ actions（行动指南）/ note（备注） |
+| `memoir_update` | 保留 id 和创建时间，更新既有条目的内容、分类、标签与生命周期；可用 `supersedes` 标记被替代历史 |
 | `memoir_read` | project（默认）/ global / all 的本地相关性检索，limit + compact/full 输出形态 |
 
 `memoir_read` 的 query 描述与真实行为一致：**本地相关性检索标题与正文，支持中文短语、英文关键词、代码标识符与路径，并按相关性排序**。
@@ -211,7 +213,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 137 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
+pnpm test             # 141 项测试：store（含多进程锁） / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 

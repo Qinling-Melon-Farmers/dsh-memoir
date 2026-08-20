@@ -205,11 +205,23 @@ test('PATCH updates lifecycle metadata and active is the default read filter', a
       method: 'PATCH',
       url: '/api/dsh-memoir/entries',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ path: ws.cwd, id: entry.id, status: 'archived', pinned: true }),
+      body: JSON.stringify({
+        path: ws.cwd,
+        id: entry.id,
+        section: 'actions',
+        title: '已更新',
+        content: '新的结论',
+        status: 'archived',
+        pinned: true,
+      }),
     })
     assert.equal(updated.status, 200)
-    assert.equal((updated.envelope.value as { entry: { status: string; pinned: boolean } }).entry.status, 'archived')
-    assert.equal((updated.envelope.value as { entry: { status: string; pinned: boolean } }).entry.pinned, true)
+    const updatedEntry = (updated.envelope.value as { entry: { status: string; pinned: boolean; section: string; title?: string; content: string } }).entry
+    assert.equal(updatedEntry.status, 'archived')
+    assert.equal(updatedEntry.pinned, true)
+    assert.equal(updatedEntry.section, 'actions')
+    assert.equal(updatedEntry.title, '已更新')
+    assert.equal(updatedEntry.content, '新的结论')
     const active = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) })
     assert.deepEqual((active.envelope.value as { project: { entries: unknown[] } }).project.entries, [])
     const archived = await callRoute(handler, { url: '/api/dsh-memoir/project?path=' + encodeURIComponent(ws.cwd) + '&status=archived' })

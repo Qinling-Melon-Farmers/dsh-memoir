@@ -128,6 +128,28 @@ test('MemoirApi.remove deletes by id', async () => {
   assert.deepEqual(JSON.parse(calls[0]?.init?.body ?? '{}'), { path: 'C:\\x', id: 'e9' })
 })
 
+test('MemoirApi.update patches content and lifecycle fields', async () => {
+  const calls: Array<{ url: string; init?: { method?: string; body?: string } }> = []
+  const fetchImpl = async (url: string, init?: unknown) => {
+    calls.push({ url, init: init as { method: string; body: string } })
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: { entry: { id: 'e9' }, updated: true } }))
+  }
+  const api = new MemoirApi(fetchImpl)
+  const value = await api.update({ path: 'C:\\x', id: 'e9', section: 'actions', title: null, content: 'new', status: 'superseded', supersedes: ['e1'] })
+  assert.equal(value.updated, true)
+  assert.equal(calls[0]?.url, '/api/dsh-memoir/entries')
+  assert.equal(calls[0]?.init?.method, 'PATCH')
+  assert.deepEqual(JSON.parse(calls[0]?.init?.body ?? '{}'), {
+    path: 'C:\\x',
+    id: 'e9',
+    section: 'actions',
+    title: null,
+    content: 'new',
+    status: 'superseded',
+    supersedes: ['e1'],
+  })
+})
+
 test('MemoirApi.global aggregates via the global route', async () => {
   const fetchImpl = async () =>
     envelopeResponse(200, JSON.stringify({ ok: true, value: { projects: [{ key: 'k', path: 'p', title: 't', updatedAt: 1, entries: [] }] } }))
