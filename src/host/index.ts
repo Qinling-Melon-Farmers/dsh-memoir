@@ -55,6 +55,12 @@ export interface Config {
   announceToAgent?: boolean
   /** When true (default), turns with real work are auto-distilled at turn end. */
   autoDistill?: boolean
+  /** Remind after every N eligible worked turns per agent (default 1, minimum 1). */
+  autoDistillEvery?: number
+  /** Minimum minutes between successful reminders per agent (default 0). */
+  autoDistillCooldownMin?: number
+  /** Minimum tool calls required on the triggering turn (default 1, minimum 1). */
+  autoDistillMinTools?: number
   // v0.4 — cache-aware injection
   /** Hot-memory soft target tokens (default 900). */
   hotMemoryTokens?: number
@@ -74,6 +80,9 @@ export interface Config {
 const DEFAULT_ENABLED = true
 const DEFAULT_ANNOUNCE = true
 const DEFAULT_AUTO_DISTILL = true
+const DEFAULT_AUTO_DISTILL_EVERY = 1
+const DEFAULT_AUTO_DISTILL_COOLDOWN_MIN = 0
+const DEFAULT_AUTO_DISTILL_MIN_TOOLS = 1
 
 /** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
  *  details live in the tool schemas, not in every prompt. */
@@ -89,6 +98,9 @@ export interface ResolvedConfig {
   enabled: boolean
   announceToAgent: boolean
   autoDistill: boolean
+  autoDistillEvery: number
+  autoDistillCooldownMin: number
+  autoDistillMinTools: number
   budget: MemoryBudget
   readDefaultLimit: number
   readMaxLimit: number
@@ -101,10 +113,17 @@ function resolveConfig(config: Config | undefined): ResolvedConfig {
   const hardMax = Math.max(target, Math.floor(config?.hotMemoryMaxTokens ?? DEFAULT_MEMORY_BUDGET.hardMaxTokens))
   const readDefaultLimit = Math.max(1, Math.floor(config?.readDefaultLimit ?? 8))
   const readMaxLimit = Math.max(readDefaultLimit, Math.floor(config?.readMaxLimit ?? 30))
+  const integerAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
+  const numberAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
   return {
     enabled: config?.enabled ?? DEFAULT_ENABLED,
     announceToAgent: config?.announceToAgent ?? DEFAULT_ANNOUNCE,
     autoDistill: config?.autoDistill ?? DEFAULT_AUTO_DISTILL,
+    autoDistillEvery: integerAtLeast(config?.autoDistillEvery, DEFAULT_AUTO_DISTILL_EVERY, 1),
+    autoDistillCooldownMin: numberAtLeast(config?.autoDistillCooldownMin, DEFAULT_AUTO_DISTILL_COOLDOWN_MIN, 0),
+    autoDistillMinTools: integerAtLeast(config?.autoDistillMinTools, DEFAULT_AUTO_DISTILL_MIN_TOOLS, 1),
     budget: { targetTokens: target, hardMaxTokens: hardMax },
     readDefaultLimit,
     readMaxLimit,
@@ -221,6 +240,9 @@ export function apply(ctx: Context, config?: Config): void {
           storeRevision: latest.storeRevision,
         },
         config: {
+          autoDistillEvery: value.autoDistillEvery,
+          autoDistillCooldownMin: value.autoDistillCooldownMin,
+          autoDistillMinTools: value.autoDistillMinTools,
           hotMemoryTokens: value.budget.targetTokens,
           hotMemoryMaxTokens: value.budget.hardMaxTokens,
           readDefaultLimit: value.readDefaultLimit,
@@ -252,7 +274,12 @@ export function apply(ctx: Context, config?: Config): void {
 
   if (value.autoDistill) {
     ctx.effect(
-      () => installAutoDistill(autoDistillWire(ctx), { enabled: () => value.autoDistill }),
+      () => installAutoDistill(autoDistillWire(ctx), {
+        enabled: () => value.autoDistill,
+        every: value.autoDistillEvery,
+        cooldownMin: value.autoDistillCooldownMin,
+        minTools: value.autoDistillMinTools,
+      }),
       'dsh-memoir: auto-distill',
     )
   }

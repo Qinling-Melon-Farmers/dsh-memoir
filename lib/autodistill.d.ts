@@ -19,11 +19,13 @@ export interface TurnEventLike {
     type: string;
     data?: unknown;
 }
-/** Scan the tail of a session log for one turn's tool activity. */
-export declare function turnActivity(events: readonly TurnEventLike[], turn: number): {
+export interface TurnActivity {
     worked: boolean;
     recorded: boolean;
-};
+    toolCalls: number;
+}
+/** Scan the tail of a session log for one turn's tool activity. */
+export declare function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity;
 /** The agent surface the turn-stopping listener needs. */
 export interface AutoDistillAgentLike {
     id: string;
@@ -38,11 +40,21 @@ export interface AutoDistillAgentLike {
 }
 /** Subagent sessions (and any nested delegation) never get distilled. */
 export declare function isSubagentSession(agent: AutoDistillAgentLike): boolean;
-/** Per-agent memory of turns already steered (with pruning). */
+export interface AutoDistillPolicy {
+    every: number;
+    cooldownMs: number;
+    minTools: number;
+}
+/** Per-agent frequency, cooldown, and duplicate-turn state (with pruning). */
 export declare class AutoDistillGate {
-    private steered;
-    /** Claim a turn for steering; false when already claimed (or pruned-out). */
-    consume(agentId: string, turn: number): boolean;
+    private states;
+    /**
+     * Consume one eligible worked turn and decide whether all policy conditions
+     * are ready. Duplicate events never advance the worked-turn counter.
+     */
+    consume(agentId: string, turn: number, toolCalls: number, policy: AutoDistillPolicy, now: number): boolean;
+    /** Record a successful steer; failed steer attempts do not start cooldown. */
+    recordSteer(agentId: string, now: number): void;
     /** Drop all state for one agent (disposal hygiene). */
     forget(agentId: string): void;
 }
@@ -62,4 +74,8 @@ export interface AutoDistillWire {
  */
 export declare function installAutoDistill(wire: AutoDistillWire, options: {
     enabled: () => boolean;
+    every?: number;
+    cooldownMin?: number;
+    minTools?: number;
+    now?: () => number;
 }): () => void;

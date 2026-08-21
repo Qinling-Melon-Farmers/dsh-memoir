@@ -17,6 +17,7 @@
  *
  * 提供的 agent 工具：
  *   - memoir_record(section, title?, content)  记录一条记忆
+ *   - memoir_update(id, patch)  编辑条目并更新生命周期
  *   - memoir_read(scope?, section?, query?, limit?, detail?)  读取记忆
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -35,6 +36,12 @@ export interface Config {
     announceToAgent?: boolean;
     /** When true (default), turns with real work are auto-distilled at turn end. */
     autoDistill?: boolean;
+    /** Remind after every N eligible worked turns per agent (default 1, minimum 1). */
+    autoDistillEvery?: number;
+    /** Minimum minutes between successful reminders per agent (default 0). */
+    autoDistillCooldownMin?: number;
+    /** Minimum tool calls required on the triggering turn (default 1, minimum 1). */
+    autoDistillMinTools?: number;
     /** Hot-memory soft target tokens (default 900). */
     hotMemoryTokens?: number;
     /** Hot-memory hard ceiling tokens (default 1200). */
@@ -58,6 +65,9 @@ export interface ResolvedConfig {
     enabled: boolean;
     announceToAgent: boolean;
     autoDistill: boolean;
+    autoDistillEvery: number;
+    autoDistillCooldownMin: number;
+    autoDistillMinTools: number;
     budget: MemoryBudget;
     readDefaultLimit: number;
     readMaxLimit: number;

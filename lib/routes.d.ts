@@ -33,6 +33,9 @@ export interface DiagnosticsValue {
         storeRevision: number;
     } | null;
     config: {
+        autoDistillEvery: number;
+        autoDistillCooldownMin: number;
+        autoDistillMinTools: number;
         hotMemoryTokens: number;
         hotMemoryMaxTokens: number;
         readDefaultLimit: number;

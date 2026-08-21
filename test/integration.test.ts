@@ -103,6 +103,54 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
   assert.equal(ctx.listeners.length, 1)
 })
 
+test('apply forwards auto-distill frequency config to the turn-end listener', () => {
+  const ctx = makeCtx()
+  apply(ctx as unknown as Context, {
+    enabled: true,
+    announceToAgent: false,
+    autoDistill: true,
+    autoDistillEvery: 2,
+    autoDistillCooldownMin: 0,
+    autoDistillMinTools: 2,
+  })
+  const listener = ctx.listeners[0]?.listener
+  assert.ok(listener)
+  const messages: unknown[] = []
+  const events = [
+    { type: 'tool/call', data: { turn: 1, name: 'read' } },
+    { type: 'tool/call', data: { turn: 2, name: 'read' } },
+    { type: 'tool/call', data: { turn: 2, name: 'write' } },
+  ]
+  const agent = {
+    id: 'configured-agent',
+    session: { header: {}, events },
+    steer: (message: unknown) => { messages.push(message) },
+  }
+  const signal = new AbortController().signal
+
+  listener({ agent, turn: 1, signal })
+  assert.equal(messages.length, 0)
+  listener({ agent, turn: 2, signal })
+  assert.equal(messages.length, 1)
+})
+
+test('auto-distill config clamps invalid values in diagnostics', async () => {
+  const ctx = makeCtx()
+  apply(ctx as unknown as Context, {
+    autoDistillEvery: 0,
+    autoDistillCooldownMin: -5,
+    autoDistillMinTools: 0,
+  })
+  const route = ctx.registeredRoutes[0]
+  assert.ok(route)
+  const { status, envelope } = await callRoute(route.handler, { url: '/api/dsh-memoir/diagnostics' })
+  assert.equal(status, 200)
+  const config = (envelope.value as { config: Record<string, number> }).config
+  assert.equal(config.autoDistillEvery, 1)
+  assert.equal(config.autoDistillCooldownMin, 0)
+  assert.equal(config.autoDistillMinTools, 1)
+})
+
 test('prompt section provider: guidance only without agent cwd', () => {
   const store = new MemoirStore(makeTempStorePath())
   assert.equal(memoirSectionText(store, {}), MEMOIR_GUIDANCE)

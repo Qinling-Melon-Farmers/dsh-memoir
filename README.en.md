@@ -81,9 +81,10 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
-## v0.5.1 lifecycle completion and rc8 compatibility
+## v0.5.2 configurable auto-distill and rc2 compatibility
 
-- The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.0-rc.8`.
+- The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.1-rc.2`.
+- Auto-distill now supports per-agent worked-turn intervals, time cooldowns, and tool-call thresholds; defaults `1 / 0 / 1` preserve prior behavior.
 - Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
 - Retrieval defaults to `active`. Archived and superseded history is retained and can be inspected from the Web panel. Explicit `supersedes` marks its targets as superseded; history is never deleted automatically.
 - Agents can use `memoir_update` to edit an entry's section, title, content, and lifecycle in place; the Web panel also supports editing, pinning, marking superseded, archiving, and restoring.
@@ -167,6 +168,9 @@ Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defa
         enabled: true            # master switch (tools, routes, prompt section)
         announceToAgent: true    # system-prompt announcement section
         autoDistill: true        # auto distill reminder after each worked turn
+        autoDistillEvery: 1      # remind at most once per N worked turns
+        autoDistillCooldownMin: 0 # require M minutes between successful reminders
+        autoDistillMinTools: 1   # triggering turn must contain at least K tool calls
         hotMemoryTokens: 900     # Hot Memory target tokens
         hotMemoryMaxTokens: 1200 # Hot Memory hard ceiling (never exceeded)
         readDefaultLimit: 8      # memoir_read default result count
@@ -174,6 +178,8 @@ Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defa
         sessionSnapshotMax: 128  # per-session snapshot LRU cap
         queryCacheSize: 128      # ranked-query LRU cache size
 ```
+
+The three auto-distill frequency conditions are combined with AND and isolated per agent. Idle, aborted, subagent, and prior-`memoir_record` turns do not advance the interval. A worked turn below `autoDistillMinTools` advances the interval but cannot trigger by itself. Cooldown changes only after a successful steer.
 
 ## Design Trade-offs
 
@@ -183,6 +189,7 @@ Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defa
 - **Multi-process safety**: store record/remove runs inside a cross-process critical section on `~/.dsh/dsh-memoir.lock` (exclusive O_EXCL creation with timeout); the section force-reloads from disk before mutating, so two interleaved DSH processes lose no updates (v0.4.2).
 - **Windows paths**: canonical keys are fully lowercased (`C:\A` / `c:\a\` / `C:/A` share one bucket) while display paths keep the original casing (v0.4.2).
 - **GUI and Agent share one engine**: panel search and `memoir_read` use the same RetrievalEngine instead of separate filter logic (v0.4.2).
+- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds to reduce interruptions (v0.5.2).
 
 ## Use Cases
 
@@ -213,7 +220,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 142 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
+pnpm test             # 147 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -247,7 +254,7 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.1** (2026-08-20) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.1). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.2** (2026-08-22) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.2) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.2). Full history is in [CHANGELOG.md](./CHANGELOG.md).
 
 Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 

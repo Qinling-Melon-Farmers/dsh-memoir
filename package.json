@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "Cache-aware local project memory for DeepSeek Harness (DSH): agents distill session work, lessons and next actions into a local JSON store (~/.dsh/dsh-memoir.json, source of truth) with a per-project PROJECT_MEMORY.md projection; bounded hot-memory (ranked, session-frozen) is auto-injected into the system prompt while long-tail history is served by ranked BM25 retrieval (memoir_read, no embeddings / no external services); a web-GUI 'Memory' panel offers ranked search, hot-memory inspection and retrieval diagnostics over /api/dsh-memoir routes. TypeScript, mounted via the dsh.bundle.patch manifest, no dsh source changes.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -25,18 +25,18 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
-    "@deepseek-ai/dsh-tools": "^0.1.0-rc.8"
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-llm": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-session": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-tools": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
     "@types/node": "^22.20.1",
     "@types/react": "~18.3.31",
     "@types/react-dom": "^18.3.7",

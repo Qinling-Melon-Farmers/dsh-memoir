@@ -16,6 +16,9 @@
 #     enabled: true          # master switch (tools, routes, prompt section)
 #     announceToAgent: true  # system-prompt announcement
 #     autoDistill: true      # steer a distill prompt after each worked turn
+#     autoDistillEvery: 1    # remind at most once per N worked turns
+#     autoDistillCooldownMin: 0 # minimum minutes between successful reminders
+#     autoDistillMinTools: 1 # minimum tool calls on the triggering turn
 - insert:
     - id: memoir
       name: dsh-memoir

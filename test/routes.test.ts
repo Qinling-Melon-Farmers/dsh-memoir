@@ -368,7 +368,7 @@ test('GET diagnostics reports cache stats and hot-memory selection', async () =>
           lastQuery: { query: 'q', latencyMs: 0.1, candidates: 1, returned: 1, at: 1 },
         },
         snapshot: { hash: 'abc123', createdAt: 1, storeRevision: 1 },
-        config: { hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
+        config: { autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
       }
     })[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })

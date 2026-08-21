@@ -28,6 +28,9 @@ export interface DiagnosticsValue {
   /** v0.4.2: the most recently frozen session snapshot, if any. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    autoDistillEvery: number
+    autoDistillCooldownMin: number
+    autoDistillMinTools: number
     hotMemoryTokens: number
     hotMemoryMaxTokens: number
     readDefaultLimit: number

@@ -29,10 +29,16 @@ export interface TurnEventLike {
   data?: unknown
 }
 
+export interface TurnActivity {
+  worked: boolean
+  recorded: boolean
+  toolCalls: number
+}
+
 /** Scan the tail of a session log for one turn's tool activity. */
-export function turnActivity(events: readonly TurnEventLike[], turn: number): { worked: boolean; recorded: boolean } {
-  let worked = false
+export function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity {
   let recorded = false
+  let toolCalls = 0
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
     const data = event.data as { turn?: number; name?: string } | undefined
@@ -40,11 +46,11 @@ export function turnActivity(events: readonly TurnEventLike[], turn: number): { 
     if (data.turn < turn) break
     if (data.turn !== turn) continue
     if (event.type === 'tool/call') {
-      worked = true
+      toolCalls += 1
       if (data.name === 'memoir_record') recorded = true
     }
   }
-  return { worked, recorded }
+  return { worked: toolCalls > 0, recorded, toolCalls }
 }
 
 /** The agent surface the turn-stopping listener needs. */
@@ -62,28 +68,56 @@ export function isSubagentSession(agent: AutoDistillAgentLike): boolean {
   return agent.session.header.origin === 'subagent' || (agent.session.header.delegationDepth ?? 0) > 0
 }
 
-/** Per-agent memory of turns already steered (with pruning). */
-export class AutoDistillGate {
-  private steered = new Map<string, Set<number>>()
+export interface AutoDistillPolicy {
+  every: number
+  cooldownMs: number
+  minTools: number
+}
 
-  /** Claim a turn for steering; false when already claimed (or pruned-out). */
-  consume(agentId: string, turn: number): boolean {
-    let set = this.steered.get(agentId)
-    if (set === undefined) {
-      set = new Set()
-      this.steered.set(agentId, set)
+interface AgentGateState {
+  processedTurns: Set<number>
+  workedSinceSteer: number
+  lastSteeredAt?: number
+}
+
+/** Per-agent frequency, cooldown, and duplicate-turn state (with pruning). */
+export class AutoDistillGate {
+  private states = new Map<string, AgentGateState>()
+
+  /**
+   * Consume one eligible worked turn and decide whether all policy conditions
+   * are ready. Duplicate events never advance the worked-turn counter.
+   */
+  consume(agentId: string, turn: number, toolCalls: number, policy: AutoDistillPolicy, now: number): boolean {
+    let state = this.states.get(agentId)
+    if (state === undefined) {
+      state = { processedTurns: new Set(), workedSinceSteer: 0 }
+      this.states.set(agentId, state)
     }
-    if (set.has(turn)) return false
-    set.add(turn)
-    for (const t of [...set]) {
-      if (t < turn - 100) set.delete(t)
+    if (state.processedTurns.has(turn)) return false
+    state.processedTurns.add(turn)
+    for (const value of [...state.processedTurns]) {
+      if (value < turn - 100) state.processedTurns.delete(value)
     }
-    return true
+    state.workedSinceSteer += 1
+
+    const intervalReady = state.workedSinceSteer >= policy.every
+    const activityReady = toolCalls >= policy.minTools
+    const cooldownReady = state.lastSteeredAt === undefined || now - state.lastSteeredAt >= policy.cooldownMs
+    return intervalReady && activityReady && cooldownReady
+  }
+
+  /** Record a successful steer; failed steer attempts do not start cooldown. */
+  recordSteer(agentId: string, now: number): void {
+    const state = this.states.get(agentId)
+    if (state === undefined) return
+    state.workedSinceSteer = 0
+    state.lastSteeredAt = now
   }
 
   /** Drop all state for one agent (disposal hygiene). */
   forget(agentId: string): void {
-    this.steered.delete(agentId)
+    this.states.delete(agentId)
   }
 }
 
@@ -103,21 +137,38 @@ export interface AutoDistillWire {
  * @param wire - the event wire (the cordis context).
  * @param options.enabled - live read of the autoDistill switch.
  */
-export function installAutoDistill(wire: AutoDistillWire, options: { enabled: () => boolean }): () => void {
+export function installAutoDistill(wire: AutoDistillWire, options: {
+  enabled: () => boolean
+  every?: number
+  cooldownMin?: number
+  minTools?: number
+  now?: () => number
+}): () => void {
   const gate = new AutoDistillGate()
+  const integerAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
+  const numberAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
+  const policy: AutoDistillPolicy = {
+    every: integerAtLeast(options.every, 1, 1),
+    cooldownMs: numberAtLeast(options.cooldownMin, 0, 0) * 60_000,
+    minTools: integerAtLeast(options.minTools, 1, 1),
+  }
   return wire.on('agent/turn-stopping', (payload) => {
     if (!options.enabled()) return
     const { agent, turn, signal } = payload
     if (isSubagentSession(agent)) return
     if (signal.aborted) return
-    const { worked, recorded } = turnActivity(agent.session.events, turn)
+    const { worked, recorded, toolCalls } = turnActivity(agent.session.events, turn)
     if (!worked || recorded) return
-    if (!gate.consume(agent.id, turn)) return
+    const now = options.now?.() ?? Date.now()
+    if (!gate.consume(agent.id, turn, toolCalls, policy, now)) return
     agent.steer(
       createUserMessage({
         content: [{ type: 'text', text: DISTILL_PROMPT }],
         source: { kind: 'plugin', plugin: AUTO_DISTILL_PLUGIN },
       }),
     )
+    gate.recordSteer(agent.id, now)
   })
 }

@@ -12,6 +12,32 @@
 
 - None.
 
+## [0.5.2] - 2026-08-22
+
+### 中文
+
+#### Added
+
+- 完成 Issue #5：新增 `autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools`，可按 worked-turn 间隔、时间冷却和工具调用阈值共同控制自动收尾提醒。
+- auto-distill 状态按 agent 隔离；重复 turn 不重复计数，冷却仅在 steer 成功后启动，并继续排除 idle、aborted、subagent 和已调用 `memoir_record` 的 turn。
+- diagnostics、双语配置文档及单元/集成测试覆盖新增频率参数。
+
+#### Compatibility
+
+- peer/dev 依赖升级并验证兼容 DeepSeek Harness `0.1.1-rc.2`；默认值 `1 / 0 / 1` 保持既有每个 worked turn 提醒一次的行为。
+
+### English
+
+#### Added
+
+- Completed Issue #5 with `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools`, combining worked-turn intervals, time cooldowns, and tool-call thresholds for automatic distillation reminders.
+- Isolated auto-distill state per agent, prevented duplicate-turn counting, started cooldown only after a successful steer, and retained the idle, aborted, subagent, and prior-`memoir_record` exclusions.
+- Added the new frequency settings to diagnostics and bilingual configuration docs, with unit and integration coverage.
+
+#### Compatibility
+
+- Upgraded peer and development dependencies and verified compatibility with DeepSeek Harness `0.1.1-rc.2`; defaults `1 / 0 / 1` preserve the existing reminder-after-every-worked-turn behavior.
+
 ## [0.5.1] - 2026-08-20
 
 ### 中文
@@ -198,7 +224,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1
 [0.5.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0
 [0.4.3]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.4.3
