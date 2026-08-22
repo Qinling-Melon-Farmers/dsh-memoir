@@ -7,8 +7,10 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { rmSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, MEMOIR_GUIDANCE, memoirSectionText } from '../lib/index.js'
+import type { Config } from '../lib/index.js'
 import { MemoirStore } from '../lib/store.js'
 import { MemorySnapshotManager, sessionKeyOf } from '../lib/snapshot.js'
 import { callRoute, makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
@@ -55,9 +57,18 @@ function makeCtx() {
   return ctx
 }
 
+/** Keep full apply() tests isolated from the developer's real ~/.dsh files. */
+function applyTest(ctx: ReturnType<typeof makeCtx>, config: Config = {}): void {
+  apply(ctx as unknown as Context, {
+    ...config,
+    storePath: makeTempStorePath(),
+    settingsPath: makeTempStorePath(),
+  })
+}
+
 test('apply mounts lifecycle tools, one prefix route, one prompt section, and the auto-distill listener', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, { enabled: true, announceToAgent: true, autoDistill: true })
+  applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: true })
   assert.deepEqual(ctx.registeredTools.map((t) => t.name), ['memoir_record', 'memoir_update', 'memoir_read'])
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.registeredRoutes[0]?.path, '/api/dsh-memoir')
@@ -70,7 +81,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
 
 test('apply with enabled=false mounts nothing', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, { enabled: false })
+  applyTest(ctx, { enabled: false })
   assert.equal(ctx.registeredTools.length, 0)
   assert.equal(ctx.registeredRoutes.length, 0)
   assert.equal(ctx.sections.length, 0)
@@ -79,25 +90,32 @@ test('apply with enabled=false mounts nothing', () => {
 
 test('apply with announceToAgent=false skips only the prompt section', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, { enabled: true, announceToAgent: false, autoDistill: true })
+  applyTest(ctx, { enabled: true, announceToAgent: false, autoDistill: true })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 0)
   assert.equal(ctx.listeners.length, 1)
 })
 
-test('apply with autoDistill=false skips only the turn-end listener', () => {
+test('apply with autoDistill=false keeps an inert listener for live Web enablement', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, { enabled: true, announceToAgent: true, autoDistill: false })
+  applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: false })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 0)
+  assert.equal(ctx.listeners.length, 1)
+  const messages: unknown[] = []
+  ctx.listeners[0]?.listener({
+    agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, steer: (message: unknown) => messages.push(message) },
+    turn: 1,
+    signal: new AbortController().signal,
+  })
+  assert.equal(messages.length, 0)
 })
 
 test('defaults: enabled and autoDistill are on when config is absent', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, undefined)
+  applyTest(ctx)
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
   assert.equal(ctx.listeners.length, 1)
@@ -105,7 +123,7 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
 
 test('apply forwards auto-distill frequency config to the turn-end listener', () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, {
+  applyTest(ctx, {
     enabled: true,
     announceToAgent: false,
     autoDistill: true,
@@ -134,9 +152,58 @@ test('apply forwards auto-distill frequency config to the turn-end listener', ()
   assert.equal(messages.length, 1)
 })
 
+test('Web settings update the mounted auto-distill lifecycle without a restart', async () => {
+  const ctx = makeCtx()
+  const storePath = makeTempStorePath()
+  const settingsPath = makeTempStorePath()
+  try {
+    apply(ctx as unknown as Context, {
+      enabled: true,
+      announceToAgent: false,
+      autoDistill: true,
+      autoDistillEvery: 3,
+      autoDistillMinTools: 1,
+      storePath,
+      settingsPath,
+    })
+    const listener = ctx.listeners[0]?.listener
+    const route = ctx.registeredRoutes[0]
+    assert.ok(listener)
+    assert.ok(route)
+    const messages: unknown[] = []
+    const agent = {
+      id: 'live-settings-agent',
+      session: { header: {}, events: [
+        { type: 'tool/call', data: { turn: 1, name: 'read' } },
+        { type: 'tool/call', data: { turn: 2, name: 'read' } },
+      ] },
+      steer: (message: unknown) => messages.push(message),
+    }
+    const signal = new AbortController().signal
+    listener({ agent, turn: 1, signal })
+    assert.equal(messages.length, 0)
+
+    const updated = await callRoute(route.handler, {
+      method: 'PUT',
+      url: '/api/dsh-memoir/settings',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 }),
+    })
+    assert.equal(updated.status, 200)
+    listener({ agent, turn: 2, signal })
+    assert.equal(messages.length, 1)
+
+    const diagnostics = await callRoute(route.handler, { url: '/api/dsh-memoir/diagnostics' })
+    assert.equal((diagnostics.envelope.value as { config: { autoDistillEvery: number } }).config.autoDistillEvery, 1)
+  } finally {
+    rmSync(storePath, { force: true })
+    rmSync(settingsPath, { force: true })
+  }
+})
+
 test('auto-distill config clamps invalid values in diagnostics', async () => {
   const ctx = makeCtx()
-  apply(ctx as unknown as Context, {
+  applyTest(ctx, {
     autoDistillEvery: 0,
     autoDistillCooldownMin: -5,
     autoDistillMinTools: 0,
@@ -181,7 +248,7 @@ test('record through a tool and read through the panel route agree', async () =>
   const ws = makeTempWorkspace()
   try {
     const ctx = makeCtx()
-    apply(ctx as unknown as Context, { enabled: true, announceToAgent: true })
+    applyTest(ctx, { enabled: true, announceToAgent: true })
     const record = ctx.registeredTools.find((t) => t.name === 'memoir_record')
     assert.ok(record)
     const value = await record.execute({ section: 'lessons', content: '端到端一致' } as never, makeExec(ws.cwd))

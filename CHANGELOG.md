@@ -12,6 +12,42 @@
 
 - None.
 
+## [0.5.3] - 2026-08-22
+
+### 中文
+
+#### Added
+
+- Web 记忆面板新增「自动蒸馏设置」，支持启停 auto-distill，并编辑 worked-turn 间隔、冷却分钟数和最低工具调用数。
+- 新增同源 `GET` / `PUT` / `DELETE /api/dsh-memoir/settings`：严格校验 JSON 设置，以原子写入方式持久化到 `~/.dsh/dsh-memoir.settings.json`，也可删除覆盖并恢复启动配置。
+- 新增设置存储、路由、客户端 API、动态生命周期和中英双语界面的测试；测试总数增至 154 项。
+
+#### Changed
+
+- 自动蒸馏监听器现在逐回合读取实时策略，Web 保存后无需重启即可作用于后续 turn；关闭 auto-distill 时监听器保持惰性，以支持面板即时重新启用。
+- `cordis.patch.yml` 的 auto-distill 字段继续作为启动默认值；只有用户从 Web 保存后才建立持久化覆盖，恢复操作会回到本次挂载时解析出的 profile 值。
+
+#### Compatibility
+
+- 保持 DeepSeek Harness `0.1.1-rc.2` peer/dev 基线和既有 `1 / 0 / 1` 默认行为；记忆 store 格式仍为 v3，未迁移或改写用户记忆数据。
+
+### English
+
+#### Added
+
+- Added Auto-distill Settings to the Memory panel, including enable/disable, worked-turn interval, cooldown minutes, and minimum tool-call controls.
+- Added same-origin `GET` / `PUT` / `DELETE /api/dsh-memoir/settings` routes with strict JSON validation, atomic persistence to `~/.dsh/dsh-memoir.settings.json`, and reset-to-startup behavior.
+- Added coverage for settings persistence, routes, client APIs, live lifecycle updates, and bilingual UI copy; the suite now contains 154 tests.
+
+#### Changed
+
+- The auto-distill listener now reads the live policy on every turn, so Web saves affect subsequent turns without a restart. A disabled listener remains inert and can be re-enabled immediately from the panel.
+- The auto-distill fields in `cordis.patch.yml` remain startup defaults. A persistent override is created only after a Web save, and reset returns to the profile values resolved for the current mount.
+
+#### Compatibility
+
+- Kept the DeepSeek Harness `0.1.1-rc.2` peer/development baseline and the existing `1 / 0 / 1` defaults. The memory store remains format v3 with no migration or rewrite of user memory data.
+
 ## [0.5.2] - 2026-08-22
 
 ### 中文
@@ -224,7 +260,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.3
 [0.5.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1
 [0.5.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.0

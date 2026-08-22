@@ -142,6 +142,8 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
   every?: number
   cooldownMin?: number
   minTools?: number
+  /** Optional live policy source used by the Web settings panel. */
+  policy?: () => { every?: number; cooldownMin?: number; minTools?: number }
   now?: () => number
 }): () => void {
   const gate = new AutoDistillGate()
@@ -149,11 +151,6 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
   const numberAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
-  const policy: AutoDistillPolicy = {
-    every: integerAtLeast(options.every, 1, 1),
-    cooldownMs: numberAtLeast(options.cooldownMin, 0, 0) * 60_000,
-    minTools: integerAtLeast(options.minTools, 1, 1),
-  }
   return wire.on('agent/turn-stopping', (payload) => {
     if (!options.enabled()) return
     const { agent, turn, signal } = payload
@@ -161,6 +158,12 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     if (signal.aborted) return
     const { worked, recorded, toolCalls } = turnActivity(agent.session.events, turn)
     if (!worked || recorded) return
+    const live = options.policy?.()
+    const policy: AutoDistillPolicy = {
+      every: integerAtLeast(live?.every ?? options.every, 1, 1),
+      cooldownMs: numberAtLeast(live?.cooldownMin ?? options.cooldownMin, 0, 0) * 60_000,
+      minTools: integerAtLeast(live?.minTools ?? options.minTools, 1, 1),
+    }
     const now = options.now?.() ?? Date.now()
     if (!gate.consume(agent.id, turn, toolCalls, policy, now)) return
     agent.steer(

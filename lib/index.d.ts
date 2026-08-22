@@ -54,6 +54,10 @@ export interface Config {
     sessionSnapshotMax?: number;
     /** memoir_read ranked-query LRU cache size (default 128). */
     queryCacheSize?: number;
+    /** @internal Alternate memory-store path for embedded hosts and tests. */
+    storePath?: string;
+    /** @internal Alternate Web-settings path for embedded hosts and tests. */
+    settingsPath?: string;
 }
 /** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
  *  details live in the tool schemas, not in every prompt. */

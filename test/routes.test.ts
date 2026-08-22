@@ -5,11 +5,12 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeRoutes, json, readJsonBody } from '../lib/routes.js'
+import { AutoDistillSettingsStore } from '../lib/settings.js'
 import { callRoute, makeReq, makeRes, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -146,6 +147,48 @@ test('POST without application/json is a 415 (CSRF gate)', async () => {
   })
   assert.equal(status, 415)
   assert.equal(envelope.error?.code, 'content-type')
+})
+
+test('settings route reads, persists, validates, and resets the live auto-distill policy', async () => {
+  const path = makeTempStorePath()
+  try {
+    const provider = new AutoDistillSettingsStore({ autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 }, path)
+    const handler = makeRoutes(new MemoirStore(makeTempStorePath()), undefined, undefined, undefined, undefined, undefined, provider)[0]!.handler
+    const initial = await callRoute(handler, { url: '/api/dsh-memoir/settings' })
+    assert.deepEqual(initial.envelope.value, {
+      settings: { autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 },
+      source: 'profile',
+    })
+
+    const saved = await callRoute(handler, {
+      method: 'PUT',
+      url: '/api/dsh-memoir/settings',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ autoDistill: false, autoDistillEvery: 3, autoDistillCooldownMin: 2.5, autoDistillMinTools: 4 }),
+    })
+    assert.equal(saved.status, 200)
+    assert.equal((saved.envelope.value as { source: string }).source, 'web')
+    assert.equal(provider.get().settings.autoDistillEvery, 3)
+
+    const invalid = await callRoute(handler, {
+      method: 'PUT',
+      url: '/api/dsh-memoir/settings',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ autoDistillEvery: 0 }),
+    })
+    assert.equal(invalid.status, 400)
+    assert.equal(provider.get().settings.autoDistillEvery, 3, 'invalid update leaves live policy unchanged')
+
+    const reset = await callRoute(handler, { method: 'DELETE', url: '/api/dsh-memoir/settings', headers: JSON_HEADERS, body: '{}' })
+    assert.equal(reset.status, 200)
+    assert.equal((reset.envelope.value as { source: string }).source, 'profile')
+    assert.equal(provider.get().settings.autoDistillEvery, 1)
+
+    const missing = await callRoute(makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler, { url: '/api/dsh-memoir/settings' })
+    assert.equal(missing.status, 404)
+  } finally {
+    rmSync(path, { force: true })
+  }
 })
 
 test('POST rejects malformed payloads', async () => {
@@ -368,7 +411,7 @@ test('GET diagnostics reports cache stats and hot-memory selection', async () =>
           lastQuery: { query: 'q', latencyMs: 0.1, candidates: 1, returned: 1, at: 1 },
         },
         snapshot: { hash: 'abc123', createdAt: 1, storeRevision: 1 },
-        config: { autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
+        config: { autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
       }
     })[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })

@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
 import type { CacheStats, MemoirEntry, MemoirStore } from './store.js';
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js';
+import type { AutoDistillSettingsPatch, AutoDistillSettingsSnapshot } from './settings.js';
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
     storeRevision: number;
@@ -33,6 +34,7 @@ export interface DiagnosticsValue {
         storeRevision: number;
     } | null;
     config: {
+        autoDistill: boolean;
         autoDistillEvery: number;
         autoDistillCooldownMin: number;
         autoDistillMinTools: number;
@@ -53,6 +55,12 @@ export type HotMemoryProvider = (path: string) => {
     total: number;
     estimatedTokens: number;
 } | null;
+/** Runtime auto-distill settings exposed to the same-origin Web panel. */
+export interface AutoDistillSettingsProvider {
+    get(): AutoDistillSettingsSnapshot;
+    update(patch: AutoDistillSettingsPatch): AutoDistillSettingsSnapshot;
+    reset(): AutoDistillSettingsSnapshot;
+}
 export interface Envelope<T = unknown> {
     ok: boolean;
     value?: T;
@@ -75,6 +83,7 @@ export declare function readJsonBody(req: IncomingMessage, limit?: number): Prom
  *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
  * @param touchWorkspace - deprecated compatibility slot; GET requests never
  *   use it for authorization because browser-supplied paths are untrusted.
+ * @param settings - optional persistent runtime auto-distill settings.
  * @returns route definitions for ctx.webServer.register.
  */
-export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider, retrieval?: RetrievalEngine, hotMemory?: HotMemoryProvider, allowedWorkspace?: (path: string) => boolean, touchWorkspace?: (path: string) => void): WebRoute[];
+export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider, retrieval?: RetrievalEngine, hotMemory?: HotMemoryProvider, allowedWorkspace?: (path: string) => boolean, touchWorkspace?: (path: string) => void, settings?: AutoDistillSettingsProvider): WebRoute[];

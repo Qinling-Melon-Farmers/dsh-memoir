@@ -81,10 +81,11 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
-## v0.5.2 configurable auto-distill and rc2 compatibility
+## v0.5.3 Web-configurable auto-distill and rc2 compatibility
 
 - The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.1-rc.2`.
 - Auto-distill now supports per-agent worked-turn intervals, time cooldowns, and tool-call thresholds; defaults `1 / 0 / 1` preserve prior behavior.
+- The Web panel now includes Auto-distill Settings for enabling/disabling and editing those three parameters. Saves apply to subsequent turns immediately and persist in `~/.dsh/dsh-memoir.settings.json`; one action removes the Web override and restores the profile values captured at startup.
 - Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
 - Retrieval defaults to `active`. Archived and superseded history is retained and can be inspected from the Web panel. Explicit `supersedes` marks its targets as superseded; history is never deleted automatically.
 - Agents can use `memoir_update` to edit an entry's section, title, content, and lifecycle in place; the Web panel also supports editing, pinning, marking superseded, archiving, and restoring.
@@ -117,11 +118,12 @@ Curated-query Top-5 hit rate: 100% (quality gate ≥ 90%, see `test/recall-quali
 
 ## GUI
 
-The v0.4 Project / Global / Search / Add / Delete / Diagnostics architecture is kept; since v0.4.2:
+The v0.4 Project / Global / Search / Add / Delete / Diagnostics architecture is kept and extended:
 
 - **Search unified on RetrievalEngine**: a non-empty query calls `GET /api/dsh-memoir/search` — the same BM25 ranking as the agent's `memoir_read` — results ordered by relevance with scores shown
 - **Hot Memory Inspector**: expand to see the Hot Memory that will actually be injected for the current workspace (Actions / Lessons / Recent state) — i.e. "what exactly the next session inherits"
 - **Retrieval Diagnostics**: Retrieval Index (docs/terms/epoch), Query Cache (hits/misses/evictions/hit rate/size/capacity), Last Query (latency/returned), Session Snapshot (hash/createdAt/storeRevision)
+- **Auto-distill Settings (v0.5.3)**: enable or disable auto-distill and edit the worked-turn interval, cooldown minutes, and minimum tool calls in the panel; validated saves persist and apply immediately without restarting DSH
 
 ## Screenshots
 
@@ -149,6 +151,7 @@ The v0.4 Project / Global / Search / Add / Delete / Diagnostics architecture is 
 
 ```text
 ~/.dsh/dsh-memoir.json        ← structured JSON (single source of truth / SSOT)
+~/.dsh/dsh-memoir.settings.json ← auto-distill overrides saved by the Web panel
 <workspace>/PROJECT_MEMORY.md ← human-readable projection regenerated from the JSON (git-friendly)
 
 No cloud memory DB · No embedding API · No vector DB
@@ -181,6 +184,8 @@ Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defa
 
 The three auto-distill frequency conditions are combined with AND and isolated per agent. Idle, aborted, subagent, and prior-`memoir_record` turns do not advance the interval. A worked turn below `autoDistillMinTools` advances the interval but cannot trigger by itself. Cooldown changes only after a successful steer.
 
+The auto-distill fields in `cordis.patch.yml` are startup defaults. Since v0.5.3, the Auto-distill Settings section at the bottom of the Memory panel can override them: saving atomically writes `~/.dsh/dsh-memoir.settings.json`, and subsequent turns read the new policy immediately. Restore Startup Config removes that override and returns to the profile values resolved when the plugin mounted. Other Hot Memory, recall, and cache settings remain profile-managed.
+
 ## Design Trade-offs
 
 - **Bounded vs full injection**: v0.3 injected the full history into the prompt and it kept growing; v0.4+ injects only budgeted Hot Memory, with long-tail history recalled on demand. Token benchmarks below.
@@ -189,7 +194,7 @@ The three auto-distill frequency conditions are combined with AND and isolated p
 - **Multi-process safety**: store record/remove runs inside a cross-process critical section on `~/.dsh/dsh-memoir.lock` (exclusive O_EXCL creation with timeout); the section force-reloads from disk before mutating, so two interleaved DSH processes lose no updates (v0.4.2).
 - **Windows paths**: canonical keys are fully lowercased (`C:\A` / `c:\a\` / `C:/A` share one bucket) while display paths keep the original casing (v0.4.2).
 - **GUI and Agent share one engine**: panel search and `memoir_read` use the same RetrievalEngine instead of separate filter logic (v0.4.2).
-- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds to reduce interruptions (v0.5.2).
+- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds and tune them immediately from the Web panel (v0.5.3).
 
 ## Use Cases
 
@@ -220,7 +225,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 147 tests: store (incl. multi-process lock) / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
+pnpm test             # 154 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -237,7 +242,7 @@ v0.4.2 benchmark summary (node v22.23.2, budget 900/1200 tokens; full report in 
 
 ## Implementation
 
-- **Full-stack TypeScript**: `src/host/*.ts` (store / tools / retrieval / selector / snapshot / routes / autodistill / index — tsc emits `lib/*.js`) + `src/client/*.ts(x)` (esbuild emits the `lib/client.js` closure-factory bundle).
+- **Full-stack TypeScript**: `src/host/*.ts` (store / settings / tools / retrieval / selector / snapshot / routes / autodistill / index — tsc emits `lib/*.js`) + `src/client/*.ts(x)` (esbuild emits the `lib/client.js` closure-factory bundle).
 - **Two-sided plugin**: the host half registers the agent tools, `/api/dsh-memoir` routes, the `agent/turn-stopping` auto-distill listener, and the per-project system-prompt injection section; the client half renders the panel. Runtime deps are official NPM SDK packages only.
 - Mounted via the `dsh.bundle.patch` manifest (`insert` row in `cordis.patch.yml`); no DSH source changes.
 - Auto-distill safety boundaries: top-level sessions only (subagents / nested delegations skipped), turns with tool activity that haven't recorded yet, aborted turns skipped, at most one steer per turn.
@@ -254,7 +259,7 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.2** (2026-08-22) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.2) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.2). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.3** (2026-08-22) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.3) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.3). Full history is in [CHANGELOG.md](./CHANGELOG.md).
 
 Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 

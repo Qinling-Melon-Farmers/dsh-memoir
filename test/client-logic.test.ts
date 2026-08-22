@@ -150,6 +150,30 @@ test('MemoirApi.update patches content and lifecycle fields', async () => {
   })
 })
 
+test('MemoirApi settings methods use JSON-protected live-policy routes', async () => {
+  const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = []
+  const snapshot = {
+    settings: { autoDistill: true, autoDistillEvery: 2, autoDistillCooldownMin: 3, autoDistillMinTools: 4 },
+    source: 'web',
+  }
+  const fetchImpl = async (url: string, init?: unknown) => {
+    calls.push({ url, init: init as { method?: string; headers?: Record<string, string>; body?: string } })
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: snapshot }))
+  }
+  const api = new MemoirApi(fetchImpl)
+  assert.deepEqual(await api.settings(), snapshot)
+  assert.deepEqual(await api.updateSettings(snapshot.settings), snapshot)
+  assert.deepEqual(await api.resetSettings(), snapshot)
+  assert.deepEqual(calls.map((call) => [call.url, call.init?.method]), [
+    ['/api/dsh-memoir/settings', undefined],
+    ['/api/dsh-memoir/settings', 'PUT'],
+    ['/api/dsh-memoir/settings', 'DELETE'],
+  ])
+  assert.match(calls[1]?.init?.headers?.['content-type'] ?? '', /application\/json/)
+  assert.deepEqual(JSON.parse(calls[1]?.init?.body ?? '{}'), snapshot.settings)
+  assert.equal(calls[2]?.init?.body, '{}')
+})
+
 test('MemoirApi.global aggregates via the global route', async () => {
   const fetchImpl = async () =>
     envelopeResponse(200, JSON.stringify({ ok: true, value: { projects: [{ key: 'k', path: 'p', title: 't', updatedAt: 1, entries: [] }] } }))

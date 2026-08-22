@@ -77,5 +77,11 @@ export declare function installAutoDistill(wire: AutoDistillWire, options: {
     every?: number;
     cooldownMin?: number;
     minTools?: number;
+    /** Optional live policy source used by the Web settings panel. */
+    policy?: () => {
+        every?: number;
+        cooldownMin?: number;
+        minTools?: number;
+    };
     now?: () => number;
 }): () => void;

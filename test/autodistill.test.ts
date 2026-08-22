@@ -211,6 +211,29 @@ test('installAutoDistill applies configurable frequency with an injected clock',
   assert.equal(steered.length, 2, 'cooldown updates only from the successful prior steer')
 })
 
+test('installAutoDistill reads the live policy for each subsequent turn', () => {
+  const harness = makeWire()
+  let policy = { every: 3, cooldownMin: 0, minTools: 2 }
+  installAutoDistill(harness.wire, {
+    enabled: () => true,
+    policy: () => policy,
+  })
+  const { agent, steered } = makeAgent({ events: [
+    toolCallEvent(1),
+    toolCallEvent(2),
+    toolCallEvent(3), toolCallEvent(3, 'write'),
+  ] })
+
+  harness.dispatch({ agent, turn: 1, signal: liveSignal })
+  assert.equal(steered.length, 0)
+  policy = { every: 1, cooldownMin: 0, minTools: 1 }
+  harness.dispatch({ agent, turn: 2, signal: liveSignal })
+  assert.equal(steered.length, 1, 'updated interval and threshold apply without reinstalling the listener')
+  policy = { every: 1, cooldownMin: 0, minTools: 2 }
+  harness.dispatch({ agent, turn: 3, signal: liveSignal })
+  assert.equal(steered.length, 2, 'later policy updates are read again')
+})
+
 test('installAutoDistill does not start cooldown when steer throws', () => {
   const harness = makeWire()
   installAutoDistill(harness.wire, {

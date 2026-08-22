@@ -6,7 +6,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SECTION_KEYS } from './i18n.js'
-import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireProject, WireSearchResult } from './api.js'
+import type { MemoirApi, WireAutoDistillSettings, WireDiagnostics, WireEntry, WireHotMemory, WireProject, WireSearchResult } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
@@ -226,6 +226,133 @@ function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubm
   )
 }
 
+/** Persistent, live auto-distill controls introduced in v0.5.3. */
+function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
+  api: MemoirApi
+  t: (key: string) => string
+  refreshKey: number
+  onChanged: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [settings, setSettings] = useState<WireAutoDistillSettings | null>(null)
+  const [source, setSource] = useState<'profile' | 'web'>('profile')
+  const [every, setEvery] = useState('1')
+  const [cooldown, setCooldown] = useState('0')
+  const [minTools, setMinTools] = useState('1')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const applySnapshot = (snapshot: { settings: WireAutoDistillSettings; source: 'profile' | 'web' }) => {
+    setError(null)
+    setSettings(snapshot.settings)
+    setSource(snapshot.source)
+    setEvery(String(snapshot.settings.autoDistillEvery))
+    setCooldown(String(snapshot.settings.autoDistillCooldownMin))
+    setMinTools(String(snapshot.settings.autoDistillMinTools))
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    api.settings()
+      .then((value) => { if (!cancelled) applySnapshot(value) })
+      .catch((e: Error) => { if (!cancelled) setError(`${t('settings.loadFailed')}: ${e.message}`) })
+    return () => { cancelled = true }
+  }, [api, refreshKey])
+
+  const save = () => {
+    if (settings === null) return
+    const parsedEvery = Number(every)
+    const parsedCooldown = Number(cooldown)
+    const parsedMinTools = Number(minTools)
+    if (!Number.isSafeInteger(parsedEvery) || parsedEvery < 1 || !Number.isFinite(parsedCooldown) || parsedCooldown < 0 || !Number.isSafeInteger(parsedMinTools) || parsedMinTools < 1) {
+      setMessage(null)
+      setError(t('settings.invalid'))
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    api.updateSettings({
+      autoDistill: settings.autoDistill,
+      autoDistillEvery: parsedEvery,
+      autoDistillCooldownMin: parsedCooldown,
+      autoDistillMinTools: parsedMinTools,
+    })
+      .then((value) => {
+        applySnapshot(value)
+        setMessage(t('settings.saved'))
+        onChanged()
+      })
+      .catch((e: Error) => setError(`${t('settings.saveFailed')}: ${e.message}`))
+      .finally(() => setBusy(false))
+  }
+
+  const reset = () => {
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    api.resetSettings()
+      .then((value) => {
+        applySnapshot(value)
+        setMessage(t('settings.resetDone'))
+        onChanged()
+      })
+      .catch((e: Error) => setError(`${t('settings.saveFailed')}: ${e.message}`))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div className="memoir-settings">
+      <button type="button" className="memoir-diagnostics-toggle" onClick={() => setOpen((value) => !value)}>
+        {t('settings.title')} {open ? '▾' : '▸'}
+      </button>
+      {open
+        ? settings === null
+          ? <div className="memoir-settings-body">{error ?? '…'}</div>
+          : (
+              <div className="memoir-settings-body">
+                <div className="memoir-settings-description">{t('settings.description')}</div>
+                <label className="memoir-settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoDistill}
+                    onChange={(event) => setSettings({ ...settings, autoDistill: event.target.checked })}
+                  />
+                  <span><strong>{t('settings.enabled')}</strong><small>{t('settings.enabledHint')}</small></span>
+                </label>
+                <div className="memoir-settings-grid">
+                  <label className="memoir-field">
+                    <span>{t('settings.every')}</span>
+                    <input type="number" min="1" step="1" value={every} onChange={(event) => setEvery(event.target.value)} />
+                    <small>{t('settings.everyHint')}</small>
+                  </label>
+                  <label className="memoir-field">
+                    <span>{t('settings.cooldown')}</span>
+                    <input type="number" min="0" step="0.1" value={cooldown} onChange={(event) => setCooldown(event.target.value)} />
+                    <small>{t('settings.cooldownHint')}</small>
+                  </label>
+                  <label className="memoir-field">
+                    <span>{t('settings.minTools')}</span>
+                    <input type="number" min="1" step="1" value={minTools} onChange={(event) => setMinTools(event.target.value)} />
+                    <small>{t('settings.minToolsHint')}</small>
+                  </label>
+                </div>
+                <div className="memoir-settings-note">{t('settings.andHint')}</div>
+                <div className="memoir-settings-source">{t('settings.source')}: {t(`settings.source.${source}`)}</div>
+                {error !== null ? <div className="memoir-error memoir-settings-feedback">{error}</div> : null}
+                {message !== null ? <div className="memoir-settings-success">{message}</div> : null}
+                <div className="memoir-form-actions">
+                  <button type="button" className="memoir-iconbtn" disabled={busy || source === 'profile'} onClick={reset}>{t('settings.reset')}</button>
+                  <button type="button" className="memoir-primary" disabled={busy} onClick={save}>{t('settings.save')}</button>
+                </div>
+              </div>
+            )
+        : null}
+    </div>
+  )
+}
+
 export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const cwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
   const [tab, setTab] = useState<'project' | 'global'>('project')
@@ -427,6 +554,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                   })}
       </div>
       {busy ? <div className="memoir-empty">…</div> : null}
+      <AutoDistillSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
       <div className="memoir-inspector">
         <button type="button" className="memoir-diagnostics-toggle" onClick={() => setInspectorOpen((v) => !v)}>
           {t('inspector.title')} {inspectorOpen ? '▾' : '▸'}

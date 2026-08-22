@@ -102,6 +102,7 @@ export interface WireDiagnostics {
   /** v0.4.2: the most recently frozen session snapshot. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    autoDistill: boolean
     autoDistillEvery: number
     autoDistillCooldownMin: number
     autoDistillMinTools: number
@@ -112,6 +113,19 @@ export interface WireDiagnostics {
     sessionSnapshotMax: number
     queryCacheSize: number
   }
+}
+
+/** Runtime auto-distill settings managed by the Web panel. */
+export interface WireAutoDistillSettings {
+  autoDistill: boolean
+  autoDistillEvery: number
+  autoDistillCooldownMin: number
+  autoDistillMinTools: number
+}
+
+export interface WireAutoDistillSettingsSnapshot {
+  settings: WireAutoDistillSettings
+  source: 'profile' | 'web'
 }
 
 /** One ranked /search hit (v0.4.2: shared RetrievalEngine order). */
@@ -169,6 +183,32 @@ export class MemoirApi {
   async diagnostics(path?: string): Promise<WireDiagnostics> {
     const response = await this.fetchImpl('/api/dsh-memoir/diagnostics' + query({ path }))
     return readEnvelope(response) as Promise<WireDiagnostics>
+  }
+
+  /** Read the live auto-distill policy and whether it comes from Web overrides. */
+  async settings(): Promise<WireAutoDistillSettingsSnapshot> {
+    const response = await this.fetchImpl('/api/dsh-memoir/settings')
+    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
+  }
+
+  /** Persist and immediately apply the auto-distill policy. */
+  async updateSettings(settings: WireAutoDistillSettings): Promise<WireAutoDistillSettingsSnapshot> {
+    const response = await this.fetchImpl('/api/dsh-memoir/settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(settings),
+    })
+    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
+  }
+
+  /** Remove the Web override and restore the profile defaults captured at boot. */
+  async resetSettings(): Promise<WireAutoDistillSettingsSnapshot> {
+    const response = await this.fetchImpl('/api/dsh-memoir/settings', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
   }
 
   /**

@@ -19,6 +19,8 @@
 #     autoDistillEvery: 1    # remind at most once per N worked turns
 #     autoDistillCooldownMin: 0 # minimum minutes between successful reminders
 #     autoDistillMinTools: 1 # minimum tool calls on the triggering turn
+# These auto-distill values are startup defaults. v0.5.3+ can persist a live
+# Web-panel override in ~/.dsh/dsh-memoir.settings.json and restore defaults.
 - insert:
     - id: memoir
       name: dsh-memoir

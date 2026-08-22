@@ -37,6 +37,7 @@ import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
 import { RetrievalEngine } from './retrieval.js'
+import { AutoDistillSettingsStore } from './settings.js'
 
 /** Stable cordis plugin name. */
 export const name = 'memoir'
@@ -75,6 +76,10 @@ export interface Config {
   // v0.4.1 — ranked recall
   /** memoir_read ranked-query LRU cache size (default 128). */
   queryCacheSize?: number
+  /** @internal Alternate memory-store path for embedded hosts and tests. */
+  storePath?: string
+  /** @internal Alternate Web-settings path for embedded hosts and tests. */
+  settingsPath?: string
 }
 
 const DEFAULT_ENABLED = true
@@ -192,9 +197,15 @@ export function apply(ctx: Context, config?: Config): void {
   const value = resolveConfig(config)
   if (!value.enabled) return
 
-  const store = new MemoirStore()
+  const store = new MemoirStore(config?.storePath)
   const snapshotManager = new MemorySnapshotManager({ max: value.sessionSnapshotMax })
   const retrieval = new RetrievalEngine(store, { cacheSize: value.queryCacheSize })
+  const autoDistillSettings = new AutoDistillSettingsStore({
+    autoDistill: value.autoDistill,
+    autoDistillEvery: value.autoDistillEvery,
+    autoDistillCooldownMin: value.autoDistillCooldownMin,
+    autoDistillMinTools: value.autoDistillMinTools,
+  }, config?.settingsPath)
 
   // Workspaces seen through system-prompt assemblies / panel requests: the
   // write-authorization guard allows only these (plus existing store
@@ -218,6 +229,7 @@ export function apply(ctx: Context, config?: Config): void {
 
   ctx.effect(() => {
     const diagnostics = (path?: string) => {
+      const liveAutoDistill = autoDistillSettings.get().settings
       const entries = typeof path === 'string' && path !== '' ? store.entries(path) : []
       const hot = entries.length === 0 ? null : selectHotMemory(entries, value.budget)
       const stats = store.stats()
@@ -240,9 +252,10 @@ export function apply(ctx: Context, config?: Config): void {
           storeRevision: latest.storeRevision,
         },
         config: {
-          autoDistillEvery: value.autoDistillEvery,
-          autoDistillCooldownMin: value.autoDistillCooldownMin,
-          autoDistillMinTools: value.autoDistillMinTools,
+          autoDistill: liveAutoDistill.autoDistill,
+          autoDistillEvery: liveAutoDistill.autoDistillEvery,
+          autoDistillCooldownMin: liveAutoDistill.autoDistillCooldownMin,
+          autoDistillMinTools: liveAutoDistill.autoDistillMinTools,
           hotMemoryTokens: value.budget.targetTokens,
           hotMemoryMaxTokens: value.budget.hardMaxTokens,
           readDefaultLimit: value.readDefaultLimit,
@@ -266,23 +279,26 @@ export function apply(ctx: Context, config?: Config): void {
     }
     const allowedWorkspace = (path: string): boolean =>
       recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
-    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace).map((route) => ctx.webServer.register(route))
+    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, undefined, autoDistillSettings).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
   }, 'dsh-memoir: routes')
 
-  if (value.autoDistill) {
-    ctx.effect(
-      () => installAutoDistill(autoDistillWire(ctx), {
-        enabled: () => value.autoDistill,
-        every: value.autoDistillEvery,
-        cooldownMin: value.autoDistillCooldownMin,
-        minTools: value.autoDistillMinTools,
-      }),
-      'dsh-memoir: auto-distill',
-    )
-  }
+  ctx.effect(
+    () => installAutoDistill(autoDistillWire(ctx), {
+      enabled: () => autoDistillSettings.get().settings.autoDistill,
+      policy: () => {
+        const current = autoDistillSettings.get().settings
+        return {
+          every: current.autoDistillEvery,
+          cooldownMin: current.autoDistillCooldownMin,
+          minTools: current.autoDistillMinTools,
+        }
+      },
+    }),
+    'dsh-memoir: auto-distill',
+  )
 
   if (value.announceToAgent) {
     ctx.systemPrompt.section({

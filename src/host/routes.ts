@@ -14,6 +14,8 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload, validateEntryUpdate } from './store.js'
 import type { CacheStats, EntryPayload, EntryUpdate, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
+import { validateAutoDistillSettingsPatch } from './settings.js'
+import type { AutoDistillSettingsPatch, AutoDistillSettingsSnapshot } from './settings.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
@@ -28,6 +30,7 @@ export interface DiagnosticsValue {
   /** v0.4.2: the most recently frozen session snapshot, if any. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    autoDistill: boolean
     autoDistillEvery: number
     autoDistillCooldownMin: number
     autoDistillMinTools: number
@@ -45,6 +48,13 @@ export type DiagnosticsProvider = (path?: string) => DiagnosticsValue
 
 /** Hot-memory preview for one workspace (the inspector endpoint). */
 export type HotMemoryProvider = (path: string) => { text: string; selected: MemoirEntry[]; total: number; estimatedTokens: number } | null
+
+/** Runtime auto-distill settings exposed to the same-origin Web panel. */
+export interface AutoDistillSettingsProvider {
+  get(): AutoDistillSettingsSnapshot
+  update(patch: AutoDistillSettingsPatch): AutoDistillSettingsSnapshot
+  reset(): AutoDistillSettingsSnapshot
+}
 
 export interface Envelope<T = unknown> {
   ok: boolean
@@ -133,6 +143,7 @@ function wireProject(
  *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
  * @param touchWorkspace - deprecated compatibility slot; GET requests never
  *   use it for authorization because browser-supplied paths are untrusted.
+ * @param settings - optional persistent runtime auto-distill settings.
  * @returns route definitions for ctx.webServer.register.
  */
 export function makeRoutes(
@@ -142,6 +153,7 @@ export function makeRoutes(
   hotMemory?: HotMemoryProvider,
   allowedWorkspace?: (path: string) => boolean,
   touchWorkspace?: (path: string) => void,
+  settings?: AutoDistillSettingsProvider,
 ): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://x')
@@ -150,6 +162,14 @@ export function makeRoutes(
 
     // ------------------------------------------------------------ reads
     if (method === 'GET') {
+      if (pathname === '/api/dsh-memoir/settings') {
+        if (settings === undefined) {
+          json(res, FAIL(NOT_FOUND), 404)
+          return
+        }
+        json(res, OK(settings.get()))
+        return
+      }
       if (pathname === '/api/dsh-memoir/search') {
         // v0.4.2: the GUI and memoir_read share this RetrievalEngine.
         if (retrieval === undefined) {
@@ -260,7 +280,7 @@ export function makeRoutes(
     }
 
     // ----------------------------------------------------------- writes
-    if (method !== 'POST' && method !== 'DELETE' && method !== 'PATCH') {
+    if (method !== 'POST' && method !== 'DELETE' && method !== 'PATCH' && method !== 'PUT') {
       json(res, FAIL(METHOD), 405)
       return
     }
@@ -274,8 +294,33 @@ export function makeRoutes(
       json(res, FAIL(BAD_REQUEST), 400)
       return
     }
+    if (pathname === '/api/dsh-memoir/settings') {
+      if (settings === undefined) {
+        json(res, FAIL(NOT_FOUND), 404)
+        return
+      }
+      if (method === 'PUT') {
+        const validation = validateAutoDistillSettingsPatch(payload)
+        if (validation !== undefined) {
+          json(res, FAIL({ code: 'bad-request', message: validation }), 400)
+          return
+        }
+        json(res, OK(settings.update(payload as AutoDistillSettingsPatch)))
+        return
+      }
+      if (method === 'DELETE') {
+        json(res, OK(settings.reset()))
+        return
+      }
+      json(res, FAIL(METHOD), 405)
+      return
+    }
     if (pathname !== '/api/dsh-memoir/entries') {
       json(res, FAIL(NOT_FOUND), 404)
+      return
+    }
+    if (method === 'PUT') {
+      json(res, FAIL(METHOD), 405)
       return
     }
     const path = strField(payload, 'path')

@@ -57,6 +57,7 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
   border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
 }
 .memoir-primary:hover { filter: brightness(1.05); }
+.memoir-primary:disabled, .memoir-iconbtn:disabled { cursor: not-allowed; opacity: .45; }
 
 .memoir-body { flex: 1; overflow-y: auto; padding: 4px 14px 16px; }
 .memoir-section-title {
@@ -105,6 +106,27 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
 }
 .memoir-field textarea { min-height: 72px; resize: vertical; }
 .memoir-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* v0.5.3 live auto-distill settings */
+.memoir-settings { margin: 0 14px; border-top: 1px solid var(--border, rgba(0,0,0,.1)); padding-top: 8px; }
+.memoir-settings-body {
+  display: flex; flex-direction: column; gap: 10px; margin-top: 7px; padding: 10px;
+  border: 1px solid var(--border, rgba(0,0,0,.1)); border-radius: 8px;
+  background: var(--bg-card, rgba(0,0,0,.02)); max-height: min(50vh, 430px); overflow-y: auto;
+}
+.memoir-settings-description, .memoir-settings-note, .memoir-settings-source { font-size: 11px; opacity: .72; line-height: 1.45; }
+.memoir-settings-switch { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.memoir-settings-switch input { margin-top: 3px; }
+.memoir-settings-switch span { display: flex; flex-direction: column; gap: 2px; }
+.memoir-settings-switch small, .memoir-settings-grid small { font-size: 10px; opacity: .65; line-height: 1.35; }
+.memoir-settings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.memoir-settings-grid .memoir-field { min-width: 0; }
+.memoir-settings-grid .memoir-field > span { font-size: 11px; opacity: .8; }
+.memoir-settings-feedback { padding: 0; }
+.memoir-settings-success { color: var(--success, #15803d); font-size: 12px; }
+@media (max-width: 760px) {
+  .memoir-settings-grid { grid-template-columns: 1fr; }
+}
 
 /* Sidebar entry row (plain DOM, matches the shell's nav rows). */
 .memoir-entry-row {
