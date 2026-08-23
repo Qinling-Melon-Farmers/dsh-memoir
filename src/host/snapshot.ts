@@ -40,7 +40,7 @@ export function snapshotHash(text: string): string {
 export class MemorySnapshotManager {
   /** Live session snapshots in LRU order (most recent last). */
   private readonly snapshots = new Map<string, SessionSnapshot>()
-  private readonly max: number
+  private max: number
 
   /**
    * @param options.max - LRU cap (default 128; config sessionSnapshotMax).
@@ -57,6 +57,24 @@ export class MemorySnapshotManager {
   /** The LRU cap this manager was created with. */
   get cap(): number {
     return this.max
+  }
+
+  /**
+   * Change the live LRU cap and evict oldest snapshots immediately when the
+   * new cap is smaller. Existing snapshots that remain are never rebuilt, so
+   * prompt-prefix stability is preserved.
+   */
+  resize(max: number): void {
+    this.max = Math.max(1, Math.floor(max))
+    this.evictPastCap()
+  }
+
+  private evictPastCap(): void {
+    while (this.snapshots.size > this.max) {
+      const oldest = this.snapshots.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      this.snapshots.delete(oldest)
+    }
   }
 
   /**
@@ -88,11 +106,7 @@ export class MemorySnapshotManager {
     }
     this.snapshots.set(sessionKey, snapshot)
     // Evict the oldest entry when past the cap.
-    while (this.snapshots.size > this.max) {
-      const oldest = this.snapshots.keys().next().value as string | undefined
-      if (oldest === undefined) break
-      this.snapshots.delete(oldest)
-    }
+    this.evictPastCap()
     return snapshot
   }
 

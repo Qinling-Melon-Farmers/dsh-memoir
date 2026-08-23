@@ -14,8 +14,8 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload, validateEntryUpdate } from './store.js'
 import type { CacheStats, EntryPayload, EntryUpdate, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
-import { validateAutoDistillSettingsPatch } from './settings.js'
-import type { AutoDistillSettingsPatch, AutoDistillSettingsSnapshot } from './settings.js'
+import { validateMemoirSettingsPatch } from './settings.js'
+import type { MemoirSettingsPatch, MemoirSettingsSnapshot } from './settings.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
@@ -30,6 +30,7 @@ export interface DiagnosticsValue {
   /** v0.4.2: the most recently frozen session snapshot, if any. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    announceToAgent: boolean
     autoDistill: boolean
     autoDistillEvery: number
     autoDistillCooldownMin: number
@@ -49,11 +50,11 @@ export type DiagnosticsProvider = (path?: string) => DiagnosticsValue
 /** Hot-memory preview for one workspace (the inspector endpoint). */
 export type HotMemoryProvider = (path: string) => { text: string; selected: MemoirEntry[]; total: number; estimatedTokens: number } | null
 
-/** Runtime auto-distill settings exposed to the same-origin Web panel. */
-export interface AutoDistillSettingsProvider {
-  get(): AutoDistillSettingsSnapshot
-  update(patch: AutoDistillSettingsPatch): AutoDistillSettingsSnapshot
-  reset(): AutoDistillSettingsSnapshot
+/** Runtime settings exposed to the same-origin Web panel. */
+export interface MemoirSettingsProvider {
+  get(): MemoirSettingsSnapshot
+  update(patch: MemoirSettingsPatch): MemoirSettingsSnapshot
+  reset(): MemoirSettingsSnapshot
 }
 
 export interface Envelope<T = unknown> {
@@ -143,7 +144,7 @@ function wireProject(
  *   be written via the panel API (v0.4.2 host safety, roadmap §3.5).
  * @param touchWorkspace - deprecated compatibility slot; GET requests never
  *   use it for authorization because browser-supplied paths are untrusted.
- * @param settings - optional persistent runtime auto-distill settings.
+ * @param settings - optional persistent live runtime settings.
  * @returns route definitions for ctx.webServer.register.
  */
 export function makeRoutes(
@@ -153,7 +154,7 @@ export function makeRoutes(
   hotMemory?: HotMemoryProvider,
   allowedWorkspace?: (path: string) => boolean,
   touchWorkspace?: (path: string) => void,
-  settings?: AutoDistillSettingsProvider,
+  settings?: MemoirSettingsProvider,
 ): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://x')
@@ -300,12 +301,12 @@ export function makeRoutes(
         return
       }
       if (method === 'PUT') {
-        const validation = validateAutoDistillSettingsPatch(payload)
+        const validation = validateMemoirSettingsPatch(payload, settings.get().settings)
         if (validation !== undefined) {
           json(res, FAIL({ code: 'bad-request', message: validation }), 400)
           return
         }
-        json(res, OK(settings.update(payload as AutoDistillSettingsPatch)))
+        json(res, OK(settings.update(payload as MemoirSettingsPatch)))
         return
       }
       if (method === 'DELETE') {

@@ -72,7 +72,7 @@ export interface RetrievalDiagnostics {
 /** A minimal LRU cache (Map insertion order = recency) with hit stats. */
 export declare class LruCache<V> {
     private readonly values;
-    private readonly max;
+    private max;
     private hitCount;
     private missCount;
     private evictionCount;
@@ -80,6 +80,8 @@ export declare class LruCache<V> {
     get size(): number;
     /** Configured entry cap. */
     get capacity(): number;
+    /** Resize the live cache and evict oldest entries immediately when needed. */
+    resize(max: number): void;
     /** Successful lookups since construction. */
     get hits(): number;
     /** Failed lookups since construction. */
@@ -90,6 +92,7 @@ export declare class LruCache<V> {
     get hitRate(): number;
     get(key: string): V | undefined;
     set(key: string, value: V): void;
+    private evictPastCapacity;
 }
 /**
  * Tokenize one document for indexing: repeats are KEPT so the inverted
@@ -123,6 +126,8 @@ export declare class RetrievalEngine {
     constructor(store: MemoirStore, options?: {
         cacheSize?: number;
     });
+    /** Apply a live query-cache capacity change from the Web settings surface. */
+    resizeCache(max: number): void;
     /** Build (or reuse) the inverted index for the current store epoch. */
     ensureIndex(): RetrievalIndex;
     /** Rank all entries matching the section filter for a query. */

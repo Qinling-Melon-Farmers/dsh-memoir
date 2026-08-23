@@ -235,3 +235,20 @@ test('memoir_read limit/detail: full restores timestamps, limit clamps to max', 
   }
 })
 
+test('memoir_read reads live default and maximum limits for each call', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    for (let i = 0; i < 8; i++) store.record(ws.cwd, { section: 'work', content: 'live-' + i })
+    let options = { defaultLimit: 2, maxLimit: 3 }
+    const read = memoirReadTool(store, () => options)
+    const first = (await read.execute({ scope: 'project' }, makeExec(ws.cwd))) as { text: string }
+    assert.equal((first.text.match(/^- \[/gm) ?? []).length, 2)
+    options = { defaultLimit: 4, maxLimit: 5 }
+    const second = (await read.execute({ scope: 'project', limit: 99 }, makeExec(ws.cwd))) as { text: string }
+    assert.equal((second.text.match(/^- \[/gm) ?? []).length, 5)
+  } finally {
+    ws.cleanup()
+  }
+})
+

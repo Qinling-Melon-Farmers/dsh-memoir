@@ -26,6 +26,8 @@ export interface ReadToolOptions {
     defaultLimit: number;
     maxLimit: number;
 }
+/** Static startup values or a live provider backed by GUI settings. */
+export type ReadToolOptionsSource = ReadToolOptions | (() => ReadToolOptions);
 /** Full-detail entry line (time + label + title + content). */
 export declare function renderEntryFull(entry: MemoirEntry): string;
 /** Compact one-line entry (id + title + collapsed single-line content). */
@@ -35,4 +37,4 @@ export declare function memoirRecordTool(store: MemoirStore): import("@deepseek-
 /** Update one existing entry while preserving its id and creation time. */
 export declare function memoirUpdateTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */
-export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, retrieval?: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptionsSource, retrieval?: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;

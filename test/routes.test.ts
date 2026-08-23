@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeRoutes, json, readJsonBody } from '../lib/routes.js'
-import { AutoDistillSettingsStore } from '../lib/settings.js'
+import { DEFAULT_MEMOIR_SETTINGS, MemoirSettingsStore } from '../lib/settings.js'
 import { callRoute, makeReq, makeRes, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -152,11 +152,11 @@ test('POST without application/json is a 415 (CSRF gate)', async () => {
 test('settings route reads, persists, validates, and resets the live auto-distill policy', async () => {
   const path = makeTempStorePath()
   try {
-    const provider = new AutoDistillSettingsStore({ autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 }, path)
+    const provider = new MemoirSettingsStore(DEFAULT_MEMOIR_SETTINGS, path)
     const handler = makeRoutes(new MemoirStore(makeTempStorePath()), undefined, undefined, undefined, undefined, undefined, provider)[0]!.handler
     const initial = await callRoute(handler, { url: '/api/dsh-memoir/settings' })
     assert.deepEqual(initial.envelope.value, {
-      settings: { autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 },
+      settings: DEFAULT_MEMOIR_SETTINGS,
       source: 'profile',
     })
 
@@ -164,11 +164,22 @@ test('settings route reads, persists, validates, and resets the live auto-distil
       method: 'PUT',
       url: '/api/dsh-memoir/settings',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ autoDistill: false, autoDistillEvery: 3, autoDistillCooldownMin: 2.5, autoDistillMinTools: 4 }),
+      body: JSON.stringify({
+        ...DEFAULT_MEMOIR_SETTINGS,
+        announceToAgent: false,
+        autoDistill: false,
+        autoDistillEvery: 3,
+        autoDistillCooldownMin: 2.5,
+        autoDistillMinTools: 4,
+        hotMemoryTokens: 600,
+        hotMemoryMaxTokens: 800,
+      }),
     })
     assert.equal(saved.status, 200)
     assert.equal((saved.envelope.value as { source: string }).source, 'web')
     assert.equal(provider.get().settings.autoDistillEvery, 3)
+    assert.equal(provider.get().settings.announceToAgent, false)
+    assert.equal(provider.get().settings.hotMemoryTokens, 600)
 
     const invalid = await callRoute(handler, {
       method: 'PUT',
@@ -411,7 +422,7 @@ test('GET diagnostics reports cache stats and hot-memory selection', async () =>
           lastQuery: { query: 'q', latencyMs: 0.1, candidates: 1, returned: 1, at: 1 },
         },
         snapshot: { hash: 'abc123', createdAt: 1, storeRevision: 1 },
-        config: { autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
+        config: { announceToAgent: true, autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
       }
     })[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })

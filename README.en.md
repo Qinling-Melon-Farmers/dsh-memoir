@@ -9,10 +9,11 @@
 > Cache-aware local project memory for DeepSeek Harness.
 
 - **Local-only** — all data stays on your machine (`~/.dsh/dsh-memoir.json` + per-project `PROJECT_MEMORY.md`)
+- **Zero regular runtime dependencies** — the npm package has no `dependencies`; its core relies only on DSH platform contracts and the Node.js standard library
 - **Zero external memory service** — no vector database, no embedding API, no cloud memory service
 - **Bounded hot-memory injection** — token-budgeted Hot Memory is injected into the system prompt (default 900/1200)
 - **Ranked local recall** — inverted index + BM25 local ranked retrieval; `memoir_read` fetches long-tail history on demand
-- **Web GUI** — a sidebar "Memory" panel with project/global browsing, relevance-ranked search, Hot Memory Inspector, and Retrieval Diagnostics
+- **Web GUI** — a bilingual sidebar panel with complete lifecycle editing, project/global browsing, BM25 search, Hot Memory, diagnostics, and live settings
 
 ## Quick Start
 
@@ -81,11 +82,16 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
-## v0.5.3 Web-configurable auto-distill and rc2 compatibility
+## v0.5.4 Complete GUI, bilingual settings, and Web UI integration
 
 - The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.1-rc.2`.
-- Auto-distill now supports per-agent worked-turn intervals, time cooldowns, and tool-call thresholds; defaults `1 / 0 / 1` preserve prior behavior.
-- The Web panel now includes Auto-distill Settings for enabling/disabling and editing those three parameters. Saves apply to subsequent turns immediately and persist in `~/.dsh/dsh-memoir.settings.json`; one action removes the Web override and restores the profile values captured at startup.
+- Add/edit forms now cover `importance`, `pinned`, `tags`, and `supersedes`; cards expose importance, tags, and replacement relationships, with a new section filter.
+- Memory Settings now appears both inside the Memory panel and under Settings → Web UI Plugins. It covers agent injection, auto-distill, Hot Memory, recall, session snapshots, and the BM25 query cache.
+- Every saved setting applies live and persists in `~/.dsh/dsh-memoir.settings.json`; version-1 settings remain readable and upgrade to version 2 only on the next save.
+- The GUI follows DSH's `<html lang>` and switches between Chinese and English without a reload, including the sidebar entry, panel, and Settings card.
+- The panel and sidebar emit `data-dsh-plugin="memoir"` / `data-dsh-part` semantic attributes for the dsh-web-ui v0.3 skin contract. Sidebar mounting is idempotent and self-heals after a complete shell rebuild.
+- Center-panel coordination now responds to any sibling through the generic `dsh-panel-activate` protocol instead of recognizing only SSH and Task Board.
+- Auto-distill retains per-agent worked-turn intervals, time cooldowns, and tool-call thresholds; defaults `1 / 0 / 1` preserve prior behavior.
 - Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
 - Retrieval defaults to `active`. Archived and superseded history is retained and can be inspected from the Web panel. Explicit `supersedes` marks its targets as superseded; history is never deleted automatically.
 - Agents can use `memoir_update` to edit an entry's section, title, content, and lifecycle in place; the Web panel also supports editing, pinning, marking superseded, archiving, and restoring.
@@ -118,14 +124,26 @@ Curated-query Top-5 hit rate: 100% (quality gate ≥ 90%, see `test/recall-quali
 
 ## GUI
 
-The v0.4 Project / Global / Search / Add / Delete / Diagnostics architecture is kept and extended:
+The Project / Global / Search / Add / Delete / Diagnostics architecture now forms a complete management surface:
 
 - **Search unified on RetrievalEngine**: a non-empty query calls `GET /api/dsh-memoir/search` — the same BM25 ranking as the agent's `memoir_read` — results ordered by relevance with scores shown
 - **Hot Memory Inspector**: expand to see the Hot Memory that will actually be injected for the current workspace (Actions / Lessons / Recent state) — i.e. "what exactly the next session inherits"
 - **Retrieval Diagnostics**: Retrieval Index (docs/terms/epoch), Query Cache (hits/misses/evictions/hit rate/size/capacity), Last Query (latency/returned), Session Snapshot (hash/createdAt/storeRevision)
-- **Auto-distill Settings (v0.5.3)**: enable or disable auto-distill and edit the worked-turn interval, cooldown minutes, and minimum tool calls in the panel; validated saves persist and apply immediately without restarting DSH
+- **Complete lifecycle forms (v0.5.4)**: add and edit section, title, content, importance, pinning, tags, and explicit replacement relationships; filter by status and section
+- **Complete live settings (v0.5.4)**: adjust agent injection, auto-distill, Hot Memory target/hard limits, recall defaults/maxima, session snapshots, and query cache immediately
+- **Settings integration (v0.5.4)**: the same bilingual card mounts in the Memory panel and Settings → Web UI Plugins, and redraws immediately when the page language changes
 
 ## Screenshots
+
+**v0.5.4 memory management**: importance, tags, replacement relationships, status/section filters, and lifecycle actions in one panel.
+
+![v0.5.4 memory management](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-memory-management-zh.png)
+
+**v0.5.4 complete live settings**: the English Settings → Web UI Plugins card, switched live from the same Chinese-capable GUI.
+
+![v0.5.4 complete live settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-settings-en.png)
+
+The following screenshots retain the feature history of earlier releases:
 
 **1. Plugin active & overall UI**: the sidebar gains a "Memory" entry (alongside SSH / Task Board, mutually exclusive panels); clicking opens the memory panel in the center column.
 
@@ -151,7 +169,7 @@ The v0.4 Project / Global / Search / Add / Delete / Diagnostics architecture is 
 
 ```text
 ~/.dsh/dsh-memoir.json        ← structured JSON (single source of truth / SSOT)
-~/.dsh/dsh-memoir.settings.json ← auto-distill overrides saved by the Web panel
+~/.dsh/dsh-memoir.settings.json ← complete runtime overrides saved by either GUI settings surface
 <workspace>/PROJECT_MEMORY.md ← human-readable projection regenerated from the JSON (git-friendly)
 
 No cloud memory DB · No embedding API · No vector DB
@@ -184,7 +202,7 @@ Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defa
 
 The three auto-distill frequency conditions are combined with AND and isolated per agent. Idle, aborted, subagent, and prior-`memoir_record` turns do not advance the interval. A worked turn below `autoDistillMinTools` advances the interval but cannot trigger by itself. Cooldown changes only after a successful steer.
 
-The auto-distill fields in `cordis.patch.yml` are startup defaults. Since v0.5.3, the Auto-distill Settings section at the bottom of the Memory panel can override them: saving atomically writes `~/.dsh/dsh-memoir.settings.json`, and subsequent turns read the new policy immediately. Restore Startup Config removes that override and returns to the profile values resolved when the plugin mounted. Other Hot Memory, recall, and cache settings remain profile-managed.
+Fields in `cordis.patch.yml` remain startup defaults. Since v0.5.4, the Memory panel or Settings → Web UI Plugins can edit every runtime field except the master `enabled` switch. Saving atomically writes `~/.dsh/dsh-memoir.settings.json`; subsequent requests and turns read the new values immediately, and shrinking snapshot/query-cache capacities evicts the oldest entries at once. Already frozen session snapshots are not rewritten when budgets change, preserving prompt-prefix cache stability. Restore Startup Config removes the Web override and returns to the profile values resolved when the plugin mounted.
 
 ## Design Trade-offs
 
@@ -194,7 +212,7 @@ The auto-distill fields in `cordis.patch.yml` are startup defaults. Since v0.5.3
 - **Multi-process safety**: store record/remove runs inside a cross-process critical section on `~/.dsh/dsh-memoir.lock` (exclusive O_EXCL creation with timeout); the section force-reloads from disk before mutating, so two interleaved DSH processes lose no updates (v0.4.2).
 - **Windows paths**: canonical keys are fully lowercased (`C:\A` / `c:\a\` / `C:/A` share one bucket) while display paths keep the original casing (v0.4.2).
 - **GUI and Agent share one engine**: panel search and `memoir_read` use the same RetrievalEngine instead of separate filter logic (v0.4.2).
-- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds and tune them immediately from the Web panel (v0.5.3).
+- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds and tune them immediately from either GUI settings surface (v0.5.4).
 
 ## Use Cases
 
@@ -225,7 +243,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 154 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / integration / client pure logic / bundle protocol & purity / release notes
+pnpm test             # 160 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / GUI mounting & bilingual behavior / integration / bundle protocol & purity / release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -259,7 +277,7 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.3** (2026-08-22) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.3) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.3). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.4** (2026-08-23) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.4). Full history is in [CHANGELOG.md](./CHANGELOG.md).
 
 Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 

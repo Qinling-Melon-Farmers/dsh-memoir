@@ -76,7 +76,7 @@ export interface RetrievalDiagnostics {
 /** A minimal LRU cache (Map insertion order = recency) with hit stats. */
 export class LruCache<V> {
   private readonly values = new Map<string, V>()
-  private readonly max: number
+  private max: number
   private hitCount = 0
   private missCount = 0
   private evictionCount = 0
@@ -92,6 +92,12 @@ export class LruCache<V> {
   /** Configured entry cap. */
   get capacity(): number {
     return this.max
+  }
+
+  /** Resize the live cache and evict oldest entries immediately when needed. */
+  resize(max: number): void {
+    this.max = Math.max(1, Math.floor(max))
+    this.evictPastCapacity()
   }
 
   /** Successful lookups since construction. */
@@ -131,6 +137,10 @@ export class LruCache<V> {
   set(key: string, value: V): void {
     this.values.delete(key)
     this.values.set(key, value)
+    this.evictPastCapacity()
+  }
+
+  private evictPastCapacity(): void {
     while (this.values.size > this.max) {
       const oldest = this.values.keys().next().value as string | undefined
       if (oldest === undefined) break
@@ -284,6 +294,11 @@ export class RetrievalEngine {
   constructor(store: MemoirStore, options: { cacheSize?: number } = {}) {
     this.store = store
     this.queryCache = new LruCache(options.cacheSize ?? 128)
+  }
+
+  /** Apply a live query-cache capacity change from the Web settings surface. */
+  resizeCache(max: number): void {
+    this.queryCache.resize(max)
   }
 
   /** Build (or reuse) the inverted index for the current store epoch. */

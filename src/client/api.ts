@@ -102,6 +102,7 @@ export interface WireDiagnostics {
   /** v0.4.2: the most recently frozen session snapshot. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    announceToAgent: boolean
     autoDistill: boolean
     autoDistillEvery: number
     autoDistillCooldownMin: number
@@ -115,18 +116,29 @@ export interface WireDiagnostics {
   }
 }
 
-/** Runtime auto-distill settings managed by the Web panel. */
-export interface WireAutoDistillSettings {
+/** Full live runtime settings managed by both GUI settings surfaces. */
+export interface WireMemoirSettings {
+  announceToAgent: boolean
   autoDistill: boolean
   autoDistillEvery: number
   autoDistillCooldownMin: number
   autoDistillMinTools: number
+  hotMemoryTokens: number
+  hotMemoryMaxTokens: number
+  readDefaultLimit: number
+  readMaxLimit: number
+  sessionSnapshotMax: number
+  queryCacheSize: number
 }
 
-export interface WireAutoDistillSettingsSnapshot {
-  settings: WireAutoDistillSettings
+export interface WireMemoirSettingsSnapshot {
+  settings: WireMemoirSettings
   source: 'profile' | 'web'
 }
+
+/** v0.5.3 source compatibility aliases. */
+export type WireAutoDistillSettings = WireMemoirSettings
+export type WireAutoDistillSettingsSnapshot = WireMemoirSettingsSnapshot
 
 /** One ranked /search hit (v0.4.2: shared RetrievalEngine order). */
 export interface WireSearchResult {
@@ -185,30 +197,30 @@ export class MemoirApi {
     return readEnvelope(response) as Promise<WireDiagnostics>
   }
 
-  /** Read the live auto-distill policy and whether it comes from Web overrides. */
-  async settings(): Promise<WireAutoDistillSettingsSnapshot> {
+  /** Read all live settings and whether they come from Web overrides. */
+  async settings(): Promise<WireMemoirSettingsSnapshot> {
     const response = await this.fetchImpl('/api/dsh-memoir/settings')
-    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
+    return readEnvelope(response) as Promise<WireMemoirSettingsSnapshot>
   }
 
-  /** Persist and immediately apply the auto-distill policy. */
-  async updateSettings(settings: WireAutoDistillSettings): Promise<WireAutoDistillSettingsSnapshot> {
+  /** Persist and immediately apply the complete runtime policy. */
+  async updateSettings(settings: WireMemoirSettings): Promise<WireMemoirSettingsSnapshot> {
     const response = await this.fetchImpl('/api/dsh-memoir/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(settings),
     })
-    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
+    return readEnvelope(response) as Promise<WireMemoirSettingsSnapshot>
   }
 
   /** Remove the Web override and restore the profile defaults captured at boot. */
-  async resetSettings(): Promise<WireAutoDistillSettingsSnapshot> {
+  async resetSettings(): Promise<WireMemoirSettingsSnapshot> {
     const response = await this.fetchImpl('/api/dsh-memoir/settings', {
       method: 'DELETE',
       headers: { 'content-type': 'application/json' },
       body: '{}',
     })
-    return readEnvelope(response) as Promise<WireAutoDistillSettingsSnapshot>
+    return readEnvelope(response) as Promise<WireMemoirSettingsSnapshot>
   }
 
   /**

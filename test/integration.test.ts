@@ -88,12 +88,15 @@ test('apply with enabled=false mounts nothing', () => {
   assert.equal(ctx.listeners.length, 0)
 })
 
-test('apply with announceToAgent=false skips only the prompt section', () => {
+test('apply with announceToAgent=false keeps workspace tracking but emits no prompt content', () => {
   const ctx = makeCtx()
   applyTest(ctx, { enabled: true, announceToAgent: false, autoDistill: true })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
-  assert.equal(ctx.sections.length, 0)
+  assert.equal(ctx.sections.length, 1)
+  const provider = ctx.sections[0]?.text
+  assert.equal(typeof provider, 'function')
+  assert.equal((provider as (context: unknown) => string)({ agent: { session: { header: { cwd: 'C:\\workspace' } } } }), '')
   assert.equal(ctx.listeners.length, 1)
 })
 
@@ -187,14 +190,32 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
       method: 'PUT',
       url: '/api/dsh-memoir/settings',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1 }),
+      body: JSON.stringify({
+        announceToAgent: true,
+        autoDistill: true,
+        autoDistillEvery: 1,
+        autoDistillCooldownMin: 0,
+        autoDistillMinTools: 1,
+        hotMemoryTokens: 500,
+        hotMemoryMaxTokens: 700,
+        readDefaultLimit: 4,
+        readMaxLimit: 12,
+        sessionSnapshotMax: 32,
+        queryCacheSize: 16,
+      }),
     })
     assert.equal(updated.status, 200)
     listener({ agent, turn: 2, signal })
     assert.equal(messages.length, 1)
 
     const diagnostics = await callRoute(route.handler, { url: '/api/dsh-memoir/diagnostics' })
-    assert.equal((diagnostics.envelope.value as { config: { autoDistillEvery: number } }).config.autoDistillEvery, 1)
+    const liveConfig = (diagnostics.envelope.value as { config: { autoDistillEvery: number; hotMemoryTokens: number; sessionSnapshotMax: number; queryCacheSize: number } }).config
+    assert.equal(liveConfig.autoDistillEvery, 1)
+    assert.equal(liveConfig.hotMemoryTokens, 500)
+    assert.equal(liveConfig.sessionSnapshotMax, 32)
+    assert.equal(liveConfig.queryCacheSize, 16)
+    assert.equal((diagnostics.envelope.value as { snapshotMax: number }).snapshotMax, 32)
+    assert.equal((diagnostics.envelope.value as { retrieval: { cache: { capacity: number } } }).retrieval.cache.capacity, 16)
   } finally {
     rmSync(storePath, { force: true })
     rmSync(settingsPath, { force: true })

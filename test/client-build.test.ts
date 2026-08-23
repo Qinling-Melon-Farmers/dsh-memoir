@@ -65,3 +65,11 @@ test('client bundle requires only platform modules (purity)', () => {
   assert.ok(required.has('react/jsx-runtime'), 'jsx runtime comes from the module table')
   assert.ok(required.has('react-dom/client'), 'createRoot comes from the module table')
 })
+
+test('client bundle carries v0.5.4 semantic and Settings integration contracts', () => {
+  const source = readFileSync(OUT, 'utf8')
+  assert.ok(source.includes('data-dsh-plugin'), 'React surfaces expose their plugin owner')
+  assert.ok(source.includes('data-dsh-part'), 'React surfaces expose stable part names')
+  assert.ok(source.includes('web-ui.plugin.item'), 'complete settings card registers into dsh-web-ui Settings')
+  assert.ok(source.includes('hotMemoryTokens'), 'complete runtime settings are bundled')
+})

@@ -68,6 +68,8 @@ export function mountPanel(
     if (column === undefined) return
     container = document.createElement('div')
     container.dataset.dshMemoirView = ''
+    container.dataset.dshPlugin = 'memoir'
+    container.dataset.dshPart = 'panel-host'
     column.appendChild(container)
     root = createRoot(container)
     root.render(<MemoirPanel controller={controller} api={api} cwdTracker={cwdTracker} t={t} />)
@@ -91,7 +93,7 @@ export function mountPanel(
 
   const onOtherActivate = (event: Event): void => {
     const detail = (event as CustomEvent).detail as string | undefined
-    if ((detail === 'ssh' || detail === 'taskboard') && controller.getSnapshot().panelOpen) {
+    if (typeof detail === 'string' && detail !== PANEL_NAME && controller.getSnapshot().panelOpen) {
       controller.close()
     }
   }

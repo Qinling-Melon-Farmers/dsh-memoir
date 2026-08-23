@@ -6,7 +6,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SECTION_KEYS } from './i18n.js'
-import type { MemoirApi, WireAutoDistillSettings, WireDiagnostics, WireEntry, WireHotMemory, WireProject, WireSearchResult } from './api.js'
+import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireMemoirSettings, WireProject, WireSearchResult } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
@@ -29,7 +29,10 @@ type EntryPatch = {
   tags?: string[]
 }
 
-/** One entry's meta line: time, section chip, session id tooltip. */
+const parseList = (value: string): string[] =>
+  [...new Set(value.split(/[,，\n]/).map((item) => item.trim()).filter((item) => item !== ''))]
+
+/** One entry's meta line: lifecycle, importance, tags and provenance. */
 function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string }) {
   const when = new Date(entry.time)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -42,6 +45,11 @@ function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string 
         ? <span className="memoir-chip">{t('status.' + entry.status)}</span>
         : null}
       {entry.pinned === true ? <span className="memoir-chip">{t('lifecycle.pin')}</span> : null}
+      <span className="memoir-chip" title={t('form.importanceHint')}>{t('form.importance')}: {entry.importance ?? 3}</span>
+      {(entry.tags ?? []).map((tag) => <span className="memoir-chip memoir-tag" key={tag}>#{tag}</span>)}
+      {(entry.supersedes?.length ?? 0) > 0
+        ? <span className="memoir-chip" title={entry.supersedes?.join('\n')}>{t('form.supersedes')}: {entry.supersedes?.length}</span>
+        : null}
       {entry.sessionId !== undefined
         ? <span title={`${t('session')}: ${entry.sessionId}`}>{entry.sessionId.slice(0, 12)}</span>
         : null}
@@ -54,13 +62,23 @@ function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; 
   const [section, setSection] = useState<SectionKey>(entry.section)
   const [title, setTitle] = useState(entry.title ?? '')
   const [content, setContent] = useState(entry.content)
+  const [importance, setImportance] = useState(String(entry.importance ?? 3))
+  const [tags, setTags] = useState((entry.tags ?? []).join(', '))
+  const [supersedes, setSupersedes] = useState((entry.supersedes ?? []).join(', '))
   const save = () => {
     if (content.trim() === '' || onUpdate === undefined) return
-    onUpdate(entry, { section, title: title.trim() === '' ? null : title.trim(), content: content.trim() })
+    onUpdate(entry, {
+      section,
+      title: title.trim() === '' ? null : title.trim(),
+      content: content.trim(),
+      importance: Number(importance),
+      tags: parseList(tags),
+      supersedes: parseList(supersedes),
+    })
     setEditing(false)
   }
   return (
-    <div className="memoir-entry">
+    <div className="memoir-entry" data-dsh-part="entry">
       <button type="button" className="memoir-delete" title={t('delete.confirm')} onClick={() => onDelete(entry)}>×</button>
       {onUpdate !== undefined
         ? <div className="memoir-entry-actions">
@@ -91,6 +109,22 @@ function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; 
             <div className="memoir-field">
               <label>{t('form.content')}</label>
               <textarea value={content} onChange={(e) => setContent(e.target.value)} />
+            </div>
+            <div className="memoir-form-row">
+              <div className="memoir-field">
+                <label>{t('form.importance')}</label>
+                <select value={importance} onChange={(e) => setImportance(e.target.value)}>
+                  {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </div>
+              <div className="memoir-field">
+                <label>{t('form.tags')}</label>
+                <input value={tags} placeholder={t('form.placeholder.tags')} onChange={(e) => setTags(e.target.value)} />
+              </div>
+            </div>
+            <div className="memoir-field">
+              <label>{t('form.supersedes')}</label>
+              <input value={supersedes} placeholder={t('form.placeholder.supersedes')} onChange={(e) => setSupersedes(e.target.value)} />
             </div>
             <div className="memoir-form-actions">
               <button type="button" className="memoir-iconbtn" onClick={() => setEditing(false)}>{t('toolbar.cancel')}</button>
@@ -190,16 +224,38 @@ function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
   )
 }
 
-function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubmit: (payload: { section: SectionKey; title?: string; content: string }) => void; onCancel: () => void }) {
+type AddPayload = {
+  section: SectionKey
+  title?: string
+  content: string
+  importance: number
+  pinned: boolean
+  tags: string[]
+  supersedes: string[]
+}
+
+function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubmit: (payload: AddPayload) => void; onCancel: () => void }) {
   const [section, setSection] = useState<SectionKey>('lessons')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
+  const [importance, setImportance] = useState('3')
+  const [pinned, setPinned] = useState(false)
+  const [tags, setTags] = useState('')
+  const [supersedes, setSupersedes] = useState('')
   const submit = () => {
     if (content.trim() === '') return
-    onSubmit({ section, title: title.trim() === '' ? undefined : title.trim(), content: content.trim() })
+    onSubmit({
+      section,
+      title: title.trim() === '' ? undefined : title.trim(),
+      content: content.trim(),
+      importance: Number(importance),
+      pinned,
+      tags: parseList(tags),
+      supersedes: parseList(supersedes),
+    })
   }
   return (
-    <div className="memoir-form">
+    <div className="memoir-form" data-dsh-part="entry-form">
       <div className="memoir-form-row">
         <div className="memoir-field">
           <label>{t('form.section')}</label>
@@ -218,6 +274,27 @@ function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubm
         <label>{t('form.content')}</label>
         <textarea value={content} placeholder={t('form.placeholder.content')} onChange={(e) => setContent(e.target.value)} />
       </div>
+      <div className="memoir-form-row">
+        <div className="memoir-field">
+          <label>{t('form.importance')}</label>
+          <select value={importance} onChange={(e) => setImportance(e.target.value)}>
+            {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <small>{t('form.importanceHint')}</small>
+        </div>
+        <div className="memoir-field">
+          <label>{t('form.tags')}</label>
+          <input value={tags} placeholder={t('form.placeholder.tags')} onChange={(e) => setTags(e.target.value)} />
+        </div>
+      </div>
+      <div className="memoir-field">
+        <label>{t('form.supersedes')}</label>
+        <input value={supersedes} placeholder={t('form.placeholder.supersedes')} onChange={(e) => setSupersedes(e.target.value)} />
+      </div>
+      <label className="memoir-settings-switch">
+        <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+        <span><strong>{t('form.pinned')}</strong><small>{t('form.pinnedHint')}</small></span>
+      </label>
       <div className="memoir-form-actions">
         <button type="button" className="memoir-iconbtn" onClick={onCancel}>{t('toolbar.cancel')}</button>
         <button type="button" className="memoir-primary" onClick={submit}>{t('form.submit')}</button>
@@ -226,30 +303,60 @@ function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubm
   )
 }
 
-/** Persistent, live auto-distill controls introduced in v0.5.3. */
-function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
+type NumericSettingsKey =
+  | 'autoDistillEvery'
+  | 'autoDistillCooldownMin'
+  | 'autoDistillMinTools'
+  | 'hotMemoryTokens'
+  | 'hotMemoryMaxTokens'
+  | 'readDefaultLimit'
+  | 'readMaxLimit'
+  | 'sessionSnapshotMax'
+  | 'queryCacheSize'
+
+const NUMERIC_SETTINGS: NumericSettingsKey[] = [
+  'autoDistillEvery',
+  'autoDistillCooldownMin',
+  'autoDistillMinTools',
+  'hotMemoryTokens',
+  'hotMemoryMaxTokens',
+  'readDefaultLimit',
+  'readMaxLimit',
+  'sessionSnapshotMax',
+  'queryCacheSize',
+]
+
+/** Persistent, live complete settings shared by the panel and Settings page. */
+export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen = false }: {
   api: MemoirApi
   t: (key: string) => string
   refreshKey: number
   onChanged: () => void
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
-  const [settings, setSettings] = useState<WireAutoDistillSettings | null>(null)
+  const [open, setOpen] = useState(defaultOpen)
+  const [settings, setSettings] = useState<WireMemoirSettings | null>(null)
   const [source, setSource] = useState<'profile' | 'web'>('profile')
-  const [every, setEvery] = useState('1')
-  const [cooldown, setCooldown] = useState('0')
-  const [minTools, setMinTools] = useState('1')
+  const [draft, setDraft] = useState<Record<NumericSettingsKey, string>>({
+    autoDistillEvery: '1',
+    autoDistillCooldownMin: '0',
+    autoDistillMinTools: '1',
+    hotMemoryTokens: '900',
+    hotMemoryMaxTokens: '1200',
+    readDefaultLimit: '8',
+    readMaxLimit: '30',
+    sessionSnapshotMax: '128',
+    queryCacheSize: '128',
+  })
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const applySnapshot = (snapshot: { settings: WireAutoDistillSettings; source: 'profile' | 'web' }) => {
+  const applySnapshot = (snapshot: { settings: WireMemoirSettings; source: 'profile' | 'web' }) => {
     setError(null)
     setSettings(snapshot.settings)
     setSource(snapshot.source)
-    setEvery(String(snapshot.settings.autoDistillEvery))
-    setCooldown(String(snapshot.settings.autoDistillCooldownMin))
-    setMinTools(String(snapshot.settings.autoDistillMinTools))
+    setDraft(Object.fromEntries(NUMERIC_SETTINGS.map((key) => [key, String(snapshot.settings[key])])) as Record<NumericSettingsKey, string>)
   }
 
   useEffect(() => {
@@ -262,10 +369,16 @@ function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
 
   const save = () => {
     if (settings === null) return
-    const parsedEvery = Number(every)
-    const parsedCooldown = Number(cooldown)
-    const parsedMinTools = Number(minTools)
-    if (!Number.isSafeInteger(parsedEvery) || parsedEvery < 1 || !Number.isFinite(parsedCooldown) || parsedCooldown < 0 || !Number.isSafeInteger(parsedMinTools) || parsedMinTools < 1) {
+    const parsed = Object.fromEntries(NUMERIC_SETTINGS.map((key) => [key, Number(draft[key])])) as Record<NumericSettingsKey, number>
+    const integerKeys = NUMERIC_SETTINGS.filter((key) => key !== 'autoDistillCooldownMin')
+    const invalidInteger = integerKeys.some((key) => !Number.isSafeInteger(parsed[key]) || parsed[key] < 1)
+    if (
+      invalidInteger
+      || !Number.isFinite(parsed.autoDistillCooldownMin)
+      || parsed.autoDistillCooldownMin < 0
+      || parsed.hotMemoryMaxTokens < parsed.hotMemoryTokens
+      || parsed.readMaxLimit < parsed.readDefaultLimit
+    ) {
       setMessage(null)
       setError(t('settings.invalid'))
       return
@@ -274,10 +387,9 @@ function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
     setError(null)
     setMessage(null)
     api.updateSettings({
+      announceToAgent: settings.announceToAgent,
       autoDistill: settings.autoDistill,
-      autoDistillEvery: parsedEvery,
-      autoDistillCooldownMin: parsedCooldown,
-      autoDistillMinTools: parsedMinTools,
+      ...parsed,
     })
       .then((value) => {
         applySnapshot(value)
@@ -303,7 +415,7 @@ function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
   }
 
   return (
-    <div className="memoir-settings">
+    <div className="memoir-settings" data-dsh-part="settings">
       <button type="button" className="memoir-diagnostics-toggle" onClick={() => setOpen((value) => !value)}>
         {t('settings.title')} {open ? '▾' : '▸'}
       </button>
@@ -316,29 +428,53 @@ function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
                 <label className="memoir-settings-switch">
                   <input
                     type="checkbox"
+                    checked={settings.announceToAgent}
+                    onChange={(event) => setSettings({ ...settings, announceToAgent: event.target.checked })}
+                  />
+                  <span><strong>{t('settings.announce')}</strong><small>{t('settings.announceHint')}</small></span>
+                </label>
+                <div className="memoir-settings-group-title">{t('settings.group.distill')}</div>
+                <label className="memoir-settings-switch">
+                  <input
+                    type="checkbox"
                     checked={settings.autoDistill}
                     onChange={(event) => setSettings({ ...settings, autoDistill: event.target.checked })}
                   />
                   <span><strong>{t('settings.enabled')}</strong><small>{t('settings.enabledHint')}</small></span>
                 </label>
                 <div className="memoir-settings-grid">
-                  <label className="memoir-field">
-                    <span>{t('settings.every')}</span>
-                    <input type="number" min="1" step="1" value={every} onChange={(event) => setEvery(event.target.value)} />
-                    <small>{t('settings.everyHint')}</small>
-                  </label>
-                  <label className="memoir-field">
-                    <span>{t('settings.cooldown')}</span>
-                    <input type="number" min="0" step="0.1" value={cooldown} onChange={(event) => setCooldown(event.target.value)} />
-                    <small>{t('settings.cooldownHint')}</small>
-                  </label>
-                  <label className="memoir-field">
-                    <span>{t('settings.minTools')}</span>
-                    <input type="number" min="1" step="1" value={minTools} onChange={(event) => setMinTools(event.target.value)} />
-                    <small>{t('settings.minToolsHint')}</small>
-                  </label>
+                  {(['autoDistillEvery', 'autoDistillCooldownMin', 'autoDistillMinTools'] as NumericSettingsKey[]).map((key) => (
+                    <label className="memoir-field" key={key}>
+                      <span>{t(`settings.${key}`)}</span>
+                      <input
+                        type="number"
+                        min={key === 'autoDistillCooldownMin' ? '0' : '1'}
+                        step={key === 'autoDistillCooldownMin' ? '0.1' : '1'}
+                        value={draft[key]}
+                        onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
+                      />
+                      <small>{t(`settings.${key}Hint`)}</small>
+                    </label>
+                  ))}
                 </div>
                 <div className="memoir-settings-note">{t('settings.andHint')}</div>
+                <div className="memoir-settings-group-title">{t('settings.group.memory')}</div>
+                <div className="memoir-settings-grid">
+                  {(['hotMemoryTokens', 'hotMemoryMaxTokens', 'readDefaultLimit', 'readMaxLimit', 'sessionSnapshotMax', 'queryCacheSize'] as NumericSettingsKey[]).map((key) => (
+                    <label className="memoir-field" key={key}>
+                      <span>{t(`settings.${key}`)}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={draft[key]}
+                        onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
+                      />
+                      <small>{t(`settings.${key}Hint`)}</small>
+                    </label>
+                  ))}
+                </div>
+                <div className="memoir-settings-note">{t('settings.liveHint')}</div>
                 <div className="memoir-settings-source">{t('settings.source')}: {t(`settings.source.${source}`)}</div>
                 {error !== null ? <div className="memoir-error memoir-settings-feedback">{error}</div> : null}
                 {message !== null ? <div className="memoir-settings-success">{message}</div> : null}
@@ -354,10 +490,17 @@ function AutoDistillSettingsPanel({ api, t, refreshKey, onChanged }: {
 }
 
 export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
+  const [, setLanguage] = useState(document.documentElement.lang)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setLanguage(document.documentElement.lang))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    return () => observer.disconnect()
+  }, [])
   const cwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
   const [tab, setTab] = useState<'project' | 'global'>('project')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<MemoirStatus | 'all'>('active')
+  const [sectionFilter, setSectionFilter] = useState<SectionKey | 'all'>('all')
   const [formOpen, setFormOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [project, setProject] = useState<WireProject | null>(null)
@@ -382,13 +525,13 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         return undefined
       }
       setLoading(true)
-      api.project(cwd, { status: statusFilter })
+      api.project(cwd, { status: statusFilter, section: sectionFilter === 'all' ? undefined : sectionFilter })
         .then((value) => { if (!cancelled) setProject(value.project) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     } else {
       setLoading(true)
-      api.global({ status: statusFilter })
+      api.global({ status: statusFilter, section: sectionFilter === 'all' ? undefined : sectionFilter })
         .then((value) => { if (!cancelled) setProjects(value.projects) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -406,7 +549,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         .catch(() => { if (!cancelled) setHotMemory(null) })
     }
     return () => { cancelled = true }
-  }, [tab, cwd, statusFilter, refreshKey])
+  }, [tab, cwd, statusFilter, sectionFilter, refreshKey])
 
   // v0.4.2: a non-empty query searches through the host RetrievalEngine —
   // the same BM25 ranking memoir_read uses. Debounced; empty query resets.
@@ -418,7 +561,13 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
     let cancelled = false
     const timer = setTimeout(() => {
       const scope = tab === 'project' ? 'project' : 'global'
-      api.search({ scope, path: tab === 'project' && cwd !== '' ? cwd : undefined, query: q, status: statusFilter })
+      api.search({
+        scope,
+        path: tab === 'project' && cwd !== '' ? cwd : undefined,
+        query: q,
+        status: statusFilter,
+        section: sectionFilter === 'all' ? undefined : sectionFilter,
+      })
         .then((value) => { if (!cancelled) setSearchResults(value.results) })
         .catch((e: Error) => {
           if (!cancelled) {
@@ -428,7 +577,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         })
     }, 200)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [q, tab, cwd, statusFilter, refreshKey])
+  }, [q, tab, cwd, statusFilter, sectionFilter, refreshKey])
 
   const filterEntries = (entries: WireEntry[]) =>
     q === '' ? entries : entries.filter((e) => `${e.title ?? ''} ${e.content}`.toLowerCase().includes(q))
@@ -444,7 +593,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
       .finally(() => setBusy(false))
   }
 
-  const onRecord = (payload: { section: SectionKey; title?: string; content: string }) => {
+  const onRecord = (payload: AddPayload) => {
     setBusy(true)
     api.record({ path: cwd, ...payload })
       .then(() => {
@@ -466,8 +615,8 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const projectEntries = project === null ? [] : filterEntries(project.entries)
 
   return (
-    <div className="memoir-panel">
-      <div className="memoir-header">
+    <div className="memoir-panel" data-dsh-plugin="memoir" data-dsh-part="panel">
+      <div className="memoir-header" data-dsh-part="header">
         <div className="memoir-title">
           {t('panel.title')}
           <div className="memoir-subtitle">{tab === 'project' ? (cwd === '' ? t('empty.workspace') : cwd) : t('tab.global')}</div>
@@ -475,19 +624,26 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
         <button type="button" className="memoir-iconbtn" title={t('panel.refresh')} onClick={reload}>⟳</button>
         <button type="button" className="memoir-iconbtn" title={t('panel.close')} onClick={() => controller.close()}>×</button>
       </div>
-      <div className="memoir-tabs">
+      <div className="memoir-tabs" data-dsh-part="tabs">
         <button type="button" className="memoir-tab" data-active={tab === 'project' ? 'true' : undefined} onClick={() => setTab('project')}>{t('tab.project')}</button>
         <button type="button" className="memoir-tab" data-active={tab === 'global' ? 'true' : undefined} onClick={() => setTab('global')}>{t('tab.global')}</button>
       </div>
-      <div className="memoir-toolbar">
+      <div className="memoir-toolbar" data-dsh-part="toolbar">
         <input className="memoir-search" placeholder={t('toolbar.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
         <label className="memoir-status-filter">
           <span>{t('filter.status')}</span>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as MemoirStatus | 'all')}>
             <option value="active">{t('status.active')}</option>
-            <option value="all">{t('filter.status')}: all</option>
+            <option value="all">{t('filter.all')}</option>
             <option value="superseded">{t('status.superseded')}</option>
             <option value="archived">{t('status.archived')}</option>
+          </select>
+        </label>
+        <label className="memoir-status-filter">
+          <span>{t('filter.section')}</span>
+          <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value as SectionKey | 'all')}>
+            <option value="all">{t('filter.all')}</option>
+            {SECTION_KEYS.map((key) => <option key={key} value={key}>{t('sections.' + key)}</option>)}
           </select>
         </label>
         {tab === 'project' && cwd !== ''
@@ -554,8 +710,8 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                   })}
       </div>
       {busy ? <div className="memoir-empty">…</div> : null}
-      <AutoDistillSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
-      <div className="memoir-inspector">
+      <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
+      <div className="memoir-inspector" data-dsh-part="hot-memory">
         <button type="button" className="memoir-diagnostics-toggle" onClick={() => setInspectorOpen((v) => !v)}>
           {t('inspector.title')} {inspectorOpen ? '▾' : '▸'}
         </button>
@@ -565,7 +721,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
             : <pre className="memoir-inspector-body">{hotMemory.text}</pre>
           : null}
       </div>
-      <div className="memoir-diagnostics">
+      <div className="memoir-diagnostics" data-dsh-part="diagnostics">
         <button type="button" className="memoir-diagnostics-toggle" onClick={() => setDiagOpen((v) => !v)}>
           {t('diag.title')} {diagOpen ? '▾' : '▸'}
         </button>

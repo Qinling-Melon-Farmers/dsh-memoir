@@ -43,6 +43,19 @@ test('getOrCreate refreshes LRU recency and evicts past the cap', () => {
   assert.equal(manager.cap, 2)
 })
 
+test('resize shrinks the live snapshot cap without rebuilding survivors', () => {
+  const manager = new MemorySnapshotManager({ max: 3 })
+  const a = manager.getOrCreate('a', () => ({ storeRevision: 1, text: 'a' }))
+  manager.getOrCreate('b', () => ({ storeRevision: 1, text: 'b' }))
+  manager.getOrCreate('c', () => ({ storeRevision: 1, text: 'c' }))
+  manager.getOrCreate('a', () => ({ storeRevision: 2, text: 'a-new' }))
+  manager.resize(2)
+  assert.equal(manager.cap, 2)
+  assert.equal(manager.size, 2)
+  assert.equal(manager.peek('a'), a, 'surviving frozen snapshot is unchanged')
+  assert.equal(manager.peek('b'), undefined, 'oldest snapshot is evicted')
+})
+
 test('forget drops one session snapshot', () => {
   const manager = new MemorySnapshotManager()
   manager.getOrCreate('x', () => ({ storeRevision: 1, text: 'x' }))

@@ -12,6 +12,52 @@
 
 - None.
 
+## [0.5.4] - 2026-08-23
+
+### 中文
+
+#### Added
+
+- 完成 v0.5.4 GUI 覆盖：新增与编辑表单支持重要度、置顶、标签和显式替代关系；条目卡展示这些元数据，并增加 section 筛选。
+- 将「记忆设置」扩展为完整运行时配置，覆盖 agent 注入、自动蒸馏、Hot Memory 预算、召回条数、会话快照和 BM25 查询缓存。
+- 同一双语设置卡同时接入记忆面板与 Settings → Web UI 插件；跟随 DSH 页面语言在中文和英文之间即时切换，无需刷新。
+- 侧栏、面板容器和关键部件新增 `data-dsh-plugin="memoir"` / `data-dsh-part` 语义属性，适配 dsh-web-ui v0.3 皮肤契约。
+- 新增 GUI 挂载、整棵 sidebar shell 重建、设置 v1→v2 兼容、实时容量收缩和客户端语义契约测试；测试总数增至 160 项。
+- README 中英文同步加入 v0.5.4 记忆管理、中文设置和英文设置实机截图。
+
+#### Changed
+
+- `~/.dsh/dsh-memoir.settings.json` 升级为设置格式 v2；旧 v1 自动蒸馏覆盖继续只读兼容，首次保存时才写成 v2。
+- Hot Memory 预算、`memoir_read` 默认/最大条数、快照 LRU 与查询 LRU 现在实时读取设置；缩小容量会立即淘汰最旧项，已冻结会话快照保持不变。
+- `announceToAgent=false` 时系统提示提供器返回空内容，但仍从可信 assembly 记录活动 cwd，避免关闭注入后破坏新工作区的 GUI 写入授权。
+- 侧栏挂载改为幂等、自愈且持续观察整棵 shell 重建；面板通过通用 `dsh-panel-activate` 事件关闭，不再硬编码兄弟插件名称。
+
+#### Compatibility
+
+- 保持 DeepSeek Harness `0.1.1-rc.2` 基线、记忆 store format v3、零普通运行时依赖以及既有自动蒸馏默认行为。
+
+### English
+
+#### Added
+
+- Completed v0.5.4 GUI coverage: add/edit forms now support importance, pinning, tags, and explicit replacement relationships; entry cards expose the metadata and a section filter was added.
+- Expanded Memory Settings to the complete runtime policy: agent injection, auto-distill, Hot Memory budgets, recall counts, session snapshots, and the BM25 query cache.
+- Mounted the same bilingual settings card in the Memory panel and Settings → Web UI Plugins; it follows the DSH page language and switches between Chinese and English without a reload.
+- Added `data-dsh-plugin="memoir"` / `data-dsh-part` semantic attributes to the sidebar, panel host, and key surfaces for the dsh-web-ui v0.3 skin contract.
+- Added coverage for GUI mounting, whole-sidebar-shell rebuilds, settings v1→v2 compatibility, live capacity shrinking, and client semantic contracts; the suite now contains 160 tests.
+- Updated both READMEs with current v0.5.4 memory-management, Chinese-settings, and English-settings screenshots.
+
+#### Changed
+
+- Upgraded `~/.dsh/dsh-memoir.settings.json` to settings format v2. Existing v1 auto-distill overrides remain readable and are rewritten only on the next explicit save.
+- Hot Memory budgets, `memoir_read` default/maximum counts, snapshot LRU, and query LRU now read live settings. Shrinking a capacity evicts the oldest entries immediately while frozen session snapshots remain unchanged.
+- With `announceToAgent=false`, the prompt provider emits no content but still observes trusted assembly cwd values, preserving GUI write authorization for new workspaces.
+- Sidebar mounting is now idempotent, self-healing, and retained across whole-shell rebuilds. The panel closes for any sibling `dsh-panel-activate` event instead of hard-coding plugin names.
+
+#### Compatibility
+
+- Kept the DeepSeek Harness `0.1.1-rc.2` baseline, memory store format v3, zero regular runtime dependencies, and the existing auto-distill defaults.
+
 ## [0.5.3] - 2026-08-22
 
 ### 中文

@@ -40,13 +40,24 @@ function createEntry(controller: PanelController, t: (key: string) => string): H
   const entry = document.createElement('button')
   entry.type = 'button'
   entry.dataset.dshMemoirEntry = ''
+  entry.dataset.dshPlugin = 'memoir'
+  entry.dataset.dshPart = 'sidebar-entry'
   entry.className = 'memoir-entry-row'
-  entry.setAttribute('aria-label', t('entry.label'))
-  entry.setAttribute('title', t('entry.tooltip'))
-  entry.innerHTML = '<span class="memoir-entry-icon">' + ICON + '</span><span class="memoir-entry-label">' + t('entry.label') + '</span>'
+  entry.innerHTML = '<span class="memoir-entry-icon">' + ICON + '</span><span class="memoir-entry-label"></span>'
+  const syncCopy = (): void => {
+    const label = t('entry.label')
+    entry.setAttribute('aria-label', label)
+    entry.setAttribute('title', t('entry.tooltip'))
+    const text = entry.querySelector<HTMLElement>('.memoir-entry-label')
+    if (text !== null) text.textContent = label
+  }
+  syncCopy()
+  const languageObserver = new MutationObserver(syncCopy)
+  languageObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
   entry.addEventListener('click', () => {
     controller.toggle()
   })
+  Object.defineProperty(entry, '__memoirDisposeLanguage', { value: () => languageObserver.disconnect() })
   return entry
 }
 
@@ -77,22 +88,28 @@ function placeEntry(root: HTMLElement, entry: HTMLButtonElement): boolean {
  * @returns disposer removing the entry and its observers.
  */
 export function mountSidebarEntry(controller: PanelController, t: (key: string) => string): () => void {
+  if (document.querySelector(ENTRY_SELECTOR) !== null) return () => {}
   const entry = createEntry(controller, t)
   let root: HTMLElement | undefined
   let placed = false
 
   const tryPlace = (): void => {
-    if (placed) return
     if (root !== undefined && !root.isConnected) {
       rootObserver.disconnect()
       root = undefined
+      placed = false
+    }
+    if (placed) {
+      if (document.body.contains(entry)) return
+      rootObserver.disconnect()
+      root = undefined
+      placed = false
     }
     root ??= sidebarRoot()
     if (root === undefined) return
     placed = placeEntry(root, entry)
     if (placed) {
       rootObserver.observe(root, { childList: true, subtree: true })
-      waitObserver.disconnect()
     }
   }
 
@@ -113,9 +130,10 @@ export function mountSidebarEntry(controller: PanelController, t: (key: string) 
   })
 
   const unsubscribe = controller.subscribe(() => {
-    entry.dataset.active = controller.getSnapshot().panelOpen ? 'true' : undefined
+    if (controller.getSnapshot().panelOpen) entry.dataset.active = 'true'
+    else delete entry.dataset.active
   })
-  entry.dataset.active = controller.getSnapshot().panelOpen ? 'true' : undefined
+  if (controller.getSnapshot().panelOpen) entry.dataset.active = 'true'
 
   tryPlace()
 
@@ -123,6 +141,7 @@ export function mountSidebarEntry(controller: PanelController, t: (key: string) 
     waitObserver.disconnect()
     rootObserver.disconnect()
     unsubscribe()
+    ;(entry as HTMLButtonElement & { __memoirDisposeLanguage?: () => void }).__memoirDisposeLanguage?.()
     entry.remove()
   }
 }

@@ -153,7 +153,19 @@ test('MemoirApi.update patches content and lifecycle fields', async () => {
 test('MemoirApi settings methods use JSON-protected live-policy routes', async () => {
   const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = []
   const snapshot = {
-    settings: { autoDistill: true, autoDistillEvery: 2, autoDistillCooldownMin: 3, autoDistillMinTools: 4 },
+    settings: {
+      announceToAgent: true,
+      autoDistill: true,
+      autoDistillEvery: 2,
+      autoDistillCooldownMin: 3,
+      autoDistillMinTools: 4,
+      hotMemoryTokens: 700,
+      hotMemoryMaxTokens: 900,
+      readDefaultLimit: 6,
+      readMaxLimit: 24,
+      sessionSnapshotMax: 64,
+      queryCacheSize: 48,
+    },
     source: 'web',
   }
   const fetchImpl = async (url: string, init?: unknown) => {

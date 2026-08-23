@@ -139,6 +139,18 @@ test('empty query terms return no ranked results', () => {
   }
 })
 
+test('LruCache resize applies a smaller live capacity immediately', () => {
+  const cache = new LruCache<string>(3)
+  cache.set('a', 'A')
+  cache.set('b', 'B')
+  cache.set('c', 'C')
+  cache.resize(1)
+  assert.equal(cache.capacity, 1)
+  assert.equal(cache.size, 1)
+  assert.equal(cache.get('c'), 'C')
+  assert.equal(cache.get('a'), undefined)
+})
+
 test('retrieval defaults to active entries and can include lifecycle history', () => {
   const ws = makeTempWorkspace()
   try {

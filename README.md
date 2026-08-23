@@ -9,10 +9,11 @@
 > Cache-aware local project memory for DeepSeek Harness.
 
 - **Local-only**：全部数据留在本机（`~/.dsh/dsh-memoir.json` + 项目内 `PROJECT_MEMORY.md`）
+- **零普通运行时依赖**：npm 包没有 `dependencies`，核心逻辑只依赖 DSH 平台契约与 Node.js 标准库
 - **Zero external memory service**：无向量数据库、无 embedding API、无云端记忆服务
 - **Bounded hot-memory injection**：token 预算内的 Hot Memory 自动注入 system prompt（默认 900/1200）
 - **Ranked local recall**：倒排索引 + BM25 本地排序召回，`memoir_read` 按需检索长尾历史
-- **Web GUI**：侧边栏「记忆」面板——项目/全局浏览、相关排序搜索、Hot Memory Inspector、Retrieval Diagnostics
+- **Web GUI**：中英双语侧边栏面板——完整生命周期编辑、项目/全局浏览、BM25 搜索、Hot Memory、诊断和实时设置
 
 ## Quick Start
 
@@ -81,11 +82,16 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
 
-## v0.5.3 Web 可调自动收尾与 rc2 兼容性
+## v0.5.4 完整 GUI、双语设置与 Web UI 适配
 
 - 当前开发基线为 `@deepseek-ai/dsh-* 0.1.1-rc.2`；peer dependency 与开发依赖已统一到 rc2。
-- 自动收尾支持按 agent 配置 worked-turn 间隔、时间冷却和工具调用阈值；默认值 `1 / 0 / 1` 与旧版行为一致。
-- Web 面板新增「自动蒸馏设置」，可启停并修改上述三个参数；保存后立即作用于后续回合，并持久化到 `~/.dsh/dsh-memoir.settings.json`。可一键删除 Web 覆盖并恢复本次启动时的 profile 配置。
+- 新增/编辑表单现已完整覆盖 `importance`、`pinned`、`tags` 与 `supersedes`；列表显示重要度、标签和替代关系，并新增 section 筛选。
+- 「记忆设置」同时出现在记忆面板和 Settings → Web UI 插件，覆盖 agent 注入、自动蒸馏、Hot Memory、召回、会话快照与 BM25 查询缓存。
+- 保存后的所有设置实时生效并持久化到 `~/.dsh/dsh-memoir.settings.json`；v1 设置文件兼容读取，首次保存再升级到 v2。
+- GUI 根据 DSH 的 `<html lang>` 在中文/英文之间即时切换，无需刷新；侧栏入口、面板和 Settings 卡保持同一语言。
+- 面板与侧栏输出 `data-dsh-plugin="memoir"` / `data-dsh-part` 语义属性，支持 dsh-web-ui v0.3 皮肤契约；侧栏挂载具备幂等和整棵 shell 重建自愈。
+- 中心面板通过通用 `dsh-panel-activate` 协议响应任意兄弟面板，不再只识别 SSH / Task Board。
+- 自动蒸馏继续支持按 agent 配置 worked-turn 间隔、时间冷却和工具调用阈值；默认值 `1 / 0 / 1` 与旧版行为一致。
 - 存储格式从 v2 迁移到 v3：旧条目保持原有 `id`、内容和时间，首次变更时补齐 `importance`、`pinned`、`status`、`supersedes` 与 `tags`；启动读取不会重写旧文件。
 - 默认只召回 `active` 条目；归档和被替代条目保留在历史中，可在 Web 面板切换状态查看。显式 `supersedes` 会把目标条目标记为 `superseded`，不会自动删除历史。
 - Agent 可用 `memoir_update` 原地编辑条目的分类、标题、正文和生命周期；Web 面板也支持编辑、置顶、标记过时、归档与恢复。
@@ -118,14 +124,26 @@ curated 查询 Top-5 命中率 100%（质量门禁 ≥90%，见 `test/recall-qua
 
 ## GUI
 
-保留 v0.4 的 Project / Global / Search / Add / Delete / Diagnostics 架构，并持续扩展：
+Project / Global / Search / Add / Delete / Diagnostics 架构已经扩展为完整管理面：
 
 - **搜索统一走 RetrievalEngine**：query 非空时面板调用 `GET /api/dsh-memoir/search`，与 agent 的 `memoir_read` 共用同一套 BM25 排序，结果按相关性排列并显示分数
 - **Hot Memory Inspector**：展开查看当前工作区实际会被注入的 Hot Memory（Actions / Lessons / Recent state），即「下一会话到底自动继承什么」
 - **Retrieval Diagnostics**：Retrieval Index（docs/terms/epoch）、Query Cache（hits/misses/evictions/hit rate/size/capacity）、Last Query（latency/returned）、Session Snapshot（hash/createdAt/storeRevision）
-- **自动蒸馏设置（v0.5.3）**：面板内启停 auto-distill，编辑 worked-turn 间隔、冷却分钟数和最低工具调用数；严格校验后持久化并即时应用，无需重启 DSH
+- **完整生命周期表单（v0.5.4）**：新建与编辑均支持分类、标题、正文、重要度、置顶、标签和显式替代关系；支持状态与分类双重筛选
+- **完整实时设置（v0.5.4）**：agent 注入、auto-distill、Hot Memory 目标/硬上限、读取默认/最大条数、会话快照和查询缓存均可即时调整
+- **Settings 集成（v0.5.4）**：同一双语设置卡同时挂载到记忆面板和 Settings → Web UI 插件；页面切换语言时即时重绘
 
 ## 界面预览
+
+**v0.5.4 记忆管理**：重要度、标签、替代关系、状态/分类筛选与完整生命周期操作集中在同一面板。
+
+![v0.5.4 记忆管理](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-memory-management-zh.png)
+
+**v0.5.4 完整实时设置**：Settings → Web UI 插件中的中文设置卡；README English 展示同一卡片的英文实时切换效果。
+
+![v0.5.4 完整实时设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-settings-zh.png)
+
+以下图片保留早期版本的功能演进记录：
 
 **1. 插件生效与整体 UI**：侧边栏出现「记忆」入口（与 SSH / 任务看板同列、互斥展开），点击后在中心列打开记忆面板。
 
@@ -151,7 +169,7 @@ curated 查询 Top-5 命中率 100%（质量门禁 ≥90%，见 `test/recall-qua
 
 ```text
 ~/.dsh/dsh-memoir.json   ← 结构化 JSON（唯一事实源 / SSOT）
-~/.dsh/dsh-memoir.settings.json ← Web 面板保存的自动蒸馏覆盖设置
+~/.dsh/dsh-memoir.settings.json ← 两个 GUI 设置面保存的完整运行时覆盖
 <工作区>/PROJECT_MEMORY.md ← 由 JSON 重新生成的人类可读投影（git 友好）
 
 No cloud memory DB · No embedding API · No vector DB
@@ -184,7 +202,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 
 三个 auto-distill 频率条件按 AND 关系判定并按 agent 隔离。idle、aborted、subagent、已调用 `memoir_record` 的 turn 不推进间隔计数；低于 `autoDistillMinTools` 的 worked turn 会推进间隔，但自身不能触发提醒。冷却只在 steer 成功后更新。
 
-`cordis.patch.yml` 中的 auto-distill 字段是启动默认值。v0.5.3 起，可在记忆面板底部展开「自动蒸馏设置」进行修改：保存会原子写入 `~/.dsh/dsh-memoir.settings.json`，后续 turn 立即读取新策略；「恢复启动配置」会删除该覆盖文件并回到本次插件挂载时解析出的 profile 值。其余 Hot Memory、召回和缓存参数仍由 profile 配置。
+`cordis.patch.yml` 中的字段是启动默认值。v0.5.4 起，可从记忆面板或 Settings → Web UI 插件修改除总开关 `enabled` 外的全部运行时字段：保存会原子写入 `~/.dsh/dsh-memoir.settings.json`，后续请求或 turn 立即读取；缩小快照/查询缓存容量会立即淘汰最旧项。已冻结的 session snapshot 不会因预算变化而重写，以继续保证 prompt-prefix cache 稳定。「恢复启动配置」会删除 Web 覆盖并回到本次挂载时解析出的 profile 值。
 
 ## Design Trade-offs
 
@@ -194,7 +212,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 - **多进程安全**：store 的 record/remove 走 `~/.dsh/dsh-memoir.lock` 跨进程临界区（O_EXCL 独占创建 + 超时），临界区内强制从磁盘重读再改，两个 DSH 进程交错写入不丢更新（v0.4.2）。
 - **Windows 路径**：canonical key 全小写（`C:\A` / `c:\a\` / `C:/A` 一个桶），display path 保留原始大小写（v0.4.2）。
 - **GUI 与 Agent 同源**：面板搜索与 `memoir_read` 共用 RetrievalEngine，不再各写一套过滤逻辑（v0.4.2）。
-- **自动收尾节奏**：默认仍逐 worked turn 提醒；研究型会话可组合轮次间隔、冷却与活动阈值降低打扰，并从 Web 面板即时调节（v0.5.3）。
+- **自动收尾节奏**：默认仍逐 worked turn 提醒；研究型会话可组合轮次间隔、冷却与活动阈值降低打扰，并从两个 GUI 设置面即时调节（v0.5.4）。
 
 ## Use Cases
 
@@ -225,7 +243,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 154 项测试：store（含多进程锁） / settings / snapshot / selector / retrieval / tools / routes / 自动收尾 / 集成 / client 纯逻辑 / bundle 协议与纯净性 / 发布说明
+pnpm test             # 160 项测试：store（含多进程锁） / settings / snapshot / selector / retrieval / tools / routes / 自动收尾 / GUI 挂载与双语 / 集成 / bundle 协议与纯净性 / 发布说明
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
@@ -260,7 +278,7 @@ PR 请先提 Issue 讨论。
 
 ## Release
 
-当前稳定版：**v0.5.3**（2026-08-22） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.3) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.3)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+当前稳定版：**v0.5.4**（2026-08-23） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.4)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
 每个版本的更新日志均同步维护中英文；GitHub Release 默认展开中文，英文说明收纳在可折叠的 `English` 区域。
 

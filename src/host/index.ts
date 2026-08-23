@@ -37,7 +37,7 @@ import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
 import { RetrievalEngine } from './retrieval.js'
-import { AutoDistillSettingsStore } from './settings.js'
+import { MemoirSettingsStore } from './settings.js'
 
 /** Stable cordis plugin name. */
 export const name = 'memoir'
@@ -198,14 +198,22 @@ export function apply(ctx: Context, config?: Config): void {
   if (!value.enabled) return
 
   const store = new MemoirStore(config?.storePath)
-  const snapshotManager = new MemorySnapshotManager({ max: value.sessionSnapshotMax })
-  const retrieval = new RetrievalEngine(store, { cacheSize: value.queryCacheSize })
-  const autoDistillSettings = new AutoDistillSettingsStore({
+  const liveSettings = new MemoirSettingsStore({
+    announceToAgent: value.announceToAgent,
     autoDistill: value.autoDistill,
     autoDistillEvery: value.autoDistillEvery,
     autoDistillCooldownMin: value.autoDistillCooldownMin,
     autoDistillMinTools: value.autoDistillMinTools,
+    hotMemoryTokens: value.budget.targetTokens,
+    hotMemoryMaxTokens: value.budget.hardMaxTokens,
+    readDefaultLimit: value.readDefaultLimit,
+    readMaxLimit: value.readMaxLimit,
+    sessionSnapshotMax: value.sessionSnapshotMax,
+    queryCacheSize: value.queryCacheSize,
   }, config?.settingsPath)
+  const initialLive = liveSettings.get().settings
+  const snapshotManager = new MemorySnapshotManager({ max: initialLive.sessionSnapshotMax })
+  const retrieval = new RetrievalEngine(store, { cacheSize: initialLive.queryCacheSize })
 
   // Workspaces seen through system-prompt assemblies / panel requests: the
   // write-authorization guard allows only these (plus existing store
@@ -219,7 +227,10 @@ export function apply(ctx: Context, config?: Config): void {
     const tools = [
       memoirRecordTool(store),
       memoirUpdateTool(store),
-      memoirReadTool(store, { defaultLimit: value.readDefaultLimit, maxLimit: value.readMaxLimit }, retrieval),
+      memoirReadTool(store, () => {
+        const current = liveSettings.get().settings
+        return { defaultLimit: current.readDefaultLimit, maxLimit: current.readMaxLimit }
+      }, retrieval),
     ]
     const disposers = tools.map((tool) => ctx.tools.register(tool))
     return () => {
@@ -229,9 +240,10 @@ export function apply(ctx: Context, config?: Config): void {
 
   ctx.effect(() => {
     const diagnostics = (path?: string) => {
-      const liveAutoDistill = autoDistillSettings.get().settings
+      const current = liveSettings.get().settings
+      const budget = { targetTokens: current.hotMemoryTokens, hardMaxTokens: current.hotMemoryMaxTokens }
       const entries = typeof path === 'string' && path !== '' ? store.entries(path) : []
-      const hot = entries.length === 0 ? null : selectHotMemory(entries, value.budget)
+      const hot = entries.length === 0 ? null : selectHotMemory(entries, budget)
       const stats = store.stats()
       const latest = snapshotManager.latest()
       return {
@@ -252,16 +264,17 @@ export function apply(ctx: Context, config?: Config): void {
           storeRevision: latest.storeRevision,
         },
         config: {
-          autoDistill: liveAutoDistill.autoDistill,
-          autoDistillEvery: liveAutoDistill.autoDistillEvery,
-          autoDistillCooldownMin: liveAutoDistill.autoDistillCooldownMin,
-          autoDistillMinTools: liveAutoDistill.autoDistillMinTools,
-          hotMemoryTokens: value.budget.targetTokens,
-          hotMemoryMaxTokens: value.budget.hardMaxTokens,
-          readDefaultLimit: value.readDefaultLimit,
-          readMaxLimit: value.readMaxLimit,
-          sessionSnapshotMax: value.sessionSnapshotMax,
-          queryCacheSize: value.queryCacheSize,
+          announceToAgent: current.announceToAgent,
+          autoDistill: current.autoDistill,
+          autoDistillEvery: current.autoDistillEvery,
+          autoDistillCooldownMin: current.autoDistillCooldownMin,
+          autoDistillMinTools: current.autoDistillMinTools,
+          hotMemoryTokens: current.hotMemoryTokens,
+          hotMemoryMaxTokens: current.hotMemoryMaxTokens,
+          readDefaultLimit: current.readDefaultLimit,
+          readMaxLimit: current.readMaxLimit,
+          sessionSnapshotMax: current.sessionSnapshotMax,
+          queryCacheSize: current.queryCacheSize,
         },
       }
     }
@@ -269,7 +282,11 @@ export function apply(ctx: Context, config?: Config): void {
       if (typeof path !== 'string' || path === '') return null
       const entries = store.entries(path)
       if (entries.length === 0) return null
-      const hot = selectHotMemory(entries, value.budget)
+      const current = liveSettings.get().settings
+      const hot = selectHotMemory(entries, {
+        targetTokens: current.hotMemoryTokens,
+        hardMaxTokens: current.hotMemoryMaxTokens,
+      })
       return {
         text: hot.text,
         selected: hot.selected,
@@ -279,7 +296,7 @@ export function apply(ctx: Context, config?: Config): void {
     }
     const allowedWorkspace = (path: string): boolean =>
       recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
-    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, undefined, autoDistillSettings).map((route) => ctx.webServer.register(route))
+    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, undefined, liveSettings).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
@@ -287,9 +304,9 @@ export function apply(ctx: Context, config?: Config): void {
 
   ctx.effect(
     () => installAutoDistill(autoDistillWire(ctx), {
-      enabled: () => autoDistillSettings.get().settings.autoDistill,
+      enabled: () => liveSettings.get().settings.autoDistill,
       policy: () => {
-        const current = autoDistillSettings.get().settings
+        const current = liveSettings.get().settings
         return {
           every: current.autoDistillEvery,
           cooldownMin: current.autoDistillCooldownMin,
@@ -300,19 +317,27 @@ export function apply(ctx: Context, config?: Config): void {
     'dsh-memoir: auto-distill',
   )
 
-  if (value.announceToAgent) {
-    ctx.systemPrompt.section({
-      name: 'plugin:dsh-memoir',
-      order: SECTION_ORDER,
-      // text is a provider evaluated per assembly, so each project's memory is
-      // injected for its own session and not for unrelated workspaces. The
-      // assembly also registers the workspace for panel write authorization.
-      text: (context) => {
-        const cwd = context?.agent?.session?.header?.cwd
-        if (typeof cwd === 'string' && cwd !== '') touchWorkspace(cwd)
-        return memoirSectionText(store, context, snapshotManager, value.budget)
-      },
-    })
-  }
+  ctx.effect(() => liveSettings.subscribe(({ settings }) => {
+    snapshotManager.resize(settings.sessionSnapshotMax)
+    retrieval.resizeCache(settings.queryCacheSize)
+  }), 'dsh-memoir: live cache capacities')
+
+  ctx.effect(() => ctx.systemPrompt.section({
+    name: 'plugin:dsh-memoir',
+    order: SECTION_ORDER,
+    // Always observe the trusted assembly cwd for Web write authorization.
+    // When announcement is disabled, the provider returns no prompt content.
+    // Hot-memory budgets are read live for each new session snapshot.
+    text: (context) => {
+      const cwd = context?.agent?.session?.header?.cwd
+      if (typeof cwd === 'string' && cwd !== '') touchWorkspace(cwd)
+      const current = liveSettings.get().settings
+      if (!current.announceToAgent) return ''
+      return memoirSectionText(store, context, snapshotManager, {
+        targetTokens: current.hotMemoryTokens,
+        hardMaxTokens: current.hotMemoryMaxTokens,
+      })
+    },
+  }), 'dsh-memoir: live prompt section')
 }
 

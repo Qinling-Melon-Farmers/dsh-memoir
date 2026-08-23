@@ -46,7 +46,7 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
 .memoir-tab:hover { opacity: 1; }
 .memoir-tab[data-active="true"] { opacity: 1; border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
 
-.memoir-toolbar { display: flex; gap: 8px; padding: 8px 14px; }
+.memoir-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 14px; }
 .memoir-search {
   flex: 1; border: 1px solid var(--border, rgba(0,0,0,.15)); background: transparent;
   color: inherit; border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none;
@@ -74,6 +74,7 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
   border-radius: 999px; padding: 0 7px; font-size: 11px; line-height: 18px;
   background: var(--chip-bg, rgba(59,130,246,.12)); color: var(--chip-fg, #2563eb);
 }
+.memoir-tag { background: var(--tag-bg, rgba(22,163,74,.12)); color: var(--tag-fg, #15803d); }
 .memoir-entry-title { font-weight: 600; margin-bottom: 2px; }
 .memoir-entry-content { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 .memoir-entry-actions { display: flex; gap: 4px; margin: 4px 0; }
@@ -100,6 +101,7 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
 .memoir-form-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .memoir-field { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .memoir-field label { font-size: 11px; opacity: .7; }
+.memoir-field small { font-size: 10px; opacity: .65; line-height: 1.35; }
 .memoir-field input, .memoir-field select, .memoir-field textarea {
   border: 1px solid var(--border, rgba(0,0,0,.15)); background: transparent; color: inherit;
   border-radius: 6px; padding: 6px 8px; font-size: 13px; font-family: inherit; outline: none;
@@ -107,14 +109,22 @@ html[data-dsh-memoir-active] [class*="centerCol"] > *:not([data-dsh-memoir-view]
 .memoir-field textarea { min-height: 72px; resize: vertical; }
 .memoir-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* v0.5.3 live auto-distill settings */
+/* v0.5.4 complete live settings */
 .memoir-settings { margin: 0 14px; border-top: 1px solid var(--border, rgba(0,0,0,.1)); padding-top: 8px; }
+.memoir-settings-slot {
+  list-style: none; margin: 0; padding: 0 0 12px;
+  border: 1px solid var(--border, rgba(0,0,0,.1)); border-radius: 10px;
+  background: var(--bg-card, rgba(0,0,0,.02));
+}
+.memoir-settings-slot .memoir-settings { margin: 12px 14px 0; border-top: none; }
+.memoir-settings-slot .memoir-settings-body { max-height: none; }
 .memoir-settings-body {
   display: flex; flex-direction: column; gap: 10px; margin-top: 7px; padding: 10px;
   border: 1px solid var(--border, rgba(0,0,0,.1)); border-radius: 8px;
   background: var(--bg-card, rgba(0,0,0,.02)); max-height: min(50vh, 430px); overflow-y: auto;
 }
 .memoir-settings-description, .memoir-settings-note, .memoir-settings-source { font-size: 11px; opacity: .72; line-height: 1.45; }
+.memoir-settings-group-title { font-size: 12px; font-weight: 600; margin-top: 2px; }
 .memoir-settings-switch { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .memoir-settings-switch input { margin-top: 3px; }
 .memoir-settings-switch span { display: flex; flex-direction: column; gap: 2px; }

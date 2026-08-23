@@ -33,7 +33,7 @@ export declare function snapshotHash(text: string): string;
 export declare class MemorySnapshotManager {
     /** Live session snapshots in LRU order (most recent last). */
     private readonly snapshots;
-    private readonly max;
+    private max;
     /**
      * @param options.max - LRU cap (default 128; config sessionSnapshotMax).
      */
@@ -44,6 +44,13 @@ export declare class MemorySnapshotManager {
     get size(): number;
     /** The LRU cap this manager was created with. */
     get cap(): number;
+    /**
+     * Change the live LRU cap and evict oldest snapshots immediately when the
+     * new cap is smaller. Existing snapshots that remain are never rebuilt, so
+     * prompt-prefix stability is preserved.
+     */
+    resize(max: number): void;
+    private evictPastCap;
     /**
      * Return the session's frozen snapshot, or build one via builder.
      * A later call for the same key ALWAYS returns the first snapshot — even

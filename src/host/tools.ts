@@ -39,6 +39,9 @@ export interface ReadToolOptions {
   maxLimit: number
 }
 
+/** Static startup values or a live provider backed by GUI settings. */
+export type ReadToolOptionsSource = ReadToolOptions | (() => ReadToolOptions)
+
 /** Full-detail entry line (time + label + title + content). */
 export function renderEntryFull(entry: MemoirEntry): string {
   const label = SECTIONS[entry.section]?.label ?? entry.section
@@ -290,13 +293,18 @@ export function memoirUpdateTool(store: MemoirStore) {
 }
 
 /** The read tool: project / global / all memory with optional filters. */
-export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, retrieval?: RetrievalEngine) {
-  const defaultLimit = options?.defaultLimit ?? 8
-  const maxLimit = options?.maxLimit ?? 30
+export function memoirReadTool(store: MemoirStore, options?: ReadToolOptionsSource, retrieval?: RetrievalEngine) {
+  const currentOptions = (): ReadToolOptions => {
+    const value = typeof options === 'function' ? options() : options
+    const defaultLimit = Math.max(1, Math.floor(value?.defaultLimit ?? 8))
+    const maxLimit = Math.max(defaultLimit, Math.floor(value?.maxLimit ?? 30))
+    return { defaultLimit, maxLimit }
+  }
+  const initial = currentOptions()
   return defineTool({
     name: 'memoir_read',
     description:
-      '读取项目持久记忆与经验教训（默认返回最近 ' + defaultLimit + ' 条 compact 摘要）。开始新会话或接手旧项目时先调用。' +
+      '读取项目持久记忆与经验教训（默认返回最近 ' + initial.defaultLimit + ' 条 compact 摘要）。开始新会话或接手旧项目时先调用。' +
       'Triggers: 读取记忆、回顾项目历史、查询经验教训、接手项目、查看行动指南。',
     parameters: {
       scope: {
@@ -315,7 +323,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
       },
       limit: {
         type: 'number',
-        description: '可选，最多返回条数（默认 ' + defaultLimit + '，最大 ' + maxLimit + '）。',
+        description: '可选，最多返回条数（启动默认 ' + initial.defaultLimit + '，启动最大 ' + initial.maxLimit + '；Web 设置可实时覆盖）。',
       },
       detail: {
         type: 'string',
@@ -334,6 +342,7 @@ export function memoirReadTool(store: MemoirStore, options?: ReadToolOptions, re
       render: (_args, value) => text(value.text),
     },
     async execute(args, exec) {
+      const { defaultLimit, maxLimit } = currentOptions()
       const scope = args.scope ?? 'project'
       const cwd = resolveWorkspace(exec)
       const detail = args.detail ?? 'compact'
