@@ -132,6 +132,7 @@ The Project / Global / Search / Add / Delete / Diagnostics architecture now form
 - **Complete lifecycle forms (v0.5.4)**: add and edit section, title, content, importance, pinning, tags, and explicit replacement relationships; filter by status and section
 - **Complete live settings (v0.5.4)**: adjust agent injection, auto-distill, Hot Memory target/hard limits, recall defaults/maxima, session snapshots, and query cache immediately
 - **Settings integration (v0.5.4)**: the same bilingual card mounts in the Memory panel and Settings → Web UI Plugins, and redraws immediately when the page language changes
+- **Visual parity with the dsh-web-ui family**: the panel, sidebar entry, forms, cards and tabs ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), matching the task-board / ssh / skill-explorer panels shipped by dsh-web-ui-all; the center-column panel mutual-exclusion protocol is aligned too.
 
 ## Screenshots
 

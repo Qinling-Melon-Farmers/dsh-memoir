@@ -84,6 +84,12 @@ export function mountPanel(
   const applyActive = (): void => {
     if (controller.getSnapshot().panelOpen) {
       for (const attr of SIBLING_ATTRS) document.documentElement.removeAttribute(attr)
+      // The dsh-web-ui family panels close only when they hear each other's
+      // activation event. Replay their names while this panel is still closed
+      // so the sibling controllers (not just the html attributes) are evicted
+      // — the next click on a sibling opens it instead of toggling it down.
+      document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: 'taskboard' }))
+      document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: 'ssh' }))
       document.documentElement.setAttribute(ACTIVE_ATTR, '')
       document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: PANEL_NAME }))
     } else {

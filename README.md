@@ -132,6 +132,7 @@ Project / Global / Search / Add / Delete / Diagnostics 架构已经扩展为完�
 - **完整生命周期表单（v0.5.4）**：新建与编辑均支持分类、标题、正文、重要度、置顶、标签和显式替代关系；支持状态与分类双重筛选
 - **完整实时设置（v0.5.4）**：agent 注入、auto-distill、Hot Memory 目标/硬上限、读取默认/最大条数、会话快照和查询缓存均可即时调整
 - **Settings 集成（v0.5.4）**：同一双语设置卡同时挂载到记忆面板和 Settings → Web UI 插件；页面切换语言时即时重绘
+- **视觉与 dsh-web-ui 家族一致**：面板、侧栏入口与表单/卡片/标签页共用 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），与 dsh-web-ui-all 的 task-board / ssh / skill-explorer 同族；中心列面板互斥协议已对齐。
 
 ## 界面预览
 
