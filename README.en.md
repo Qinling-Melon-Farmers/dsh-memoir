@@ -82,6 +82,13 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
+## v0.5.5 Sidebar visual-parity fix
+
+- Fixed the stylesheet-marker collision: another style carrying the same generic `data-plugin` value no longer makes Memoir skip its own CSS. The owned stylesheet has a unique `data-dsh-memoir-style` marker and is removed on plugin unload.
+- Matched dsh-web-ui-all 0.3.x task-board and skill-center sidebar geometry: 36px row height, 10px horizontal padding, a 24px icon box, an 18px SVG, and an 8px icon-label gap.
+- The collapsed rail now uses the same 36px circular control and 12px row spacing, hiding copy while preserving localized `aria-label` and tooltip text; the open-book glyph remains distinct from Skill Center.
+- Playwright runtime assertions compare expanded and collapsed row/icon/svg/label coordinates, box sizes, typography, and color instead of relying on screenshots alone.
+
 ## v0.5.4 Complete GUI, bilingual settings, and Web UI integration
 
 - The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.1-rc.2`.
@@ -132,9 +139,13 @@ The Project / Global / Search / Add / Delete / Diagnostics architecture now form
 - **Complete lifecycle forms (v0.5.4)**: add and edit section, title, content, importance, pinning, tags, and explicit replacement relationships; filter by status and section
 - **Complete live settings (v0.5.4)**: adjust agent injection, auto-distill, Hot Memory target/hard limits, recall defaults/maxima, session snapshots, and query cache immediately
 - **Settings integration (v0.5.4)**: the same bilingual card mounts in the Memory panel and Settings → Web UI Plugins, and redraws immediately when the page language changes
-- **Visual parity with the dsh-web-ui family**: the panel, sidebar entry, forms, cards and tabs ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), matching the task-board / ssh / skill-explorer panels shipped by dsh-web-ui-all; the center-column panel mutual-exclusion protocol is aligned too.
+- **Visual parity with the dsh-web-ui family (v0.5.5)**: the panel, sidebar entry, forms, cards and tabs ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), matching the task-board / ssh / skill-explorer panels shipped by dsh-web-ui-all; the center-column panel mutual-exclusion protocol is aligned too.
 
 ## Screenshots
+
+**v0.5.5 sidebar parity**: Memory now matches Task Board, SSH, and Skill Center in row height, horizontal position, icon box, and SVG size.
+
+![v0.5.5 sidebar parity](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.5/picture/v0.5.5-sidebar-parity-zh.png)
 
 **v0.5.4 memory management**: importance, tags, replacement relationships, status/section filters, and lifecycle actions in one panel.
 
@@ -244,7 +255,7 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 160 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / GUI mounting & bilingual behavior / integration / bundle protocol & purity / release notes
+pnpm test             # 163 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / GUI mounting, stylesheet ownership, panel activation & bilingual behavior / integration / bundle protocol & purity / release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
@@ -278,7 +289,7 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.4** (2026-08-23) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.4). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.5** (2026-08-24) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.5). Full history is in [CHANGELOG.md](./CHANGELOG.md).
 
 Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 

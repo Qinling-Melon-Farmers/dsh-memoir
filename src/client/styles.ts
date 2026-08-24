@@ -1,3 +1,22 @@
+/** Stable marker for the stylesheet owned by this client plugin. */
+export const PANEL_STYLE_SELECTOR = 'style[data-dsh-memoir-style]'
+
+/**
+ * Mount the panel stylesheet without confusing another plugin-owned style tag
+ * carrying the same generic data-plugin value for this stylesheet.
+ * @param target - document that owns the DSH web shell.
+ * @returns disposer that removes only the stylesheet created by this call.
+ */
+export function mountPanelStyles(target: Document = document): () => void {
+  if (target.querySelector(PANEL_STYLE_SELECTOR) !== null) return () => {}
+  const tag = target.createElement('style')
+  tag.dataset.plugin = 'dsh-memoir'
+  tag.dataset.dshMemoirStyle = ''
+  tag.textContent = PANEL_CSS
+  target.head.appendChild(tag)
+  return () => tag.remove()
+}
+
 /**
  * Panel stylesheet (plain string, injected as <style data-plugin="dsh-memoir">).
  * Class names are literal memoir-* prefixes (no CSS-module hashing) so the
@@ -585,8 +604,8 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 32px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 10px;
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -597,11 +616,11 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   text-align: left;
 }
 .memoir-entry-row:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover, rgba(0, 0, 0, .06));
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsw-specific-sidebar-nav-item-hover, rgba(0, 0, 0, .06)));
   color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
 }
 .memoir-entry-row[data-active='true'] {
-  background: var(--dsw-specific-sidebar-nav-item-active, rgba(0, 0, 0, .08));
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-specific-sidebar-nav-item-active, rgba(0, 0, 0, .08)));
   color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
   font-weight: 600;
 }
@@ -609,25 +628,29 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: none;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
 }
 .memoir-entry-icon svg {
   display: block;
+  width: 18px;
+  height: 18px;
 }
 .memoir-entry-label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Collapsed rail: icon-only, centered — same treatment as dsh-ssh .entry
-   (40px control box inside the shell's 56px rail). */
+/* Collapsed rail: exact dsh-web-ui-all 0.3.x family geometry. */
 [data-dsh-frame][data-sidebar-collapsed] [data-dsh-memoir-entry].memoir-entry-row,
 [data-sidebar-collapsed] [data-dsh-memoir-entry].memoir-entry-row {
+  border-radius: 50%;
   justify-content: center;
   padding: 0;
-  width: 40px;
-  min-height: 40px;
-  margin-inline: auto;
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 12px;
 }
 [data-dsh-frame][data-sidebar-collapsed] [data-dsh-memoir-entry] .memoir-entry-label,
 [data-sidebar-collapsed] [data-dsh-memoir-entry] .memoir-entry-label {

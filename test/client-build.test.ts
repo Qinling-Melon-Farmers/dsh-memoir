@@ -66,10 +66,11 @@ test('client bundle requires only platform modules (purity)', () => {
   assert.ok(required.has('react-dom/client'), 'createRoot comes from the module table')
 })
 
-test('client bundle carries v0.5.4 semantic and Settings integration contracts', () => {
+test('client bundle carries v0.5.5 semantic, stylesheet ownership, and Settings contracts', () => {
   const source = readFileSync(OUT, 'utf8')
   assert.ok(source.includes('data-dsh-plugin'), 'React surfaces expose their plugin owner')
   assert.ok(source.includes('data-dsh-part'), 'React surfaces expose stable part names')
+  assert.ok(source.includes('data-dsh-memoir-style'), 'the stylesheet uses a collision-free ownership marker')
   assert.ok(source.includes('web-ui.plugin.item'), 'complete settings card registers into dsh-web-ui Settings')
   assert.ok(source.includes('hotMemoryTokens'), 'complete runtime settings are bundled')
 })

@@ -82,6 +82,13 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
 
+## v0.5.5 侧栏视觉一致性修复
+
+- 修复样式标记冲突：其他同名 `data-plugin` 样式不再导致 Memoir 跳过自身 CSS 注入，插件样式改由唯一 `data-dsh-memoir-style` 标识并随插件卸载清理。
+- 与 dsh-web-ui-all 0.3.x 的任务看板和技能中心使用同一侧栏几何：36px 行高、10px 水平内边距、24px 图标盒、18px SVG、8px 图文间距。
+- 收起态统一为 36px 圆形入口和 12px 行间距，隐藏文字但保留本地化 `aria-label` / tooltip；开放书图标继续与技能中心图标区分。
+- Playwright 实机断言同时比较宽屏与收起态的 row/icon/svg/label 坐标、盒尺寸、字体和颜色，不再仅凭截图判断。
+
 ## v0.5.4 完整 GUI、双语设置与 Web UI 适配
 
 - 当前开发基线为 `@deepseek-ai/dsh-* 0.1.1-rc.2`；peer dependency 与开发依赖已统一到 rc2。
@@ -132,9 +139,13 @@ Project / Global / Search / Add / Delete / Diagnostics 架构已经扩展为完�
 - **完整生命周期表单（v0.5.4）**：新建与编辑均支持分类、标题、正文、重要度、置顶、标签和显式替代关系；支持状态与分类双重筛选
 - **完整实时设置（v0.5.4）**：agent 注入、auto-distill、Hot Memory 目标/硬上限、读取默认/最大条数、会话快照和查询缓存均可即时调整
 - **Settings 集成（v0.5.4）**：同一双语设置卡同时挂载到记忆面板和 Settings → Web UI 插件；页面切换语言时即时重绘
-- **视觉与 dsh-web-ui 家族一致**：面板、侧栏入口与表单/卡片/标签页共用 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），与 dsh-web-ui-all 的 task-board / ssh / skill-explorer 同族；中心列面板互斥协议已对齐。
+- **视觉与 dsh-web-ui 家族一致（v0.5.5）**：面板、侧栏入口与表单/卡片/标签页共用 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），与 dsh-web-ui-all 的 task-board / ssh / skill-explorer 同族；中心列面板互斥协议已对齐。
 
 ## 界面预览
+
+**v0.5.5 侧栏一致性**：记忆入口与任务看板、SSH、技能中心在行高、水平位置、图标盒和 SVG 尺寸上保持一致。
+
+![v0.5.5 侧栏一致性](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.5/picture/v0.5.5-sidebar-parity-zh.png)
 
 **v0.5.4 记忆管理**：重要度、标签、替代关系、状态/分类筛选与完整生命周期操作集中在同一面板。
 
@@ -244,7 +255,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 160 项测试：store（含多进程锁） / settings / snapshot / selector / retrieval / tools / routes / 自动收尾 / GUI 挂载与双语 / 集成 / bundle 协议与纯净性 / 发布说明
+pnpm test             # 163 项测试：store（含多进程锁） / settings / snapshot / selector / retrieval / tools / routes / 自动收尾 / GUI 挂载、样式所有权、面板激活与双语 / 集成 / bundle 协议与纯净性 / 发布说明
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
@@ -279,7 +290,7 @@ PR 请先提 Issue 讨论。
 
 ## Release
 
-当前稳定版：**v0.5.4**（2026-08-23） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.4)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+当前稳定版：**v0.5.5**（2026-08-24） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.5)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
 每个版本的更新日志均同步维护中英文；GitHub Release 默认展开中文，英文说明收纳在可折叠的 `English` 区域。
 

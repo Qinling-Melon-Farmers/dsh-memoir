@@ -6,17 +6,45 @@
 
 ### 中文
 
-- 面板与侧栏视觉对齐 dsh-web-ui 全家桶：样式迁至 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），面板框架、标签页、按钮、表单与条目卡片与 dsh-ssh、dsh-task-board、dsh-skill-explorer 同族。
-- 侧栏「记忆」入口采用家族 32px 行高、8px 圆角与悬停/激活态，收起态与任务看板/SSH 同样居中图标；图标保留自研开放书 glyph，与技能中心书形图标区分。
-- 中心列接管规则与 dsh-ssh / dsh-task-board 对齐：活动属性互相 `:not()` 互斥，隐藏会话子树的规则改为 `!important`，避免面板共存时互相抢占。
-- 打开记忆面板时按家族事件协议同步关闭 SSH / Task Board 控制器状态，避免兄弟面板下一次点击变成「关闭」而非「打开」。
+- 暂无。
 
 ### English
 
-- Aligned the panel and sidebar with the dsh-web-ui family: styles now ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), so the panel frame, tabs, buttons, forms and entry cards match dsh-ssh, dsh-task-board and dsh-skill-explorer.
-- The sidebar "Memory" entry uses the family 32px row height, 8px radius and hover/active treatment; the collapsed rail centers the icon like the task-board / SSH entries, and the icon keeps the memoir open-book glyph, distinct from the skill-center book.
-- Center-column takeover rules now mirror dsh-ssh / dsh-task-board: active attributes exclude each other with `:not()` and the conversation-hiding rules use `!important` so sibling panels cannot fight over visibility.
-- Opening the Memory panel replays the family activation events so the SSH / Task Board controllers (not only their html attributes) close — the next click on a sibling opens it instead of toggling it down.
+- None.
+
+## [0.5.5] - 2026-08-24
+
+### 中文
+
+#### Fixed
+
+- 修复样式所有权误判：页面中其他 `style[data-plugin="dsh-memoir"]` 不再阻止记忆插件注入自己的样式；改用唯一 `data-dsh-memoir-style` 标记，并在插件卸载时只移除自身样式。
+- 侧栏「记忆」入口精确对齐 dsh-web-ui-all 0.3.x 的任务看板/技能中心契约：宽屏 36px 行高、10px 水平内边距、24px 图标盒、18px SVG；收起态统一为 36px 圆形按钮和 12px 行间距。
+
+#### Changed
+
+- 面板与侧栏视觉迁至 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），面板框架、标签页、按钮、表单与条目卡片与 dsh-ssh、dsh-task-board、dsh-skill-explorer 同族。
+- 中心列接管规则与 dsh-ssh / dsh-task-board 对齐；通用激活协议只广播 `memoir` 自身身份，避免重入的兄弟身份事件把刚打开的 controller 立即关闭。
+
+#### Added
+
+- 新增样式标记冲突、宽屏/收起态侧栏几何与面板激活状态一致性回归测试，并同步 README 中英文的 v0.5.5 实机侧栏截图。
+
+### English
+
+#### Fixed
+
+- Fixed stylesheet ownership detection: an unrelated `style[data-plugin="dsh-memoir"]` no longer prevents Memoir from mounting its own CSS. A unique `data-dsh-memoir-style` marker is used, and unload removes only the owned stylesheet.
+- Matched the dsh-web-ui-all 0.3.x task-board/skill-center sidebar contract exactly: 36px rows, 10px horizontal padding, a 24px icon box, and an 18px SVG when expanded; the collapsed rail uses a 36px circular control with 12px row spacing.
+
+#### Changed
+
+- Moved the panel and sidebar onto the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), bringing the frame, tabs, buttons, forms, and cards in line with dsh-ssh, dsh-task-board, and dsh-skill-explorer.
+- Aligned center-column takeover with dsh-ssh / dsh-task-board. The shared activation protocol emits only Memoir's own identity, avoiding re-entrant sibling events that immediately closed the controller that had just opened.
+
+#### Added
+
+- Added regressions for stylesheet-marker collisions, expanded/collapsed sidebar geometry, and panel activation-state consistency, plus a current v0.5.5 sidebar screenshot to both READMEs.
 
 ## [0.5.4] - 2026-08-23
 

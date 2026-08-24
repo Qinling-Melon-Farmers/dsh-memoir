@@ -13,7 +13,7 @@ import type { PanelController } from './controller.js'
 export const ENTRY_SELECTOR = '[data-dsh-memoir-entry]'
 
 /** Inline icon: the memoir open-book glyph, distinct from the dsh-skill-explorer book. */
-const ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.5c-1.6-1-3.6-1-5.2-.2-.5.3-.8.9-.8 1.4v8.6c0 .5.5.9 1 .7C4.6 13.4 6.4 13.5 8 14.5c1.6-1 3.4-1.1 5-.5.5.2 1-.2 1-.7V4.7c0-.5-.3-1.1-.8-1.4-1.6-.8-3.6-.8-5.2.2z"/><path d="M8 3.5v11"/></svg>'
+const ICON = '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.5c-1.6-1-3.6-1-5.2-.2-.5.3-.8.9-.8 1.4v8.6c0 .5.5.9 1 .7C4.6 13.4 6.4 13.5 8 14.5c1.6-1 3.4-1.1 5-.5.5.2 1-.2 1-.7V4.7c0-.5-.3-1.1-.8-1.4-1.6-.8-3.6-.8-5.2.2z"/><path d="M8 3.5v11"/></svg>'
 
 const FAMILY_SELECTOR = '[data-dsh-taskboard-entry], [data-dsh-ssh-entry], [data-dsh-memoir-entry]'
 

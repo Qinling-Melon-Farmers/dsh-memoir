@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "Cache-aware local project memory for DeepSeek Harness: zero regular runtime dependencies; local JSON SSOT plus PROJECT_MEMORY.md; bounded session-frozen Hot Memory; inverted-index BM25 recall; lifecycle, tags and supersedes; bilingual Web GUI with project/global management, diagnostics, and complete live settings in the Memory panel and Settings page; no embeddings, external services, or DSH source changes.",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
