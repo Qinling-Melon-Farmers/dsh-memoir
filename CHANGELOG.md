@@ -7,14 +7,14 @@
 ### 中文
 
 - 面板与侧栏视觉对齐 dsh-web-ui 全家桶：样式迁至 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），面板框架、标签页、按钮、表单与条目卡片与 dsh-ssh、dsh-task-board、dsh-skill-explorer 同族。
-- 侧栏「记忆」入口采用家族 32px 行高、8px 圆角与悬停/激活态，收起态与任务看板/SSH 同样居中图标；图标改用技能中心同款书形 glyph。
+- 侧栏「记忆」入口采用家族 32px 行高、8px 圆角与悬停/激活态，收起态与任务看板/SSH 同样居中图标；图标保留自研开放书 glyph，与技能中心书形图标区分。
 - 中心列接管规则与 dsh-ssh / dsh-task-board 对齐：活动属性互相 `:not()` 互斥，隐藏会话子树的规则改为 `!important`，避免面板共存时互相抢占。
 - 打开记忆面板时按家族事件协议同步关闭 SSH / Task Board 控制器状态，避免兄弟面板下一次点击变成「关闭」而非「打开」。
 
 ### English
 
 - Aligned the panel and sidebar with the dsh-web-ui family: styles now ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), so the panel frame, tabs, buttons, forms and entry cards match dsh-ssh, dsh-task-board and dsh-skill-explorer.
-- The sidebar "Memory" entry uses the family 32px row height, 8px radius and hover/active treatment; the collapsed rail centers the icon like the task-board / SSH entries, and the icon reuses the skill-center book glyph.
+- The sidebar "Memory" entry uses the family 32px row height, 8px radius and hover/active treatment; the collapsed rail centers the icon like the task-board / SSH entries, and the icon keeps the memoir open-book glyph, distinct from the skill-center book.
 - Center-column takeover rules now mirror dsh-ssh / dsh-task-board: active attributes exclude each other with `:not()` and the conversation-hiding rules use `!important` so sibling panels cannot fight over visibility.
 - Opening the Memory panel replays the family activation events so the SSH / Task Board controllers (not only their html attributes) close — the next click on a sibling opens it instead of toggling it down.
 
