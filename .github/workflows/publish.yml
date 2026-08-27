@@ -82,7 +82,7 @@ jobs:
           trap 'rm -f "$fallback_npmrc"' EXIT
           printf '%s\n' \
             'registry=https://registry.npmjs.org/' \
-            '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' \
+            "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" \
             > "$fallback_npmrc"
           NPM_CONFIG_USERCONFIG="$fallback_npmrc" \
             NODE_AUTH_TOKEN="$NPM_TOKEN" \
@@ -98,6 +98,7 @@ jobs:
               echo "Verified $package_name@$package_version on npm."
               exit 0
             fi
+            echo "Waiting for npm registry visibility (attempt $attempt/6)."
             sleep 5
           done
           echo "::error::$package_name@$package_version did not become visible on npm."
