@@ -1,12 +1,12 @@
 # dsh-memoir v0.5.6–v1.0 路线图
 
 > 更新日期：2026-08-27
-> 当前基线：v0.5.6 发布候选、DSH `0.1.1-rc.2`、store format v4
+> 当前基线：v0.5.6 已发布、DSH `0.1.1-rc.2`、store format v4
 > 完成度：v0.5 阶段约 94%，v1.0 总路线约 73%。详细依据见 [v0.5.6 项目评审](./PROJECT_REVIEW_v0.5.6.md)。
 
 ## v0.5.6 — 来源追踪、相似记忆治理与 Web 体验
 
-目标：2026-08-27 发布。
+状态：已于 2026-08-27 发布。
 
 - store v4：`source.sessionId/turnId`，旧 `sessionId` 懒兼容。
 - Web 来源展示、复制和 best-effort session/turn 跳转。
@@ -15,7 +15,7 @@
 - Settings 卡与 dsh-web-ui 家族一致并默认折叠；面板统一单滚动区。
 - npm OIDC 优先、token 临时回退；README/Changelog/Release 中英双语。
 
-发布门禁：171 项测试、当前 benchmark、Windows/WSL rc.2 冷启动、真实 GUI 截图、npm registry 与 GitHub Release 全部通过。
+发布实证：171 项测试、当前 benchmark、Windows/WSL rc.2 正式 npm 包冷启动、真实 GUI 截图、npm `latest`、OIDC provenance 与公开 GitHub Release 全部通过。
 
 ## v0.5.7 — 蒸馏生命周期
 

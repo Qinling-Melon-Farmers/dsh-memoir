@@ -1,7 +1,7 @@
 # dsh-memoir v0.5.6 完整项目评审
 
 > 评审日期：2026-08-27
-> 代码基线：dsh-memoir v0.5.6 发布候选、DeepSeek Harness `0.1.1-rc.2`
+> 代码基线：dsh-memoir v0.5.6 正式版、DeepSeek Harness `0.1.1-rc.2`
 > 评审范围：host/client 源码、存储格式、工具与路由契约、Web 适配、发布链路、171 项测试和 100–100,000 条本地基准。
 
 ## 1. 结论
@@ -32,7 +32,7 @@ dsh-memoir 已形成完整可用的 DSH 本地项目记忆闭环：可信写入�
 | Web 视觉 | dsh-web-ui 设计令牌、同族侧栏、默认折叠 Settings 卡、单一纵向滚动所有者、中心列互斥 | 完整 |
 | 国际化 | 自有中英字典，随 `<html lang>` 即时切换；README、Changelog、Release notes 双语 | 完整 |
 | 依赖边界 | npm 包无普通 `dependencies`；host 用 Node 标准库 + DSH peer，client 只导入平台模块 | 完整 |
-| 发布 | tag/version 校验、typecheck/test、npm OIDC、token 临时回退、registry 验证、GitHub Release/tgz | 完整（需每次 tag 实证） |
+| 发布 | tag/version 校验、typecheck/test、npm OIDC、token 临时回退、registry 验证、GitHub Release/tgz | 完整（v0.5.6 已实证） |
 
 ## 3. 设计合理性
 
@@ -90,6 +90,7 @@ dsh-memoir 已形成完整可用的 DSH 本地项目记忆闭环：可信写入�
 - `pnpm test`：171/171 通过；覆盖 host、client、bundle、迁移、并发锁、来源、相似治理、双语和 release notes。
 - 当前基准（Node v24.19.0）：10k 条冷加载 26.4 ms、索引 126.9 ms、未缓存查询 11.011 ms、缓存查询 1.454 µs；100k 条分别为 210.7 ms、1679.9 ms、126.933 ms、1.416 µs。
 - npm 包保持零普通运行时依赖；client bundle 只请求 DSH 平台模块。
-- tag 发布前仍必须完成 Windows + WSL Ubuntu 20.04 正式包冷启动、真实 GUI 截图、npm/GitHub Release 和 registry 可见性验证。
+- v0.5.6 tag 流水线全绿：OIDC 首次发布成功并生成 provenance，npm `latest` 指向 `0.5.6`，公开 GitHub Release 已挂载 tgz。
+- Windows 与 WSL Ubuntu 20.04 均以 npm registry 正式包冷启动成功；安装前后记忆文件哈希不变。
 
 后续排期见 [ROADMAP.md](./ROADMAP.md)。
