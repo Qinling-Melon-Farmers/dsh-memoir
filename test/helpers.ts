@@ -30,9 +30,20 @@ export function makeTempStorePath(): string {
   return join(tmpdir(), `memoir-store-${Date.now()}-${Math.random().toString(16).slice(2)}.json`)
 }
 
-/** A tool exec object with a session cwd (plus optional session id). */
-export function makeExec(cwd: string, sessionId = 'session-test'): ToolRunContext {
-  return { agent: { id: sessionId, session: { header: { cwd } } } } as unknown as ToolRunContext
+/** A tool exec object with a session cwd, source session, and matching turn. */
+export function makeExec(cwd: string, sessionId = 'session-test', turnId = 1): ToolRunContext {
+  const callId = 'call-test-' + turnId
+  return {
+    callId,
+    rootCallId: callId,
+    agent: {
+      id: sessionId,
+      session: {
+        header: { cwd },
+        events: [{ type: 'tool/call', data: { turn: turnId, callId, name: 'memoir_record' } }],
+      },
+    },
+  } as unknown as ToolRunContext
 }
 
 export interface ReqOptions {

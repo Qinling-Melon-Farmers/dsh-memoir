@@ -13,6 +13,7 @@
 - **Zero external memory service**：无向量数据库、无 embedding API、无云端记忆服务
 - **Bounded hot-memory injection**：token 预算内的 Hot Memory 自动注入 system prompt（默认 900/1200）
 - **Ranked local recall**：倒排索引 + BM25 本地排序召回，`memoir_read` 按需检索长尾历史
+- **可追溯且防重复**：记录可信 session/turn 来源；写入前解释疑似重复或冲突，由用户/Agent 显式选择更新、替代或并存
 - **Web GUI**：中英双语侧边栏面板——完整生命周期编辑、项目/全局浏览、BM25 搜索、Hot Memory、诊断和实时设置
 
 ## Quick Start
@@ -82,6 +83,15 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
 
+## v0.5.6 来源追踪、相似记忆治理与 Web 体验
+
+- 存储格式 v4 为 Agent 写入保存可信 `source.sessionId` / `source.turnId`；旧顶层 `sessionId` 懒兼容，只有下一次真实写入才持久化新格式。
+- Web 条目卡可复制来源，并尽力打开原会话、定位对应 turn；浏览器手工新增不能伪造可信来源。
+- `memoir_record` 与 Web 手工新增在落盘前复用 BM25 找候选，再融合标题相似度和 Token Jaccard，只提示疑似重复/冲突，不自动更改数据。
+- 候选出现时必须显式选择 `update`、`supersede` 或 `force-record`；界面同时展示 BM25、标题、Jaccard 分量与命中理由，目标 ID 必须属于当前候选。
+- Settings → Web UI 插件中的设置项已对齐 dsh-web-ui 家族卡片并默认折叠；记忆面板统一为一个纵向滚动区，展开设置、Hot Memory 和诊断后仍可连续向下滚动。
+- 发布工作流固定优先使用 npm OIDC，`NPM_TOKEN` 只作临时回退；旧 token 过期不会再抢占正常 trusted publishing。
+
 ## v0.5.5 侧栏视觉一致性修复
 
 - 修复样式标记冲突：其他同名 `data-plugin` 样式不再导致 Memoir 跳过自身 CSS 注入，插件样式改由唯一 `data-dsh-memoir-style` 标识并随插件卸载清理。
@@ -110,7 +120,7 @@ memoir_record 沉淀工作 / 教训 / 下一步
 
 | 工具 | 作用 |
 | --- | --- |
-| `memoir_record` | 写入 work（工作记录）/ lessons（经验教训）/ actions（行动指南）/ note（备注） |
+| `memoir_record` | 写入 work / lessons / actions / note；写前检查相似记忆，并用 `update` / `supersede` / `force-record` 显式治理 |
 | `memoir_update` | 保留 id 和创建时间，更新既有条目的内容、分类、标签与生命周期；可用 `supersedes` 标记被替代历史 |
 | `memoir_read` | project（默认）/ global / all 的本地相关性检索，limit + compact/full 输出形态 |
 
@@ -126,6 +136,7 @@ memoir_record 沉淀工作 / 教训 / 下一步
 - epoch 感知 + 1 小时 time-bucket 的 LRU 查询缓存：limit/detail 不参与缓存键，所有输出形态共享同一份排序结果（v0.4.2）
 - Query cache 指标（hits/misses/evictions/hit rate）与 Last Query（latency/candidates/returned）可观测（v0.4.2）
 - 全局 recall 的 limit 是真正全局 Top-K，输出截断保留高分头部（v0.4.2）
+- 写入治理先取当前项目 active 记忆的 BM25 Top-24 候选，再融合查询内归一化 BM25、标题相似度和 Token Jaccard；最多返回 5 条可解释候选（v0.5.6）
 
 curated 查询 Top-5 命中率 100%（质量门禁 ≥90%，见 `test/recall-quality.test.ts`）。
 
@@ -140,8 +151,18 @@ Project / Global / Search / Add / Delete / Diagnostics 架构已经扩展为完�
 - **完整实时设置（v0.5.4）**：agent 注入、auto-distill、Hot Memory 目标/硬上限、读取默认/最大条数、会话快照和查询缓存均可即时调整
 - **Settings 集成（v0.5.4）**：同一双语设置卡同时挂载到记忆面板和 Settings → Web UI 插件；页面切换语言时即时重绘
 - **视觉与 dsh-web-ui 家族一致（v0.5.5）**：面板、侧栏入口与表单/卡片/标签页共用 `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` 设计令牌（保留独立安装回退），与 dsh-web-ui-all 的 task-board / ssh / skill-explorer 同族；中心列面板互斥协议已对齐。
+- **来源与相似记忆治理（v0.5.6）**：显示/copy/jump session 与 turn 来源；新增时展示重复/冲突候选、三项相似度分量、理由和三种显式处理动作
+- **设置页与滚动修复（v0.5.6）**：Settings 卡默认折叠并使用家族卡片结构；面板只保留一个滚动所有者，列表、设置、Hot Memory 与诊断不会再互相遮挡
 
 ## 界面预览
+
+**v0.5.6 Settings 卡**：Settings → Web UI 插件中的 Memoir 卡默认折叠，标题、描述、间距、圆角和箭头与同组插件一致。
+
+![v0.5.6 Settings 卡](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
+
+**v0.5.6 连续滚动**：记忆设置、Hot Memory 预览与诊断共用面板唯一滚动区；截图中的 Hot Memory 为脱敏演示文本。
+
+![v0.5.6 记忆面板连续滚动](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-memory-scroll-zh.png)
 
 **v0.5.5 侧栏一致性**：记忆入口与任务看板、SSH、技能中心在行高、水平位置、图标盒和 SVG 尺寸上保持一致。
 
@@ -180,7 +201,7 @@ Project / Global / Search / Add / Delete / Diagnostics 架构已经扩展为完�
 ## Storage & Privacy
 
 ```text
-~/.dsh/dsh-memoir.json   ← 结构化 JSON（唯一事实源 / SSOT）
+~/.dsh/dsh-memoir.json   ← 结构化 JSON v4（唯一事实源 / SSOT，含可信 session/turn 来源）
 ~/.dsh/dsh-memoir.settings.json ← 两个 GUI 设置面保存的完整运行时覆盖
 <工作区>/PROJECT_MEMORY.md ← 由 JSON 重新生成的人类可读投影（git 友好）
 
@@ -225,6 +246,7 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 - **Windows 路径**：canonical key 全小写（`C:\A` / `c:\a\` / `C:/A` 一个桶），display path 保留原始大小写（v0.4.2）。
 - **GUI 与 Agent 同源**：面板搜索与 `memoir_read` 共用 RetrievalEngine，不再各写一套过滤逻辑（v0.4.2）。
 - **自动收尾节奏**：默认仍逐 worked turn 提醒；研究型会话可组合轮次间隔、冷却与活动阈值降低打扰，并从两个 GUI 设置面即时调节（v0.5.4）。
+- **相似治理而非自动合并**：词法相似度只能发现候选，不能可靠判断语义真伪；因此 v0.5.6 固定由调用者在更新、替代和并存之间显式选择。
 
 ## Use Cases
 
@@ -255,24 +277,24 @@ JSON 是 source of truth，Markdown 是 generated projection：面板、工具�
 pnpm install          # 安装 devDeps（typescript、esbuild、@deepseek-ai/* 类型包）
 pnpm run build        # tsc 构建 host + esbuild 构建 client bundle
 pnpm run typecheck    # 全量类型检查（src + test）
-pnpm test             # 163 项测试：store（含多进程锁） / settings / snapshot / selector / retrieval / tools / routes / 自动收尾 / GUI 挂载、样式所有权、面板激活与双语 / 集成 / bundle 协议与纯净性 / 发布说明
+pnpm test             # 171 项测试：store/迁移/锁、settings、snapshot、selector、BM25/相似治理、tools/routes、自动收尾、GUI/滚动/双语、集成、bundle 与发布说明
 npm run bench         # benchmark（100/1k/10k/100k 条目），结果写入 bench/report.md
 ```
 
 质量门禁：**Top-5 recall ≥ 90% · Hot Memory ≤ 配置 hardMax · 同会话 prompt 前缀稳定 · 全局召回 ≤ limit · 多进程写入零丢失**。
 
-v0.4.2 benchmark 摘要（node v22.23.2，budget 900/1200 tokens；完整报告见 `bench/report.md`。方法已修正：uncached 查询直测 `search()`、cached 查询先预热同一 query 再计时）：
+v0.5.6 benchmark 摘要（2026-08-27，node v24.19.0，budget 900/1200 tokens；完整报告见 `bench/report.md`。uncached 查询直测 `search()`、cached 查询先预热同一 query 再计时）：
 
 | 条目数 | 冷加载 | 热读取 | Hot Memory 构建 | 索引构建 | 未缓存查询 | 缓存查询 | 缓存命中率 | 全量 markdown tokens | 注入 tokens | 降幅 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 100 | 1.3 ms | 2.22 µs | 0.54 ms | 2.9 ms | 0.224 ms | 2.87 µs | 50.0% | 3870 | 902 | 76.7% |
-| 1,000 | 1.6 ms | 0.40 µs | 0.70 ms | 15.0 ms | 1.419 ms | 1.45 µs | 50.0% | 38182 | 916 | 97.6% |
-| 10,000 | 25.3 ms | 0.42 µs | 2.60 ms | 142.9 ms | 11.889 ms | 1.14 µs | 50.0% | 385807 | 902 | 99.8% |
-| 100,000 | 158.2 ms | 0.42 µs | 31.97 ms | 2238.7 ms | 153.551 ms | 1.15 µs | 50.0% | 3907057 | 917 | 100.0% |
+| 100 | 0.9 ms | 0.95 µs | 0.46 ms | 2.1 ms | 0.169 ms | 2.21 µs | 50.0% | 3908 | 902 | 76.9% |
+| 1,000 | 3.0 ms | 0.35 µs | 0.58 ms | 10.5 ms | 1.190 ms | 4.07 µs | 50.0% | 38220 | 916 | 97.6% |
+| 10,000 | 26.4 ms | 0.35 µs | 2.05 ms | 126.9 ms | 11.011 ms | 1.45 µs | 50.0% | 385845 | 902 | 99.8% |
+| 100,000 | 210.7 ms | 0.51 µs | 20.11 ms | 1679.9 ms | 126.933 ms | 1.42 µs | 50.0% | 3907095 | 917 | 100.0% |
 
 ## 实现说明
 
-- **TypeScript 全栈**：`src/host/*.ts`（store / settings / tools / retrieval / selector / snapshot / routes / autodistill / index，tsc 构建出 `lib/*.js`）+ `src/client/*.ts(x)`（esbuild 打出 `lib/client.js` 闭包工厂 bundle）。
+- **TypeScript 全栈**：`src/host/*.ts`（store / settings / tools / retrieval / similarity / governance / selector / snapshot / routes / autodistill / index，tsc 构建出 `lib/*.js`）+ `src/client/*.ts(x)`（esbuild 打出 `lib/client.js` 闭包工厂 bundle）。
 - **双面插件**：host 半注册 agent 工具、`/api/dsh-memoir` 路由、`agent/turn-stopping` 自动收尾监听与按项目求值的 system prompt 注入段；client 半提供面板。运行时仅依赖官方 NPM SDK。
 - 通过 `dsh.bundle.patch` manifest（`cordis.patch.yml` 的 `insert` 行）挂载，不改 DSH 源码。
 - 自动收尾安全边界：仅顶级会话（跳过 subagent / 嵌套委托）、仅「有工具调用且未记录过」的回合、已中止回合不打扰、每回合至多一次。
@@ -290,14 +312,14 @@ PR 请先提 Issue 讨论。
 
 ## Release
 
-当前稳定版：**v0.5.5**（2026-08-24） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.5)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
+当前稳定版：**v0.5.6**（2026-08-27） · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.6)。完整历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
 每个版本的更新日志均同步维护中英文；GitHub Release 默认展开中文，英文说明收纳在可折叠的 `English` 区域。
 
-版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test、发布 npm，并创建同 tag 的 GitHub Release 和 tarball 资产。仓库需配置以下任一认证方式：
+版本发布由 `.github/workflows/publish.yml` 在 `v*` tag 推送后自动执行：安装依赖、校验 tag 与 `package.json` 版本一致、运行 typecheck/test、发布 npm，并创建同 tag 的 GitHub Release 和 tarball 资产。认证固定为 OIDC 优先、token 回退：
 
 - npm Trusted Publishing：GitHub 仓库 `Qinling-Melon-Farmers/dsh-memoir`，workflow `publish.yml`
-- GitHub Actions secret `NPM_TOKEN`：使用具有发布权限且允许绕过发布 2FA 的 granular token
+- GitHub Actions secret `NPM_TOKEN`：可选回退，使用具有发布权限且允许绕过发布 2FA 的 granular token；只在 OIDC 失败且该版本尚未发布时读取
 
 发布 patch 版本：
 

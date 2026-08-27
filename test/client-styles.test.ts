@@ -66,3 +66,33 @@ test('sidebar row geometry matches the web-ui-all 0.3.x family contract', () => 
     dom.window.close()
   }
 })
+
+test('settings card chrome and panel use the web-ui family disclosure and one scroll owner', () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>
+    <div class="memoir-panel">
+      <div class="memoir-scroll-region"><div class="memoir-body"><div class="memoir-settings-body"></div><pre class="memoir-inspector-body"></pre></div></div>
+    </div>
+    <li class="memoir-settings-slot"><button class="memoir-settings-slot-header"><span class="memoir-settings-slot-headtext"></span><svg class="memoir-settings-slot-chevron"></svg></button></li>
+  </body></html>`)
+  try {
+    const dispose = mountPanelStyles(dom.window.document)
+    const card = dom.window.document.querySelector<HTMLElement>('.memoir-settings-slot')!
+    const header = dom.window.document.querySelector<HTMLElement>('.memoir-settings-slot-header')!
+    const scroller = dom.window.document.querySelector<HTMLElement>('.memoir-scroll-region')!
+    const body = dom.window.document.querySelector<HTMLElement>('.memoir-body')!
+    const settings = dom.window.document.querySelector<HTMLElement>('.memoir-settings-body')!
+    const inspector = dom.window.document.querySelector<HTMLElement>('.memoir-inspector-body')!
+
+    assert.equal(dom.window.getComputedStyle(card).borderRadius, '12px')
+    assert.equal(dom.window.getComputedStyle(header).padding, '14px 16px')
+    assert.equal(dom.window.getComputedStyle(header).display, 'flex')
+    assert.equal(dom.window.getComputedStyle(scroller).overflowY, 'auto')
+    assert.notEqual(dom.window.getComputedStyle(body).overflowY, 'auto')
+    assert.notEqual(dom.window.getComputedStyle(settings).overflowY, 'auto')
+    assert.notEqual(dom.window.getComputedStyle(inspector).overflowY, 'auto')
+
+    dispose()
+  } finally {
+    dom.window.close()
+  }
+})

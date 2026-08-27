@@ -236,10 +236,16 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 
 /* --- body / lists ------------------------------------------------------------- */
 
-.memoir-body {
+.memoir-scroll-region {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.memoir-body {
+  min-height: 0;
   padding: 4px 0 16px;
 }
 .memoir-section-title {
@@ -287,6 +293,35 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 .memoir-tag {
   color: var(--dsw-alias-state-success-primary, #15803d);
   border-color: var(--dsw-alias-state-success-tertiary, rgba(34, 197, 94, .45));
+}
+.memoir-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.memoir-source-link,
+.memoir-source-copy {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary, #2563eb);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.memoir-source-link {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memoir-source-link:hover,
+.memoir-source-copy:hover {
+  text-decoration: underline;
+}
+.memoir-source-copy {
+  min-width: 18px;
 }
 .memoir-score {
   float: right;
@@ -457,6 +492,73 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   gap: 8px;
 }
 
+/* --- similar-memory resolution --------------------------------------------- */
+
+.memoir-similarity {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-state-warn-tertiary, rgba(217, 119, 6, .4));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .02)));
+}
+.memoir-similarity-title {
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  font-size: 13px;
+  font-weight: 600;
+}
+.memoir-similarity-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, .12));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-3, var(--bg-panel, #ffffff));
+}
+.memoir-similarity-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.memoir-similarity-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memoir-similarity-duplicate {
+  color: var(--dsw-alias-state-warn-primary, #b45309);
+}
+.memoir-similarity-conflict {
+  color: var(--dsw-alias-state-error-primary, #dc2626);
+}
+.memoir-score-static,
+.memoir-similarity-components,
+.memoir-similarity-content {
+  color: var(--dsw-alias-label-secondary, var(--text-secondary, #6b7280));
+  font-size: 11px;
+}
+.memoir-similarity-content {
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.memoir-similarity-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.memoir-similarity-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* --- settings (panel + Settings page card) ----------------------------------- */
 
 .memoir-settings {
@@ -468,16 +570,80 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 .memoir-settings-slot {
   list-style: none;
   margin: 0;
-  padding: 0 0 12px;
-  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .1));
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-base, var(--bg-card, rgba(0, 0, 0, .02)));
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, .12));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3, var(--bg-card, rgba(0, 0, 0, .02)));
+  transition: border-color .16s, background .16s;
+}
+.memoir-settings-slot:hover {
+  border-color: var(--dsw-alias-label-dimmed, rgba(0, 0, 0, .28));
+}
+.memoir-settings-slot-open {
+  background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .03)));
+  border-color: var(--dsw-alias-label-dimmed, rgba(0, 0, 0, .28));
+}
+.memoir-settings-slot-header {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.memoir-settings-slot-header:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, var(--dsw-alias-state-business-primary, #2563eb));
+  outline-offset: -2px;
+}
+.memoir-settings-slot-headtext {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.memoir-settings-slot-name {
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.memoir-settings-slot-description {
+  color: var(--dsw-alias-label-tertiary, var(--text-secondary, #8a8f9c));
+  font-size: 13px;
+  line-height: 1.5;
+}
+.memoir-settings-slot-chevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, var(--text-secondary, #8a8f9c));
+  transition: transform .16s;
+}
+.memoir-settings-slot-chevron-open {
+  transform: rotate(180deg);
+}
+.memoir-settings-slot-body {
+  margin: 0 16px;
+  padding-bottom: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, .12));
 }
 .memoir-settings-slot .memoir-settings {
-  margin: 12px 14px 0;
+  margin: 0;
+  padding: 0;
   border-top: none;
 }
 .memoir-settings-slot .memoir-settings-body {
+  margin: 0;
+  padding: 12px 0 4px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   max-height: none;
 }
 .memoir-settings-body {
@@ -489,8 +655,6 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .1));
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .02)));
-  max-height: min(50vh, 430px);
-  overflow-y: auto;
 }
 .memoir-settings-description,
 .memoir-settings-note,
@@ -584,8 +748,8 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  max-height: 220px;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
 }
 .memoir-diagnostics-body {
   display: flex;

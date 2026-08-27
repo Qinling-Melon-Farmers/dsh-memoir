@@ -15,8 +15,10 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, formatTime, projectTitle, validateEntryUpdate } from './store.js'
-import type { EntryUpdate, MemoirEntry, MemoirStore } from './store.js'
+import type { EntryUpdate, MemoirEntry, MemoirSource, MemoirStore } from './store.js'
 import type { RetrievalEngine } from './retrieval.js'
+import { governedRecord, type RecordResolution } from './governance.js'
+import type { SimilarityCandidate } from './similarity.js'
 
 /** One text content block (the only render shape these tools emit). */
 export function text(value: string): ContentBlock[] {
@@ -37,6 +39,34 @@ export const READ_OUTPUT_MAX_CHARS = 16000
 export interface ReadToolOptions {
   defaultLimit: number
   maxLimit: number
+}
+
+/**
+ * Resolve trusted source metadata from the executing agent. The tool runtime
+ * does not expose a turn field directly, but it appends the matching
+ * tool/call event before dispatch; rootCallId also covers code-mode nested
+ * dispatches. Missing turn data degrades to session-only provenance.
+ */
+export function resolveMemorySource(exec: ToolRunContext | undefined): MemoirSource | undefined {
+  const sessionId = exec?.agent?.id === undefined ? undefined : String(exec.agent.id)
+  let turnId: number | undefined
+  const callIds = new Set<string>()
+  if (exec?.callId !== undefined) callIds.add(String(exec.callId))
+  if (exec?.rootCallId !== undefined) callIds.add(String(exec.rootCallId))
+  const events = exec?.agent?.session?.events
+  if (Array.isArray(events) && callIds.size > 0) {
+    for (let index = events.length - 1; index >= 0; index--) {
+      const event = events[index] as { type?: unknown; data?: Record<string, unknown> }
+      if (event.type !== 'tool/call' || event.data === undefined || !callIds.has(String(event.data.callId ?? ''))) continue
+      if (Number.isSafeInteger(event.data.turn) && (event.data.turn as number) >= 1) turnId = event.data.turn as number
+      break
+    }
+  }
+  if (sessionId === undefined && turnId === undefined) return undefined
+  return {
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(turnId !== undefined ? { turnId } : {}),
+  }
 }
 
 /** Static startup values or a live provider backed by GUI settings. */
@@ -121,12 +151,30 @@ function appendGrouped(
   return shown
 }
 
-/** The record tool: persist one memory entry. */
-export function memoirRecordTool(store: MemoirStore) {
+function candidateValue(candidate: SimilarityCandidate) {
+  const content = candidate.entry.content.length > 600
+    ? candidate.entry.content.slice(0, 600) + '…'
+    : candidate.entry.content
+  return {
+    id: candidate.entry.id,
+    kind: candidate.kind,
+    ...(candidate.entry.title !== undefined ? { title: candidate.entry.title } : {}),
+    content,
+    score: candidate.score,
+    bm25: candidate.components.bm25,
+    titleSimilarity: candidate.components.title,
+    tokenJaccard: candidate.components.tokenJaccard,
+    reasons: candidate.reasons,
+  }
+}
+
+/** The record tool: persist one memory entry with pre-write governance. */
+export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine) {
   return defineTool({
     name: 'memoir_record',
     description:
       '把一条记忆写入项目持久记忆，供未来会话继承。阶段任务收尾时归纳「做了什么(work)/经验教训(lessons)/下一步行动(actions)」分条记录。' +
+      '写入前会返回疑似重复/冲突候选且不自动改动；收到候选后必须明确选择 resolution=update（更新候选）、supersede（新结论替代候选）或 force-record（确认并存）。' +
       'Triggers: 记录经验教训、沉淀记忆、归纳工作、更新行动指南、总结踩坑。',
     parameters: {
       section: {
@@ -160,6 +208,15 @@ export function memoirRecordTool(store: MemoirStore) {
         type: 'array',
         description: 'Optional tags for later filtering and explanation.',
       },
+      resolution: {
+        type: 'string',
+        enum: ['update', 'supersede', 'force-record'],
+        description: '仅在相似候选出现后使用：update 更新 targetId；supersede 新建并替代 targetId；force-record 明确保留两条。',
+      },
+      targetId: {
+        type: 'string',
+        description: 'resolution=update/supersede 时必填的候选记忆 id；force-record 不使用。',
+      },
     },
     output: {
       schema: {
@@ -167,25 +224,55 @@ export function memoirRecordTool(store: MemoirStore) {
         additionalProperties: false,
         properties: {
           section: { type: 'string', required: true },
-          id: { type: 'string', required: true },
+          action: { type: 'string', required: true, enum: ['recorded', 'needs-resolution', 'updated', 'superseded', 'force-recorded'] },
+          recorded: { type: 'boolean', required: true },
+          id: { type: 'string' },
           title: { type: 'string' },
-          projectFile: { type: 'string', required: true },
-          globalIndex: { type: 'string', required: true },
-          recordedAt: { type: 'string', required: true },
+          projectFile: { type: 'string' },
+          globalIndex: { type: 'string' },
+          recordedAt: { type: 'string' },
+          candidates: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                kind: { type: 'string', required: true, enum: ['duplicate', 'conflict'] },
+                title: { type: 'string' },
+                content: { type: 'string', required: true },
+                score: { type: 'number', required: true },
+                bm25: { type: 'number', required: true },
+                titleSimilarity: { type: 'number', required: true },
+                tokenJaccard: { type: 'number', required: true },
+                reasons: { type: 'array', required: true, items: { type: 'string' } },
+              },
+            },
+          },
         },
       },
-      // Minimal text: the structured fields stay available for debugging, but
-      // the agent-facing render is one line (paths/timestamps add no value).
-      render: (_args, value) =>
-        text('已记录 [' + value.section + '] ' + (value.title !== undefined && value.title !== '' ? value.title + ' ' : '') + '(id: ' + value.id + ')'),
+      render: (_args, value) => {
+        if (value.action === 'needs-resolution') {
+          const candidates = value.candidates.map((candidate) =>
+            `- ${candidate.kind} [${candidate.id}] ${candidate.title ?? candidate.content.slice(0, 80)} ` +
+            `(score=${candidate.score.toFixed(3)}, bm25=${candidate.bm25.toFixed(3)}, title=${candidate.titleSimilarity.toFixed(3)}, jaccard=${candidate.tokenJaccard.toFixed(3)})`,
+          ).join('\n')
+          return text(
+            `检测到 ${value.candidates.length} 条疑似重复/冲突记忆，本次未写入：\n${candidates}\n` +
+            '请再次调用 memoir_record，并明确选择 resolution=update + targetId、resolution=supersede + targetId，或 resolution=force-record。',
+          )
+        }
+        const verb = value.action === 'updated' ? '已更新' : value.action === 'superseded' ? '已记录并替代旧记忆' : '已记录'
+        return text(verb + ' [' + value.section + '] ' + (value.title !== undefined && value.title !== '' ? value.title + ' ' : '') + '(id: ' + value.id + ')')
+      },
     },
     async execute(args, exec) {
       const cwd = resolveWorkspace(exec)
       if (cwd === undefined) {
         throw new Error('无法确定会话工作区（缺少 agent cwd）；请在项目会话内调用 memoir_record')
       }
-      const sessionId = exec?.agent?.id ? String(exec.agent.id) : undefined
-      const entry = store.record(cwd, {
+      const result = governedRecord(store, retrieval, cwd, {
         section: args.section,
         ...(args.title !== undefined ? { title: args.title } : {}),
         content: args.content,
@@ -193,15 +280,27 @@ export function memoirRecordTool(store: MemoirStore) {
         ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
         ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
         ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
-      }, sessionId)
+      }, {
+        source: resolveMemorySource(exec),
+        ...(args.resolution !== undefined ? { resolution: args.resolution as RecordResolution } : {}),
+        ...(args.targetId !== undefined ? { targetId: args.targetId } : {}),
+      })
+      const candidates = result.candidates.map(candidateValue)
+      if (result.entry === undefined) {
+        return { section: args.section, action: result.action, recorded: result.recorded, candidates }
+      }
+      const entry = result.entry
       return {
         section: entry.section,
+        action: result.action,
+        recorded: result.recorded,
         id: entry.id,
         ...(entry.title !== undefined ? { title: entry.title } : {}),
         // record() already regenerated the project file — never write twice.
         projectFile: store.projectFilePath(cwd),
         globalIndex: store.path,
         recordedAt: formatTime(entry.time),
+        candidates,
       }
     },
   })

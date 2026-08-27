@@ -40,6 +40,7 @@ function conversationColumn(): HTMLElement | undefined {
  * @param api - the memoir API client the panel operates through.
  * @param cwdTracker - the active-workspace tracker (useSyncExternalStore-compatible).
  * @param t - the bound translator.
+ * @param openSource - optional source-session navigator supplied by the runtime.
  * @returns disposer unmounting the tree and restoring the column.
  */
 export function mountPanel(
@@ -47,6 +48,7 @@ export function mountPanel(
   api: MemoirApi,
   cwdTracker: CwdTracker,
   t: (key: string) => string,
+  openSource?: (sessionId: string, turnId?: number) => void,
 ): () => void {
   let root: Root | undefined
   let container: HTMLDivElement | undefined
@@ -67,7 +69,7 @@ export function mountPanel(
     container.dataset.dshPart = 'panel-host'
     column.appendChild(container)
     root = createRoot(container)
-    root.render(<MemoirPanel controller={controller} api={api} cwdTracker={cwdTracker} t={t} />)
+    root.render(<MemoirPanel controller={controller} api={api} cwdTracker={cwdTracker} t={t} openSource={openSource} />)
   }
 
   // The frame mounts after boot settlement; watch for the column's arrival.

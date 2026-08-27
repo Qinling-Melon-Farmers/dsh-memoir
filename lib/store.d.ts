@@ -14,7 +14,7 @@
  * one bucket.
  */
 /** Global index format version. */
-export declare const FORMAT_VERSION = 3;
+export declare const FORMAT_VERSION = 4;
 /** Project memory file name (workspace root, git-committable). */
 export declare const PROJECT_FILE = "PROJECT_MEMORY.md";
 /** Section keys, human labels, and markdown headers (fixed order for rendering). */
@@ -35,6 +35,13 @@ export type SectionKey = 'work' | 'lessons' | 'actions' | 'note';
 /** Lifecycle state for one memory entry (v0.5.0). */
 export type MemoirStatus = 'active' | 'superseded' | 'archived';
 export declare const MEMOIR_STATUSES: MemoirStatus[];
+/** Trusted origin of one memory entry (v0.5.6 / store format v4). */
+export interface MemoirSource {
+    /** DSH session / agent id that produced the memory. */
+    sessionId?: string;
+    /** DSH turn number containing the memoir_record call. */
+    turnId?: number;
+}
 /** One structured memory entry. */
 export interface MemoirEntry {
     id: string;
@@ -42,7 +49,7 @@ export interface MemoirEntry {
     title?: string;
     content: string;
     time: number;
-    sessionId?: string;
+    source?: MemoirSource;
     importance?: number;
     pinned?: boolean;
     status?: MemoirStatus;
@@ -259,7 +266,7 @@ export declare class MemoirStore {
         updatedAt: number;
     }>;
     /** Append one entry and regenerate the project markdown. Returns the entry. */
-    record(cwd: string, payload: EntryPayload, sessionId?: string): MemoirEntry;
+    record(cwd: string, payload: EntryPayload, source?: MemoirSource | string): MemoirEntry;
     /** Remove one entry by id; regenerates the project markdown. */
     remove(cwd: string, id: string): boolean;
     /** Update an existing entry without deleting its id or creation time. */

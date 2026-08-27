@@ -14,6 +14,7 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MEMOIR_STATUSES, SECTIONS, SECTION_KEYS, projectKey, projectTitle, validateEntryPayload, validateEntryUpdate } from './store.js'
 import type { CacheStats, EntryPayload, EntryUpdate, MemoirEntry, MemoirStatus, MemoirStore } from './store.js'
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
+import { governedRecord, type RecordResolution } from './governance.js'
 import { validateMemoirSettingsPatch } from './settings.js'
 import type { MemoirSettingsPatch, MemoirSettingsSnapshot } from './settings.js'
 
@@ -120,6 +121,15 @@ function entryFilter(section: string | undefined, query: string, status: MemoirS
 }
 
 /** Project one project record into the wire shape. */
+function wireEntry(entry: MemoirEntry) {
+  return {
+    ...entry,
+    // Keep the pre-v4 wire alias during the migration window. The store's
+    // canonical provenance is entry.source.
+    ...(entry.source?.sessionId !== undefined ? { sessionId: entry.source.sessionId } : {}),
+  }
+}
+
 function wireProject(
   key: string,
   project: { path: string; title: string; updatedAt: number; entries: MemoirEntry[] },
@@ -130,7 +140,7 @@ function wireProject(
     path: project.path,
     title: project.title || projectTitle(project.path),
     updatedAt: project.updatedAt,
-    entries: project.entries.filter(filter),
+    entries: project.entries.filter(filter).map(wireEntry),
   }
 }
 
@@ -202,7 +212,7 @@ export function makeRoutes(
         const limit = Math.min(100, Math.max(1, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 30))
         const cwd = scope === 'project' ? path : undefined
         const ranked = retrieval.cachedSearch(query, { section: section as never, cwd, status: rawStatus as MemoirStatus | 'all' }).slice(0, limit)
-        json(res, OK({ results: ranked }))
+        json(res, OK({ results: ranked.map((result) => ({ ...result, entry: wireEntry(result.entry) })) }))
         return
       }
       if (pathname === '/api/dsh-memoir/hot-memory') {
@@ -216,7 +226,8 @@ export function makeRoutes(
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
-        json(res, OK({ hotMemory: hotMemory(path) }))
+        const preview = hotMemory(path)
+        json(res, OK({ hotMemory: preview === null ? null : { ...preview, selected: preview.selected.map(wireEntry) } }))
         return
       }
       if (pathname === '/api/dsh-memoir/diagnostics') {
@@ -349,7 +360,13 @@ export function makeRoutes(
         return
       }
       const title = strField(payload, 'title', true) ?? undefined
-      const sessionId = strField(payload, 'sessionId', true) ?? undefined
+      const record = payload as Record<string, unknown>
+      const resolution = record.resolution
+      if (resolution !== undefined && resolution !== 'update' && resolution !== 'supersede' && resolution !== 'force-record') {
+        json(res, FAIL({ code: 'bad-request', message: 'resolution must be update, supersede, or force-record' }), 400)
+        return
+      }
+      const targetId = strField(payload, 'targetId', true) ?? undefined
       const recordPayload = {
         section: section as never,
         title,
@@ -364,8 +381,20 @@ export function makeRoutes(
         json(res, FAIL({ code: 'bad-request', message: validation }), 400)
         return
       }
-      const entry = store.record(path, recordPayload as EntryPayload, sessionId)
-      json(res, OK({ entry }))
+      let result
+      try {
+        result = retrieval === undefined
+          ? { action: 'recorded' as const, recorded: true, entry: store.record(path, recordPayload as EntryPayload), candidates: [] }
+          : governedRecord(store, retrieval, path, recordPayload as EntryPayload, {
+              ...(resolution !== undefined ? { resolution: resolution as RecordResolution } : {}),
+              ...(targetId !== undefined ? { targetId } : {}),
+            })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'invalid similarity resolution'
+        json(res, FAIL({ code: 'bad-request', message }), 400)
+        return
+      }
+      json(res, OK(result))
       return
     }
 

@@ -12,6 +12,46 @@
 
 - None.
 
+## [0.5.6] - 2026-08-27
+
+### 中文
+
+#### Added
+
+- 存储格式升级为 v4：每条记忆可保存可信 `source: { sessionId, turnId }`；旧版顶层 `sessionId` 在读取时懒兼容，启动不会改写用户数据。Web 面板展示来源，支持复制标识并尽力跳转至原会话/turn。
+- `memoir_record` 与 Web 新增写入前相似记忆治理：复用现有倒排 BM25 候选集，并融合标题相似度与 Token Jaccard；只提示疑似重复/冲突，不自动删除、合并或覆盖。
+- 新增显式 `update` / `supersede` / `force-record` 处理协议，以及分数组成和候选理由；目标必须属于当前候选集。中英文、代码标识符与路径固定集覆盖阈值回归。
+- 新增 store v3→v4、可信 turn 关联、来源防伪、相似候选、三种治理动作、设置卡契约和单滚动容器回归；完整测试维持 171 项并扩大断言覆盖。
+
+#### Fixed
+
+- Settings → Web UI 插件中的 Memoir 设置项改为与 dsh-web-ui 其他插件相同的卡片、标题/描述、14px 箭头和展开分隔结构，并默认折叠。
+- 记忆面板改为一个纵向滚动所有者，列表、记忆设置、Hot Memory 预览和诊断位于同一滚动流；移除内部设置/预览滚动区，修复展开后互相遮挡且无法继续向下滚动的问题。
+
+#### Changed
+
+- tag 发布始终优先使用 npm Trusted Publishing (OIDC)；仓库 `NPM_TOKEN` 仅在 OIDC 失败且目标版本尚未发布时作为一次性配置回退，过期 token 不再压过正常 OIDC 发布。
+- 移除已迁入 `pnpm-workspace.yaml` 的旧 `package.json#pnpm.onlyBuiltDependencies` 配置，避免 pnpm 11 的废弃警告；继续保持零普通运行时依赖与 DSH `0.1.1-rc.2` 基线。
+
+### English
+
+#### Added
+
+- Upgraded the store to format v4 with trusted `source: { sessionId, turnId }` metadata. Legacy top-level `sessionId` values are lifted lazily without rewriting user data at startup. The Web panel exposes provenance, copying, and best-effort session/turn navigation.
+- Added pre-write similar-memory governance to `memoir_record` and the Web UI. It reuses the inverted-index BM25 candidate set, then combines title similarity and Token Jaccard; suspected duplicates/conflicts are surfaced without automatic deletion, merging, or overwrite.
+- Added the explicit `update` / `supersede` / `force-record` protocol with score components and explainable reasons. Resolution targets must belong to the current candidate set, with calibrated Chinese, English, code-identifier, and path fixtures.
+- Added v3→v4 store, trusted-turn correlation, provenance anti-spoofing, similarity, all three resolution actions, Settings-card contract, and single-scroll-owner regressions. The complete suite remains 171 tests with broader assertions.
+
+#### Fixed
+
+- Reworked the Memoir item under Settings → Web UI Plugins to use the same card, title/description hierarchy, 14px chevron, and expanded divider as the other dsh-web-ui plugins; it is collapsed by default.
+- Made the Memory panel use one vertical scroll owner for the list, settings, Hot Memory preview, and diagnostics. Nested settings/preview scrollers were removed, fixing overlap and the inability to continue scrolling after expansion.
+
+#### Changed
+
+- Tag releases now always try npm Trusted Publishing (OIDC) first. The repository `NPM_TOKEN` is used only through an ephemeral fallback config when OIDC fails and the target version is still unpublished, so an expired token cannot override a healthy OIDC path.
+- Removed the obsolete `package.json#pnpm.onlyBuiltDependencies` setting already represented in `pnpm-workspace.yaml`, eliminating the pnpm 11 deprecation warning while retaining zero regular runtime dependencies and the DSH `0.1.1-rc.2` baseline.
+
 ## [0.5.5] - 2026-08-24
 
 ### 中文
@@ -340,7 +380,10 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6
+[0.5.5]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5
+[0.5.4]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4
 [0.5.3]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.3
 [0.5.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.1

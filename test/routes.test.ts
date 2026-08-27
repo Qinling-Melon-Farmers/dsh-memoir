@@ -123,15 +123,57 @@ test('POST entries records and regenerates the project file', async () => {
       method: 'POST',
       url: '/api/dsh-memoir/entries',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ path: ws.cwd, section: 'actions', title: '行动', content: '发布前跑测试', sessionId: 's-3' }),
+      body: JSON.stringify({ path: ws.cwd, section: 'actions', title: '行动', content: '发布前跑测试', sessionId: 'spoofed-browser-source' }),
     })
     assert.equal(status, 200)
     assert.equal(envelope.ok, true)
-    const entry = (envelope.value as { entry: { id: string; sessionId: string } }).entry
+    const value = envelope.value as { action: string; recorded: boolean; entry: { id: string; source?: unknown } }
+    const entry = value.entry
+    assert.equal(value.action, 'recorded')
+    assert.equal(value.recorded, true)
     assert.ok(entry.id.length > 0)
-    assert.equal(entry.sessionId, 's-3')
+    assert.equal(entry.source, undefined, 'browser payload cannot spoof trusted provenance')
     assert.ok(existsSync(join(ws.cwd, PROJECT_FILE)))
     assert.ok(readFileSync(join(ws.cwd, PROJECT_FILE), 'utf8').includes('发布前跑测试'))
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('POST entries requires an explicit resolution for similar memories', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    store.record(ws.cwd, { section: 'lessons', title: 'Windows 路径规范', content: '统一使用 projectKey 规范化盘符与分隔符' })
+    const retrieval = new RetrievalEngine(store)
+    const handler = makeRoutes(store, undefined, retrieval)[0]!.handler
+    const body = { path: ws.cwd, section: 'lessons', title: 'Windows 路径规范', content: '统一使用 projectKey 规范化盘符与分隔符' }
+
+    const preflight = await callRoute(handler, { method: 'POST', url: '/api/dsh-memoir/entries', headers: JSON_HEADERS, body: JSON.stringify(body) })
+    const pending = preflight.envelope.value as { action: string; recorded: boolean; candidates: unknown[] }
+    assert.equal(pending.action, 'needs-resolution')
+    assert.equal(pending.recorded, false)
+    assert.equal(pending.candidates.length, 1)
+    assert.equal(store.entries(ws.cwd).length, 1)
+
+    const invalidTarget = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ ...body, resolution: 'update', targetId: 'not-a-candidate' }),
+    })
+    assert.equal(invalidTarget.status, 400)
+    assert.equal(invalidTarget.envelope.error?.code, 'bad-request')
+    assert.equal(store.entries(ws.cwd).length, 1)
+
+    const forced = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ ...body, resolution: 'force-record' }),
+    })
+    assert.equal((forced.envelope.value as { action: string }).action, 'force-recorded')
+    assert.equal(store.entries(ws.cwd).length, 2)
   } finally {
     ws.cleanup()
   }

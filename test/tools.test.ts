@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
-import { memoirRecordTool, memoirReadTool, memoirUpdateTool, resolveWorkspace } from '../lib/tools.js'
+import { memoirRecordTool, memoirReadTool, memoirUpdateTool, resolveMemorySource, resolveWorkspace } from '../lib/tools.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
@@ -21,7 +21,7 @@ test('resolveWorkspace extracts the agent session cwd', () => {
 
 test('tool factories produce well-formed defineTool definitions', () => {
   const store = new MemoirStore(makeTempStorePath())
-  const record = memoirRecordTool(store)
+  const record = memoirRecordTool(store, new RetrievalEngine(store))
   const read = memoirReadTool(store)
   const update = memoirUpdateTool(store)
   for (const tool of [record, read, update]) {
@@ -43,7 +43,7 @@ test('tool factories produce well-formed defineTool definitions', () => {
   assert.equal(updateParams.properties.id?.type, 'string')
   assert.ok(updateParams.required.includes('id'))
   // Render helpers produce text blocks.
-  const blocks = record.output.render({}, { section: 'work', id: 'x', projectFile: 'p', globalIndex: 'g', recordedAt: 't' })
+  const blocks = record.output.render({}, { section: 'work', action: 'recorded', recorded: true, id: 'x', projectFile: 'p', globalIndex: 'g', recordedAt: 't', candidates: [] })
   assert.equal(blocks[0]?.type, 'text')
 })
 
@@ -69,7 +69,7 @@ test('memoir_update edits an existing entry from the agent workspace', async () 
 test('memoir_record without a workspace throws a clear error', async () => {
   const store = new MemoirStore(makeTempStorePath())
   await assert.rejects(
-    () => memoirRecordTool(store).execute({ section: 'work', content: 'x' }, {} as never),
+    () => memoirRecordTool(store, new RetrievalEngine(store)).execute({ section: 'work', content: 'x' }, {} as never),
     /无法确定会话工作区/,
   )
 })
@@ -78,15 +78,16 @@ test('memoir_record writes to both project file and store', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
-    const value = (await memoirRecordTool(store).execute(
+    const value = (await memoirRecordTool(store, new RetrievalEngine(store)).execute(
       { section: 'actions', title: '下一步', content: '跑一次全量测试' },
-      makeExec(ws.cwd, 's-9'),
-    )) as { section: string; id: string }
+      makeExec(ws.cwd, 's-9', 12),
+    )) as { section: string; id: string; action: string }
     assert.equal(value.section, 'actions')
+    assert.equal(value.action, 'recorded')
     assert.ok(value.id.length > 0)
     assert.ok(existsSync(join(ws.cwd, PROJECT_FILE)))
     assert.equal(store.entries(ws.cwd).length, 1)
-    assert.equal(store.entries(ws.cwd)[0]?.sessionId, 's-9')
+    assert.deepEqual(store.entries(ws.cwd)[0]?.source, { sessionId: 's-9', turnId: 12 })
   } finally {
     ws.cleanup()
   }
@@ -235,6 +236,11 @@ test('memoir_read limit/detail: full restores timestamps, limit clamps to max', 
   }
 })
 
+test('resolveMemorySource correlates the tool call with its DSH turn', () => {
+  assert.deepEqual(resolveMemorySource(makeExec('C:\\proj', 'session-source', 7)), { sessionId: 'session-source', turnId: 7 })
+  assert.equal(resolveMemorySource(undefined), undefined)
+})
+
 test('memoir_read reads live default and maximum limits for each call', async () => {
   const ws = makeTempWorkspace()
   try {
@@ -247,6 +253,30 @@ test('memoir_read reads live default and maximum limits for each call', async ()
     options = { defaultLimit: 4, maxLimit: 5 }
     const second = (await read.execute({ scope: 'project', limit: 99 }, makeExec(ws.cwd))) as { text: string }
     assert.equal((second.text.match(/^- \[/gm) ?? []).length, 5)
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('memoir_record returns candidates before applying an explicit resolution', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const old = store.record(ws.cwd, { section: 'lessons', title: '发布认证', content: '使用 npm token 发布。' + '旧发布细节'.repeat(200) })
+    const record = memoirRecordTool(store, new RetrievalEngine(store))
+    const args = { section: 'lessons' as const, title: '发布认证', content: '使用 npm OIDC trusted publishing 发布。' }
+
+    const pending = (await record.execute(args, makeExec(ws.cwd))) as { action: string; recorded: boolean; candidates: Array<{ id: string; content: string }> }
+    assert.equal(pending.action, 'needs-resolution')
+    assert.equal(pending.recorded, false)
+    assert.equal(pending.candidates[0]?.id, old.id)
+    assert.ok((pending.candidates[0]?.content.length ?? 0) <= 601, 'model-facing candidates stay bounded')
+    assert.equal(store.entries(ws.cwd).length, 1)
+
+    const superseded = (await record.execute({ ...args, resolution: 'supersede', targetId: old.id }, makeExec(ws.cwd, 's-resolution', 8))) as { action: string; id: string }
+    assert.equal(superseded.action, 'superseded')
+    assert.notEqual(superseded.id, old.id)
+    assert.equal(store.entries(ws.cwd).find((entry) => entry.id === old.id)?.status, 'superseded')
   } finally {
     ws.cleanup()
   }

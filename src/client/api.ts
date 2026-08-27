@@ -55,6 +55,8 @@ export interface WireEntry {
   title?: string
   content: string
   time: number
+  source?: { sessionId?: string; turnId?: number }
+  /** Legacy v3 wire alias; prefer source.sessionId. */
   sessionId?: string
   importance?: number
   pinned?: boolean
@@ -147,6 +149,25 @@ export interface WireSearchResult {
   score: number
 }
 
+export type WireRecordResolution = 'update' | 'supersede' | 'force-record'
+export type WireRecordAction = 'recorded' | 'needs-resolution' | 'updated' | 'superseded' | 'force-recorded'
+
+export interface WireSimilarityCandidate {
+  kind: 'duplicate' | 'conflict'
+  score: number
+  components: { bm25: number; title: number; tokenJaccard: number }
+  reasons: string[]
+  entry: WireEntry
+  projectPath: string
+}
+
+export interface WireRecordResult {
+  action: WireRecordAction
+  recorded: boolean
+  entry?: WireEntry
+  candidates: WireSimilarityCandidate[]
+}
+
 /** The /hot-memory inspector payload (v0.4.2). */
 export interface WireHotMemory {
   text: string
@@ -164,6 +185,8 @@ export interface RecordPayload {
   pinned?: boolean
   supersedes?: string[]
   tags?: string[]
+  resolution?: WireRecordResolution
+  targetId?: string
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<EnvelopeResponse>
@@ -246,13 +269,13 @@ export class MemoirApi {
   }
 
   /** Record one entry (host regenerates PROJECT_MEMORY.md). */
-  async record(payload: RecordPayload): Promise<{ entry: WireEntry }> {
+  async record(payload: RecordPayload): Promise<WireRecordResult> {
     const response = await this.fetchImpl('/api/dsh-memoir/entries', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    return readEnvelope(response) as Promise<{ entry: WireEntry }>
+    return readEnvelope(response) as Promise<WireRecordResult>
   }
 
   /** Delete one entry by id. */

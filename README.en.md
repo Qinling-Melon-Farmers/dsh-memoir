@@ -13,6 +13,7 @@
 - **Zero external memory service** — no vector database, no embedding API, no cloud memory service
 - **Bounded hot-memory injection** — token-budgeted Hot Memory is injected into the system prompt (default 900/1200)
 - **Ranked local recall** — inverted index + BM25 local ranked retrieval; `memoir_read` fetches long-tail history on demand
+- **Traceable and duplicate-aware** — trusted session/turn provenance plus explainable pre-write duplicate/conflict candidates; the caller explicitly updates, supersedes, or keeps both
 - **Web GUI** — a bilingual sidebar panel with complete lifecycle editing, project/global browsing, BM25 search, Hot Memory, diagnostics, and live settings
 
 ## Quick Start
@@ -82,6 +83,15 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
 
+## v0.5.6 Provenance, similar-memory governance, and Web UX
+
+- Store format v4 records trusted `source.sessionId` / `source.turnId` for Agent writes. Legacy top-level `sessionId` values remain lazily readable and are persisted in the new shape only on a real subsequent write.
+- Entry cards can copy provenance and make a best-effort jump to the source session/turn; manual browser writes cannot spoof trusted provenance.
+- Before `memoir_record` or a manual Web add mutates data, the existing BM25 engine supplies candidates and title similarity plus Token Jaccard rerank them. Only suspected duplicates/conflicts are shown; nothing is changed automatically.
+- A surfaced candidate requires an explicit `update`, `supersede`, or `force-record` decision. The UI explains BM25/title/Jaccard components and reasons, and a resolution target must belong to the current candidate set.
+- The Memoir item under Settings → Web UI Plugins now matches the dsh-web-ui family card and starts collapsed. The Memory panel has one vertical scroll region, so expanded settings, Hot Memory, and diagnostics remain continuously scrollable.
+- The release workflow always tries npm OIDC first and uses `NPM_TOKEN` only as an ephemeral fallback; an expired legacy token can no longer take precedence over healthy trusted publishing.
+
 ## v0.5.5 Sidebar visual-parity fix
 
 - Fixed the stylesheet-marker collision: another style carrying the same generic `data-plugin` value no longer makes Memoir skip its own CSS. The owned stylesheet has a unique `data-dsh-memoir-style` marker and is removed on plugin unload.
@@ -110,7 +120,7 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 
 | Tool | Purpose |
 | --- | --- |
-| `memoir_record` | write work / lessons / actions / note entries |
+| `memoir_record` | write work / lessons / actions / note entries; preflight similar memories and explicitly `update`, `supersede`, or `force-record` |
 | `memoir_update` | edit an existing entry while preserving its id and creation time; update content, tags, lifecycle, or explicitly supersede history |
 | `memoir_read` | local relevance retrieval across project (default) / global / all, with limit and compact/full output shapes |
 
@@ -126,6 +136,7 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 - Epoch-aware LRU query cache with 1-hour time buckets: limit/detail stay out of the cache key, so every output shape shares one ranked result (v0.4.2)
 - Query-cache metrics (hits/misses/evictions/hit rate) and Last Query (latency/candidates/returned) observability (v0.4.2)
 - Global recall limit is a true global Top-K; output truncation preserves the top-ranked head (v0.4.2)
+- Pre-write governance takes the current project's active BM25 Top-24 candidate set, then combines query-relative BM25, title similarity, and Token Jaccard; at most five explainable candidates are returned (v0.5.6)
 
 Curated-query Top-5 hit rate: 100% (quality gate ≥ 90%, see `test/recall-quality.test.ts`).
 
@@ -140,8 +151,18 @@ The Project / Global / Search / Add / Delete / Diagnostics architecture now form
 - **Complete live settings (v0.5.4)**: adjust agent injection, auto-distill, Hot Memory target/hard limits, recall defaults/maxima, session snapshots, and query cache immediately
 - **Settings integration (v0.5.4)**: the same bilingual card mounts in the Memory panel and Settings → Web UI Plugins, and redraws immediately when the page language changes
 - **Visual parity with the dsh-web-ui family (v0.5.5)**: the panel, sidebar entry, forms, cards and tabs ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), matching the task-board / ssh / skill-explorer panels shipped by dsh-web-ui-all; the center-column panel mutual-exclusion protocol is aligned too.
+- **Provenance and similar-memory governance (v0.5.6)**: display/copy/jump session and turn provenance; new records expose duplicate/conflict candidates, three score components, reasons, and three explicit resolution actions
+- **Settings and scrolling fix (v0.5.6)**: the Settings card starts collapsed and follows the family card structure; the panel keeps one scroll owner across the list, settings, Hot Memory, and diagnostics
 
 ## Screenshots
+
+**v0.5.6 Settings card**: the Memoir item under Settings → Web UI Plugins starts collapsed and matches sibling title, description, spacing, radius, and chevron geometry.
+
+![v0.5.6 Settings card](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
+
+**v0.5.6 continuous scrolling**: Memory Settings, Hot Memory preview, and diagnostics share the panel's only scroll region. The Hot Memory text shown here is a redacted demonstration.
+
+![v0.5.6 continuous Memory-panel scrolling](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-memory-scroll-zh.png)
 
 **v0.5.5 sidebar parity**: Memory now matches Task Board, SSH, and Skill Center in row height, horizontal position, icon box, and SVG size.
 
@@ -180,7 +201,7 @@ The following screenshots retain the feature history of earlier releases:
 ## Storage & Privacy
 
 ```text
-~/.dsh/dsh-memoir.json        ← structured JSON (single source of truth / SSOT)
+~/.dsh/dsh-memoir.json        ← structured JSON v4 (SSOT with trusted session/turn provenance)
 ~/.dsh/dsh-memoir.settings.json ← complete runtime overrides saved by either GUI settings surface
 <workspace>/PROJECT_MEMORY.md ← human-readable projection regenerated from the JSON (git-friendly)
 
@@ -225,6 +246,7 @@ Fields in `cordis.patch.yml` remain startup defaults. Since v0.5.4, the Memory p
 - **Windows paths**: canonical keys are fully lowercased (`C:\A` / `c:\a\` / `C:/A` share one bucket) while display paths keep the original casing (v0.4.2).
 - **GUI and Agent share one engine**: panel search and `memoir_read` use the same RetrievalEngine instead of separate filter logic (v0.4.2).
 - **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds and tune them immediately from either GUI settings surface (v0.5.4).
+- **Similarity governance, not automatic merging**: lexical similarity can identify candidates but cannot reliably decide semantic truth, so v0.5.6 always requires an explicit update, supersede, or keep-both choice.
 
 ## Use Cases
 
@@ -255,24 +277,24 @@ Each plugin has its own focus — pick per need; no "which is stronger" narrativ
 pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
 pnpm run build        # tsc builds the host + esbuild builds the client bundle
 pnpm run typecheck    # full type check (src + test)
-pnpm test             # 163 tests: store (incl. multi-process lock) / settings / snapshot / selector / retrieval / tools / routes / auto-distill / GUI mounting, stylesheet ownership, panel activation & bilingual behavior / integration / bundle protocol & purity / release notes
+pnpm test             # 171 tests: store/migrations/lock, settings, snapshot, selector, BM25/similarity governance, tools/routes, auto-distill, GUI/scrolling/bilingual behavior, integration, bundle, and release notes
 npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
 ```
 
 Quality gates: **Top-5 recall ≥ 90% · Hot Memory ≤ configured hardMax · same-session prompt-prefix stability · global recall ≤ limit · zero lost updates across processes**.
 
-v0.4.2 benchmark summary (node v22.23.2, budget 900/1200 tokens; full report in `bench/report.md`. Methodology fixed: uncached queries measure `search()` directly; cached queries warm the same query first, then time it):
+v0.5.6 benchmark summary (2026-08-27, node v24.19.0, budget 900/1200 tokens; full report in `bench/report.md`. Uncached queries measure `search()` directly; cached queries warm the same query first, then time it):
 
 | Entries | Cold load | Warm read | Hot Memory build | Index build | Uncached query | Cached query | Cache hit rate | Full markdown tokens | Injected tokens | Reduction |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 100 | 1.3 ms | 2.22 µs | 0.54 ms | 2.9 ms | 0.224 ms | 2.87 µs | 50.0% | 3870 | 902 | 76.7% |
-| 1,000 | 1.6 ms | 0.40 µs | 0.70 ms | 15.0 ms | 1.419 ms | 1.45 µs | 50.0% | 38182 | 916 | 97.6% |
-| 10,000 | 25.3 ms | 0.42 µs | 2.60 ms | 142.9 ms | 11.889 ms | 1.14 µs | 50.0% | 385807 | 902 | 99.8% |
-| 100,000 | 158.2 ms | 0.42 µs | 31.97 ms | 2238.7 ms | 153.551 ms | 1.15 µs | 50.0% | 3907057 | 917 | 100.0% |
+| 100 | 0.9 ms | 0.95 µs | 0.46 ms | 2.1 ms | 0.169 ms | 2.21 µs | 50.0% | 3908 | 902 | 76.9% |
+| 1,000 | 3.0 ms | 0.35 µs | 0.58 ms | 10.5 ms | 1.190 ms | 4.07 µs | 50.0% | 38220 | 916 | 97.6% |
+| 10,000 | 26.4 ms | 0.35 µs | 2.05 ms | 126.9 ms | 11.011 ms | 1.45 µs | 50.0% | 385845 | 902 | 99.8% |
+| 100,000 | 210.7 ms | 0.51 µs | 20.11 ms | 1679.9 ms | 126.933 ms | 1.42 µs | 50.0% | 3907095 | 917 | 100.0% |
 
 ## Implementation
 
-- **Full-stack TypeScript**: `src/host/*.ts` (store / settings / tools / retrieval / selector / snapshot / routes / autodistill / index — tsc emits `lib/*.js`) + `src/client/*.ts(x)` (esbuild emits the `lib/client.js` closure-factory bundle).
+- **Full-stack TypeScript**: `src/host/*.ts` (store / settings / tools / retrieval / similarity / governance / selector / snapshot / routes / autodistill / index — tsc emits `lib/*.js`) + `src/client/*.ts(x)` (esbuild emits the `lib/client.js` closure-factory bundle).
 - **Two-sided plugin**: the host half registers the agent tools, `/api/dsh-memoir` routes, the `agent/turn-stopping` auto-distill listener, and the per-project system-prompt injection section; the client half renders the panel. Runtime deps are official NPM SDK packages only.
 - Mounted via the `dsh.bundle.patch` manifest (`insert` row in `cordis.patch.yml`); no DSH source changes.
 - Auto-distill safety boundaries: top-level sessions only (subagents / nested delegations skipped), turns with tool activity that haven't recorded yet, aborted turns skipped, at most one steer per turn.
@@ -289,14 +311,14 @@ Bug reports must include screenshot / log evidence, a smoke test, code reference
 
 ## Release
 
-Current stable release: **v0.5.5** (2026-08-24) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.5). Full history is in [CHANGELOG.md](./CHANGELOG.md).
+Current stable release: **v0.5.6** (2026-08-27) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.6). Full history is in [CHANGELOG.md](./CHANGELOG.md).
 
 Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
 
-Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, publish to npm, then create a same-tag GitHub Release with the tarball asset. Configure either of these auth options in the repo:
+Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, publish to npm, then create a same-tag GitHub Release with the tarball asset. Authentication is OIDC-first with a token fallback:
 
 - npm Trusted Publishing: GitHub repo `Qinling-Melon-Farmers/dsh-memoir`, workflow `publish.yml`
-- GitHub Actions secret `NPM_TOKEN`: a granular token with publish rights and 2FA bypass allowed
+- GitHub Actions secret `NPM_TOKEN`: optional fallback, using a granular token with publish rights and 2FA bypass; it is read only if OIDC fails and the version is still unpublished
 
 Publishing a patch release:
 

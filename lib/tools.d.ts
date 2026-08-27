@@ -12,7 +12,7 @@
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
-import type { MemoirEntry, MemoirStore } from './store.js';
+import type { MemoirEntry, MemoirSource, MemoirStore } from './store.js';
 import type { RetrievalEngine } from './retrieval.js';
 /** One text content block (the only render shape these tools emit). */
 export declare function text(value: string): ContentBlock[];
@@ -26,14 +26,21 @@ export interface ReadToolOptions {
     defaultLimit: number;
     maxLimit: number;
 }
+/**
+ * Resolve trusted source metadata from the executing agent. The tool runtime
+ * does not expose a turn field directly, but it appends the matching
+ * tool/call event before dispatch; rootCallId also covers code-mode nested
+ * dispatches. Missing turn data degrades to session-only provenance.
+ */
+export declare function resolveMemorySource(exec: ToolRunContext | undefined): MemoirSource | undefined;
 /** Static startup values or a live provider backed by GUI settings. */
 export type ReadToolOptionsSource = ReadToolOptions | (() => ReadToolOptions);
 /** Full-detail entry line (time + label + title + content). */
 export declare function renderEntryFull(entry: MemoirEntry): string;
 /** Compact one-line entry (id + title + collapsed single-line content). */
 export declare function renderEntryCompact(entry: MemoirEntry, maxContent?: number): string;
-/** The record tool: persist one memory entry. */
-export declare function memoirRecordTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
+/** The record tool: persist one memory entry with pre-write governance. */
+export declare function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** Update one existing entry while preserving its id and creation time. */
 export declare function memoirUpdateTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */

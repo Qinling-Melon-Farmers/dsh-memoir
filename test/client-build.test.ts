@@ -66,11 +66,15 @@ test('client bundle requires only platform modules (purity)', () => {
   assert.ok(required.has('react-dom/client'), 'createRoot comes from the module table')
 })
 
-test('client bundle carries v0.5.5 semantic, stylesheet ownership, and Settings contracts', () => {
+test('client bundle carries v0.5.6 provenance, governance, and Settings contracts', () => {
   const source = readFileSync(OUT, 'utf8')
   assert.ok(source.includes('data-dsh-plugin'), 'React surfaces expose their plugin owner')
   assert.ok(source.includes('data-dsh-part'), 'React surfaces expose stable part names')
   assert.ok(source.includes('data-dsh-memoir-style'), 'the stylesheet uses a collision-free ownership marker')
   assert.ok(source.includes('web-ui.plugin.item'), 'complete settings card registers into dsh-web-ui Settings')
   assert.ok(source.includes('hotMemoryTokens'), 'complete runtime settings are bundled')
+  assert.ok(source.includes('memoir-settings-slot-chevron'), 'Settings card uses the family disclosure chrome')
+  assert.ok(source.includes('memoir-scroll-region'), 'panel carries one explicit vertical scroll owner')
+  assert.ok(source.includes('needs-resolution'), 'similar-memory resolution UI is bundled')
+  assert.ok(source.includes('source.turn'), 'source turn controls are bundled')
 })

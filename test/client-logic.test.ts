@@ -104,11 +104,12 @@ test('MemoirApi.record posts JSON with the CSRF content-type', async () => {
   const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = []
   const fetchImpl = async (url: string, init?: unknown) => {
     calls.push({ url, init: init as { method: string; headers: Record<string, string>; body: string } })
-    return envelopeResponse(200, JSON.stringify({ ok: true, value: { entry: { id: 'e1' } } }))
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: { action: 'recorded', recorded: true, entry: { id: 'e1' }, candidates: [] } }))
   }
   const api = new MemoirApi(fetchImpl)
   const value = await api.record({ path: 'C:\\x', section: 'work', title: 't', content: 'c' })
-  assert.equal(value.entry.id, 'e1')
+  assert.equal(value.entry?.id, 'e1')
+  assert.equal(value.action, 'recorded')
   assert.equal(calls[0]?.url, '/api/dsh-memoir/entries')
   assert.equal(calls[0]?.init?.method, 'POST')
   assert.match(calls[0]?.init?.headers?.['content-type'] ?? '', /application\/json/)

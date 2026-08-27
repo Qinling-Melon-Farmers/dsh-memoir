@@ -26,11 +26,10 @@ jobs:
           version: 10.17.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           package-manager-cache: false
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -53,27 +52,56 @@ jobs:
       - name: Use npm 11 for trusted publishing
         run: npm install --global npm@11
 
-      - name: Select npm authentication mode
-        id: npm-auth
+      - name: Publish with trusted publishing (token fallback)
         shell: bash
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [[ -n "$NPM_TOKEN" ]]; then
-            echo "has-token=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-token=false" >> "$GITHUB_OUTPUT"
+          # OIDC is always the primary path. Merely configuring NPM_TOKEN must
+          # not disable trusted publishing or make an expired token fatal.
+          set +e
+          npm publish --access public --provenance
+          oidc_status=$?
+          set -e
+          if [[ "$oidc_status" -eq 0 ]]; then
+            exit 0
           fi
 
-      - name: Publish with npm trusted publishing
-        if: steps.npm-auth.outputs.has-token == 'false'
-        run: npm publish --access public --provenance
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          if [[ "$(npm view "$package_name@$package_version" version 2>/dev/null || true)" == "$package_version" ]]; then
+            echo "npm already exposes $package_name@$package_version; treating the publish as complete."
+            exit 0
+          fi
+          if [[ -z "$NPM_TOKEN" ]]; then
+            echo "::error::Trusted publishing failed and no NPM_TOKEN fallback is configured."
+            exit "$oidc_status"
+          fi
+          echo "Trusted publishing failed; retrying with the repository token fallback."
+          fallback_npmrc="$(mktemp)"
+          trap 'rm -f "$fallback_npmrc"' EXIT
+          printf '%s\n' \
+            'registry=https://registry.npmjs.org/' \
+            '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' \
+            > "$fallback_npmrc"
+          NPM_CONFIG_USERCONFIG="$fallback_npmrc" \
+            NODE_AUTH_TOKEN="$NPM_TOKEN" \
+            npm publish --access public --provenance
 
-      - name: Publish with npm token
-        if: steps.npm-auth.outputs.has-token == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+      - name: Verify npm registry publication
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          for attempt in 1 2 3 4 5 6; do
+            if [[ "$(npm view "$package_name@$package_version" version 2>/dev/null || true)" == "$package_version" ]]; then
+              echo "Verified $package_name@$package_version on npm."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$package_name@$package_version did not become visible on npm."
+          exit 1
 
       - name: Pack release asset
         if: success()

@@ -3,7 +3,7 @@
  *
  * 把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为项目持久化记忆，
  * 并作为未来 AGENTS 的行动指南：
- *   - 项目级记忆：<工作区>/PROJECT_MEMORY.md（随 git 提交，会话开始时自动注入）
+ *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
  *   - 全局索引：~/.dsh/dsh-memoir.json（结构化源数据，跨项目检索）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
  *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
@@ -16,7 +16,7 @@
  *     最大化 prompt-prefix cache 命中）；新 session 才重建。
  *
  * 提供的 agent 工具：
- *   - memoir_record(section, title?, content)  记录一条记忆
+ *   - memoir_record(section, title?, content, resolution?)  预检并记录一条记忆
  *   - memoir_update(id, patch)  编辑条目并更新生命周期
  *   - memoir_read(scope?, section?, query?, limit?, detail?)  读取记忆
  */
@@ -225,7 +225,7 @@ export function apply(ctx: Context, config?: Config): void {
 
   ctx.effect(() => {
     const tools = [
-      memoirRecordTool(store),
+      memoirRecordTool(store, retrieval),
       memoirUpdateTool(store),
       memoirReadTool(store, () => {
         const current = liveSettings.get().settings

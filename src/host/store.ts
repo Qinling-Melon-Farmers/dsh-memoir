@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
 /** Global index format version. */
-export const FORMAT_VERSION = 3
+export const FORMAT_VERSION = 4
 
 /** Project memory file name (workspace root, git-committable). */
 export const PROJECT_FILE = 'PROJECT_MEMORY.md'
@@ -50,6 +50,14 @@ export type SectionKey = 'work' | 'lessons' | 'actions' | 'note'
 export type MemoirStatus = 'active' | 'superseded' | 'archived'
 export const MEMOIR_STATUSES: MemoirStatus[] = ['active', 'superseded', 'archived']
 
+/** Trusted origin of one memory entry (v0.5.6 / store format v4). */
+export interface MemoirSource {
+  /** DSH session / agent id that produced the memory. */
+  sessionId?: string
+  /** DSH turn number containing the memoir_record call. */
+  turnId?: number
+}
+
 /** One structured memory entry. */
 export interface MemoirEntry {
   id: string
@@ -57,7 +65,7 @@ export interface MemoirEntry {
   title?: string
   content: string
   time: number
-  sessionId?: string
+  source?: MemoirSource
   // Optional in the TypeScript shape for source compatibility with legacy
   // callers; normalize() materializes these fields before persistence.
   importance?: number
@@ -370,6 +378,24 @@ function normalizedStrings(value: unknown): string[] | undefined {
   return values.length > 0 ? values : undefined
 }
 
+/** Normalize v4 source metadata, lazily lifting the legacy top-level sessionId. */
+function normalizedSource(value: unknown, legacySessionId?: unknown): MemoirSource | undefined {
+  const source = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+  const sessionId = typeof source.sessionId === 'string' && source.sessionId.trim() !== ''
+    ? source.sessionId.trim()
+    : typeof legacySessionId === 'string' && legacySessionId.trim() !== ''
+      ? legacySessionId.trim()
+      : undefined
+  const turnId = Number.isSafeInteger(source.turnId) && (source.turnId as number) >= 1
+    ? source.turnId as number
+    : undefined
+  if (sessionId === undefined && turnId === undefined) return undefined
+  return {
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(turnId !== undefined ? { turnId } : {}),
+  }
+}
+
 /**
  * The structured memory store.
  */
@@ -556,7 +582,7 @@ export class MemoirStore {
               ...(typeof e.title === 'string' && e.title !== '' ? { title: e.title } : {}),
               content: typeof e.content === 'string' ? e.content : '',
               time: typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now(),
-              ...(typeof e.sessionId === 'string' && e.sessionId !== '' ? { sessionId: e.sessionId } : {}),
+              ...(normalizedSource(e.source, e.sessionId) !== undefined ? { source: normalizedSource(e.source, e.sessionId) } : {}),
               importance: normalizedImportance(e.importance),
               pinned: e.pinned === true,
               status: e.status === 'active' || e.status === 'superseded' || e.status === 'archived' ? e.status : 'active',
@@ -652,7 +678,7 @@ export class MemoirStore {
   }
 
   /** Append one entry and regenerate the project markdown. Returns the entry. */
-  record(cwd: string, payload: EntryPayload, sessionId?: string): MemoirEntry {
+  record(cwd: string, payload: EntryPayload, source?: MemoirSource | string): MemoirEntry {
     const error = validateEntryPayload(payload)
     if (error !== undefined) throw new Error(error)
     return this.mutateLocked(() => {
@@ -666,13 +692,17 @@ export class MemoirStore {
         updatedAt: Date.now(),
         entries: [],
       })
+      const normalizedOrigin = normalizedSource(
+        typeof source === 'object' && source !== null ? source : undefined,
+        typeof source === 'string' ? source : undefined,
+      )
       const entry: MemoirEntry = {
         id: mintId(),
         section: payload.section,
         ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
         content: payload.content.trim(),
         time: Date.now(),
-        ...(typeof sessionId === 'string' && sessionId !== '' ? { sessionId } : {}),
+        ...(normalizedOrigin !== undefined ? { source: normalizedOrigin } : {}),
         importance: normalizedImportance(payload.importance),
         pinned: payload.pinned === true,
         status: 'active',

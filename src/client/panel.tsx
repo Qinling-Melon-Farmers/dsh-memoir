@@ -6,7 +6,7 @@
 
 import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SECTION_KEYS } from './i18n.js'
-import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireMemoirSettings, WireProject, WireSearchResult } from './api.js'
+import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireMemoirSettings, WireProject, WireRecordResolution, WireRecordResult, WireSearchResult, WireSimilarityCandidate } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
@@ -16,6 +16,7 @@ interface PanelProps {
   api: MemoirApi
   cwdTracker: CwdTracker
   t: (key: string) => string
+  openSource?: (sessionId: string, turnId?: number) => void
 }
 
 type EntryPatch = {
@@ -32,11 +33,50 @@ type EntryPatch = {
 const parseList = (value: string): string[] =>
   [...new Set(value.split(/[,，\n]/).map((item) => item.trim()).filter((item) => item !== ''))]
 
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard !== undefined) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand('copy')
+    textarea.remove()
+    return copied
+  } catch {
+    return false
+  }
+}
+
 /** One entry's meta line: lifecycle, importance, tags and provenance. */
-function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string }) {
+function EntryMeta({ entry, t, openSource }: {
+  entry: WireEntry
+  t: (key: string) => string
+  openSource?: (sessionId: string, turnId?: number) => void
+}) {
+  const [copied, setCopied] = useState(false)
   const when = new Date(entry.time)
   const pad = (n: number) => String(n).padStart(2, '0')
   const timeText = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`
+  const source = entry.source ?? (entry.sessionId === undefined ? undefined : { sessionId: entry.sessionId })
+  const sourceText = source === undefined
+    ? ''
+    : [
+        source.sessionId === undefined ? undefined : `sessionId=${source.sessionId}`,
+        source.turnId === undefined ? undefined : `turnId=${source.turnId}`,
+      ].filter(Boolean).join('\n')
+  const copySource = () => {
+    void copyText(sourceText).then((ok) => {
+      if (!ok) return
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1_500)
+    })
+  }
   return (
     <div className="memoir-entry-meta">
       <span>{timeText}</span>
@@ -50,14 +90,21 @@ function EntryMeta({ entry, t }: { entry: WireEntry; t: (key: string) => string 
       {(entry.supersedes?.length ?? 0) > 0
         ? <span className="memoir-chip" title={entry.supersedes?.join('\n')}>{t('form.supersedes')}: {entry.supersedes?.length}</span>
         : null}
-      {entry.sessionId !== undefined
-        ? <span title={`${t('session')}: ${entry.sessionId}`}>{entry.sessionId.slice(0, 12)}</span>
+      {source !== undefined
+        ? <span className="memoir-source">
+            {source.sessionId !== undefined
+              ? <button type="button" className="memoir-source-link" title={t('source.open')} onClick={() => openSource?.(source.sessionId!, source.turnId)}>
+                  {t('source.label')}: {source.sessionId.slice(0, 10)}{source.turnId === undefined ? '' : ` · ${t('source.turn')} ${source.turnId}`}
+                </button>
+              : <span>{t('source.turn')} {source.turnId}</span>}
+            <button type="button" className="memoir-source-copy" title={t('source.copy')} onClick={copySource}>{copied ? t('source.copied') : '⧉'}</button>
+          </span>
         : null}
     </div>
   )
 }
 
-function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; score?: number }) {
+function EntryCard({ entry, t, onDelete, onUpdate, openSource, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; openSource?: (sessionId: string, turnId?: number) => void; score?: number }) {
   const [editing, setEditing] = useState(false)
   const [section, setSection] = useState<SectionKey>(entry.section)
   const [title, setTitle] = useState(entry.title ?? '')
@@ -90,7 +137,7 @@ function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; 
             <button type="button" className="memoir-iconbtn" onClick={() => onUpdate(entry, { status: entry.status === 'archived' ? 'active' : 'archived' })}>{entry.status === 'archived' ? t('lifecycle.restore') : t('lifecycle.archive')}</button>
           </div>
         : null}
-      <EntryMeta entry={entry} t={t} />
+      <EntryMeta entry={entry} t={t} openSource={openSource} />
       {score !== undefined
         ? <span className="memoir-score" title={t('search.ranked')}>{score.toFixed(3)}</span>
         : null}
@@ -140,7 +187,7 @@ function EntryCard({ entry, t, onDelete, onUpdate, score }: { entry: WireEntry; 
 }
 
 /** Sectioned entry list in canonical order. */
-function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void }) {
+function SectionedEntries({ entries, t, onDelete, onUpdate, openSource }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; openSource?: (sessionId: string, turnId?: number) => void }) {
   const groups = useMemo(
     () => SECTION_KEYS.map((key) => ({ key, entries: entries.filter((e) => e.section === key) })).filter((g) => g.entries.length > 0),
     [entries],
@@ -161,7 +208,7 @@ function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEnt
             <span className="memoir-count">({group.entries.length})</span>
           </div>
           {group.entries.map((entry) => (
-            <EntryCard key={entry.id} entry={entry} t={t} onDelete={onDelete} onUpdate={onUpdate} />
+            <EntryCard key={entry.id} entry={entry} t={t} onDelete={onDelete} onUpdate={onUpdate} openSource={openSource} />
           ))}
         </Fragment>
       ))}
@@ -174,13 +221,14 @@ function SectionedEntries({ entries, t, onDelete, onUpdate }: { entries: WireEnt
  * the project tab or grouped by project for the global tab. Scores are
  * shown as chips so the ranking is inspectable.
  */
-function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
+function RankedResults({ results, pending, grouped, t, onDelete, onUpdate, openSource }: {
   results: WireSearchResult[]
   pending: boolean
   grouped: boolean
   t: (key: string) => string
   onDelete: (entry: WireEntry, path: string) => void
   onUpdate?: (entry: WireEntry, path: string, patch: EntryPatch) => void
+  openSource?: (sessionId: string, turnId?: number) => void
 }) {
   if (pending) return <div className="memoir-empty">…</div>
   if (results.length === 0) {
@@ -196,7 +244,7 @@ function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
       <Fragment>
         <div className="memoir-ranked-note">{t('search.ranked')}</div>
         {results.map((r) => (
-          <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} onUpdate={(entry, patch) => onUpdate?.(entry, r.projectPath, patch)} />
+          <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} onUpdate={(entry, patch) => onUpdate?.(entry, r.projectPath, patch)} openSource={openSource} />
         ))}
       </Fragment>
     )
@@ -216,7 +264,7 @@ function RankedResults({ results, pending, grouped, t, onDelete, onUpdate }: {
             <span className="memoir-project-path">{path}</span>
           </div>
           {bucket.map((r) => (
-            <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, path)} onUpdate={(entry, patch) => onUpdate?.(entry, path, patch)} />
+            <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, path)} onUpdate={(entry, patch) => onUpdate?.(entry, path, patch)} openSource={openSource} />
           ))}
         </div>
       ))}
@@ -303,6 +351,56 @@ function AddForm({ t, onSubmit, onCancel }: { t: (key: string) => string; onSubm
   )
 }
 
+function SimilarityCandidateCard({ candidate, t, busy, onResolve }: {
+  candidate: WireSimilarityCandidate
+  t: (key: string) => string
+  busy: boolean
+  onResolve: (resolution: WireRecordResolution, targetId: string) => void
+}) {
+  return (
+    <div className="memoir-similarity-candidate">
+      <div className="memoir-similarity-head">
+        <span className={`memoir-chip memoir-similarity-${candidate.kind}`}>{t(`similarity.kind.${candidate.kind}`)}</span>
+        <strong>{candidate.entry.title ?? candidate.entry.content.slice(0, 100)}</strong>
+        <span className="memoir-score-static">{Math.round(candidate.score * 100)}%</span>
+      </div>
+      {candidate.entry.title !== undefined ? <div className="memoir-similarity-content">{candidate.entry.content}</div> : null}
+      <div className="memoir-similarity-components">
+        BM25 {Math.round(candidate.components.bm25 * 100)}% · {t('similarity.titleScore')} {Math.round(candidate.components.title * 100)}% · Jaccard {Math.round(candidate.components.tokenJaccard * 100)}%
+      </div>
+      <div className="memoir-similarity-reasons">
+        {candidate.reasons.map((reason) => <span className="memoir-chip" key={reason}>{t(`similarity.reason.${reason}`)}</span>)}
+      </div>
+      <div className="memoir-form-actions">
+        <button type="button" className="memoir-iconbtn" disabled={busy} onClick={() => onResolve('update', candidate.entry.id)}>{t('similarity.update')}</button>
+        <button type="button" className="memoir-primary" disabled={busy} onClick={() => onResolve('supersede', candidate.entry.id)}>{t('similarity.supersede')}</button>
+      </div>
+    </div>
+  )
+}
+
+function SimilarityResolution({ result, t, busy, onResolve, onBack }: {
+  result: WireRecordResult
+  t: (key: string) => string
+  busy: boolean
+  onResolve: (resolution: WireRecordResolution, targetId?: string) => void
+  onBack: () => void
+}) {
+  return (
+    <div className="memoir-similarity" data-dsh-part="similarity-resolution">
+      <div className="memoir-similarity-title">{t('similarity.title')}</div>
+      <div className="memoir-settings-description">{t('similarity.description')}</div>
+      {result.candidates.map((candidate) => (
+        <SimilarityCandidateCard key={candidate.entry.id} candidate={candidate} t={t} busy={busy} onResolve={onResolve} />
+      ))}
+      <div className="memoir-similarity-footer">
+        <button type="button" className="memoir-iconbtn" disabled={busy} onClick={onBack}>{t('similarity.back')}</button>
+        <button type="button" className="memoir-iconbtn" disabled={busy} onClick={() => onResolve('force-record')}>{t('similarity.force')}</button>
+      </div>
+    </div>
+  )
+}
+
 type NumericSettingsKey =
   | 'autoDistillEvery'
   | 'autoDistillCooldownMin'
@@ -327,12 +425,14 @@ const NUMERIC_SETTINGS: NumericSettingsKey[] = [
 ]
 
 /** Persistent, live complete settings shared by the panel and Settings page. */
-export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen = false }: {
+export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen = false, alwaysOpen = false, showDescription = true }: {
   api: MemoirApi
   t: (key: string) => string
   refreshKey: number
   onChanged: () => void
   defaultOpen?: boolean
+  alwaysOpen?: boolean
+  showDescription?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [settings, setSettings] = useState<WireMemoirSettings | null>(null)
@@ -416,15 +516,17 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
 
   return (
     <div className="memoir-settings" data-dsh-part="settings">
-      <button type="button" className="memoir-diagnostics-toggle" onClick={() => setOpen((value) => !value)}>
-        {t('settings.title')} {open ? '▾' : '▸'}
-      </button>
-      {open
+      {!alwaysOpen
+        ? <button type="button" className="memoir-diagnostics-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+            {t('settings.title')} {open ? '▾' : '▸'}
+          </button>
+        : null}
+      {alwaysOpen || open
         ? settings === null
           ? <div className="memoir-settings-body">{error ?? '…'}</div>
           : (
               <div className="memoir-settings-body">
-                <div className="memoir-settings-description">{t('settings.description')}</div>
+                {showDescription ? <div className="memoir-settings-description">{t('settings.description')}</div> : null}
                 <label className="memoir-settings-switch">
                   <input
                     type="checkbox"
@@ -489,7 +591,7 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
   )
 }
 
-export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
+export function MemoirPanel({ controller, api, cwdTracker, t, openSource }: PanelProps) {
   const [, setLanguage] = useState(document.documentElement.lang)
   useEffect(() => {
     const observer = new MutationObserver(() => setLanguage(document.documentElement.lang))
@@ -502,6 +604,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
   const [statusFilter, setStatusFilter] = useState<MemoirStatus | 'all'>('active')
   const [sectionFilter, setSectionFilter] = useState<SectionKey | 'all'>('all')
   const [formOpen, setFormOpen] = useState(false)
+  const [pendingRecord, setPendingRecord] = useState<{ payload: AddPayload; result: WireRecordResult } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [project, setProject] = useState<WireProject | null>(null)
   const [projects, setProjects] = useState<WireProject[]>([])
@@ -593,10 +696,15 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
       .finally(() => setBusy(false))
   }
 
-  const onRecord = (payload: AddPayload) => {
+  const onRecord = (payload: AddPayload, resolution?: WireRecordResolution, targetId?: string) => {
     setBusy(true)
-    api.record({ path: cwd, ...payload })
-      .then(() => {
+    api.record({ path: cwd, ...payload, ...(resolution !== undefined ? { resolution } : {}), ...(targetId !== undefined ? { targetId } : {}) })
+      .then((result) => {
+        if (result.action === 'needs-resolution') {
+          setPendingRecord({ payload, result })
+          return
+        }
+        setPendingRecord(null)
         setFormOpen(false)
         reload()
       })
@@ -647,14 +755,26 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
           </select>
         </label>
         {tab === 'project' && cwd !== ''
-          ? <button type="button" className="memoir-primary" onClick={() => setFormOpen((v) => !v)}>{formOpen ? t('toolbar.cancel') : t('toolbar.add')}</button>
+          ? <button type="button" className="memoir-primary" onClick={() => {
+              setFormOpen((value) => !value)
+              setPendingRecord(null)
+            }}>{formOpen ? t('toolbar.cancel') : t('toolbar.add')}</button>
           : null}
       </div>
       {formOpen && tab === 'project' && cwd !== ''
-        ? <AddForm t={t} onSubmit={onRecord} onCancel={() => setFormOpen(false)} />
+        ? pendingRecord === null
+          ? <AddForm t={t} onSubmit={onRecord} onCancel={() => setFormOpen(false)} />
+          : <SimilarityResolution
+              result={pendingRecord.result}
+              t={t}
+              busy={busy}
+              onResolve={(resolution, targetId) => onRecord(pendingRecord.payload, resolution, targetId)}
+              onBack={() => setPendingRecord(null)}
+            />
         : null}
       {error !== null ? <div className="memoir-error">{error}</div> : null}
-      <div className="memoir-body">
+      <div className="memoir-scroll-region" data-dsh-part="scroll-region">
+        <div className="memoir-body">
         {loading
           ? <div className="memoir-empty">…</div>
           : q !== ''
@@ -664,6 +784,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                   pending={searchResults === null}
                   grouped={tab === 'global'}
                   t={t}
+                  openSource={openSource}
                   onDelete={(entry, path) => onDelete(entry, path)}
                   onUpdate={onUpdate}
                 />
@@ -683,7 +804,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                         <div className="memoir-empty-hint">{t('empty.projectHint')}</div>
                       </div>
                     )
-                  : <SectionedEntries entries={projectEntries} t={t} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} onUpdate={(entry, patch) => onUpdate(entry, project?.path ?? cwd, patch)} />
+                  : <SectionedEntries entries={projectEntries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} onUpdate={(entry, patch) => onUpdate(entry, project?.path ?? cwd, patch)} />
               : projects.length === 0
                 ? (
                     <div className="memoir-empty">
@@ -704,14 +825,14 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
                         <div className="memoir-project-meta">
                           {`${t('updated')} ${when.toISOString().slice(0, 16).replace('T', ' ')} · ${entries.length} ${t('entries')}`}
                         </div>
-                        <SectionedEntries entries={entries} t={t} onDelete={(entry) => onDelete(entry, p.path)} onUpdate={(entry, patch) => onUpdate(entry, p.path, patch)} />
+                        <SectionedEntries entries={entries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, p.path)} onUpdate={(entry, patch) => onUpdate(entry, p.path, patch)} />
                       </div>
                     )
                   })}
-      </div>
-      {busy ? <div className="memoir-empty">…</div> : null}
-      <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
-      <div className="memoir-inspector" data-dsh-part="hot-memory">
+        </div>
+        {busy ? <div className="memoir-empty memoir-busy">…</div> : null}
+        <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
+        <div className="memoir-inspector" data-dsh-part="hot-memory">
         <button type="button" className="memoir-diagnostics-toggle" onClick={() => setInspectorOpen((v) => !v)}>
           {t('inspector.title')} {inspectorOpen ? '▾' : '▸'}
         </button>
@@ -720,8 +841,8 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
             ? <div className="memoir-inspector-body">{t('inspector.empty')}</div>
             : <pre className="memoir-inspector-body">{hotMemory.text}</pre>
           : null}
-      </div>
-      <div className="memoir-diagnostics" data-dsh-part="diagnostics">
+        </div>
+        <div className="memoir-diagnostics" data-dsh-part="diagnostics">
         <button type="button" className="memoir-diagnostics-toggle" onClick={() => setDiagOpen((v) => !v)}>
           {t('diag.title')} {diagOpen ? '▾' : '▸'}
         </button>
@@ -744,6 +865,7 @@ export function MemoirPanel({ controller, api, cwdTracker, t }: PanelProps) {
               </div>
             )
           : null}
+        </div>
       </div>
     </div>
   )

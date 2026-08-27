@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
-  "description": "Cache-aware local project memory for DeepSeek Harness: zero regular runtime dependencies; local JSON SSOT plus PROJECT_MEMORY.md; bounded session-frozen Hot Memory; inverted-index BM25 recall; lifecycle, tags and supersedes; bilingual Web GUI with project/global management, diagnostics, and complete live settings in the Memory panel and Settings page; no embeddings, external services, or DSH source changes.",
-  "version": "0.5.5",
+  "description": "DeepSeek Harness 本地项目记忆 / Local project memory: zero regular runtime dependencies, bounded session-frozen Hot Memory, BM25 recall/cache, lifecycle, provenance, duplicate/conflict governance, and a bilingual Web GUI.",
+  "version": "0.5.6",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -51,11 +51,6 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "npm run build && node --test \"test/*.test.ts\"",
     "bench": "npm run build && node bench/bench.mjs"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   },
   "files": [
     "lib/*.js",

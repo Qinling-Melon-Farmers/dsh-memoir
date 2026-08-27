@@ -111,10 +111,16 @@ for (const n of sizes) {
   rmSync(dir, { recursive: true, force: true })
 }
 
-console.log('# dsh-memoir benchmark report')
-console.log()
-console.log('> 生成时间: ' + new Date().toISOString() + ' · node ' + process.version + ' · budget ' + DEFAULT_MEMORY_BUDGET.targetTokens + '/' + DEFAULT_MEMORY_BUDGET.hardMaxTokens + ' tokens')
-console.log()
-console.log('| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 未缓存查询 | 缓存查询 | 缓存命中率 | 全量 markdown tokens | 注入 tokens | 降幅 | 选中/候选 | 快照复用(1000次构建数) |')
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|')
-for (const row of rows) console.log('| ' + row.join(' | ') + ' |')
+const report = [
+  '# dsh-memoir benchmark report',
+  '',
+  '> 生成时间: ' + new Date().toISOString() + ' · node ' + process.version + ' · budget ' + DEFAULT_MEMORY_BUDGET.targetTokens + '/' + DEFAULT_MEMORY_BUDGET.hardMaxTokens + ' tokens',
+  '',
+  '| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 未缓存查询 | 缓存查询 | 缓存命中率 | 全量 markdown tokens | 注入 tokens | 降幅 | 选中/候选 | 快照复用(1000次构建数) |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+  ...rows.map((row) => '| ' + row.join(' | ') + ' |'),
+  '',
+].join('\n')
+
+writeFileSync(new URL('./report.md', import.meta.url), report, 'utf8')
+process.stdout.write(report)

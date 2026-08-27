@@ -75,7 +75,7 @@ test('record appends, returns a full entry, persists, and regenerates the file',
     assert.equal(entry.section, 'lessons')
     assert.equal(entry.title, '坑')
     assert.equal(entry.content, '先备份再改')
-    assert.equal(entry.sessionId, 's-1')
+    assert.deepEqual(entry.source, { sessionId: 's-1' })
     assert.ok(typeof entry.id === 'string' && entry.id.length > 0)
     assert.ok(Number.isFinite(entry.time))
 
@@ -195,6 +195,25 @@ test('legacy v1 entries (no id) are normalized with minted ids', () => {
   assert.equal(store.load().version, FORMAT_VERSION)
 })
 
+test('v3 top-level sessionId is lazily lifted into the v4 source object', () => {
+  const path = makeTempStorePath()
+  writeFileSync(path, JSON.stringify({
+    version: 3,
+    projects: {
+      'C:\\old': {
+        path: 'C:\\old',
+        title: 'old',
+        updatedAt: 1000,
+        entries: [{ id: 'e-source', section: 'work', content: 'legacy source', time: 1000, sessionId: 'session-v3' }],
+      },
+    },
+  }))
+  const store = new MemoirStore(path)
+  assert.deepEqual(store.entries('C:\\old')[0]?.source, { sessionId: 'session-v3' })
+  assert.equal(store.load().version, FORMAT_VERSION)
+  assert.match(readFileSync(path, 'utf8'), /"version":3/, 'read-only normalization does not rewrite disk')
+})
+
 test('unknown sections in legacy data fall back to note', () => {
   const path = makeTempStorePath()
   writeFileSync(path, JSON.stringify({
@@ -283,7 +302,7 @@ test('withFileLock conservatively reclaims an old dead-owner lock', () => {
   }
 })
 
-test('v2 entries migrate to lifecycle defaults and first mutation persists v3', () => {
+test('v2 entries migrate to lifecycle defaults and first mutation persists the current format', () => {
   const path = makeTempStorePath()
   writeFileSync(path, JSON.stringify({
     version: 2,
@@ -298,7 +317,7 @@ test('v2 entries migrate to lifecycle defaults and first mutation persists v3', 
   assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 2, 'startup read does not rewrite the legacy file')
   store.record('C:\\legacy', { section: 'lessons', content: 'new', importance: 5, pinned: true, supersedes: ['old-id'] })
   const persisted = JSON.parse(readFileSync(path, 'utf8')) as { version: number; projects: Record<string, { entries: Array<{ id: string; status: string }> }> }
-  assert.equal(persisted.version, 3)
+  assert.equal(persisted.version, FORMAT_VERSION)
   assert.equal(persisted.projects['c:/legacy']?.entries.find((entry) => entry.id === 'old-id')?.status, 'superseded')
 })
 
