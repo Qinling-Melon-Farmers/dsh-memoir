@@ -1,6 +1,6 @@
 {
   "name": "dsh-memoir",
-  "description": "DeepSeek Harness 本地项目记忆 / Local project memory: zero regular runtime dependencies, bounded session-frozen Hot Memory, BM25 recall/cache, lifecycle, provenance, duplicate/conflict governance, and a bilingual Web GUI.",
+  "description": "DeepSeek Harness (DSH) local-first cross-session project memory: bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, lifecycle and bilingual Web GUI; no embeddings, external service or bundled runtime dependencies.",
   "version": "0.5.6",
   "type": "module",
   "engines": {
@@ -62,16 +62,31 @@
   ],
   "license": "Apache-2.0",
   "keywords": [
+    "ai-agent",
+    "agent-memory",
+    "bm25",
+    "cache-aware",
+    "cross-session",
+    "deepseek",
     "dsh",
     "deepseek-harness",
     "dsh-plugin",
+    "hot-memory",
+    "local-first",
     "memory",
+    "project-memory",
     "lessons",
     "session",
-    "agent"
+    "agent",
+    "typescript",
+    "web-ui"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Qinling-Melon-Farmers/dsh-memoir.git"
+  },
+  "homepage": "https://github.com/Qinling-Melon-Farmers/dsh-memoir#readme",
+  "bugs": {
+    "url": "https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues"
   }
 }

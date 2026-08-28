@@ -6,11 +6,15 @@
 
 ### 中文
 
-- 暂无。
+- 重构 README 中英双语信息架构：首屏突出 npm 安装、local-first、零捆绑运行时依赖、有界缓存友好 Hot Memory、BM25 召回/缓存、来源与生命周期等差异化能力；发布历史下沉到更新日志。
+- 新增稳定版与 DSH alpha 源码分支兼容矩阵、自动蒸馏真实语义、重要度默认值、存储安全边界、精简基准与 FAQ，方便用户和 Agent 判断是否适合安装。
+- 优化 npm package description 与搜索关键词，并同步更新 GitHub About、Topics 和 npm 主页链接，提高中文/英文及 Agent 搜索场景下的可发现性。
 
 ### English
 
-- None.
+- Reworked the bilingual README information architecture so the first screen leads with npm installation and the differentiators: local-first storage, zero bundled runtime dependencies, bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, and lifecycle. Version history now stays in the changelog.
+- Added a stable/DSH-alpha source compatibility matrix, precise automatic-distillation semantics, the neutral importance default, storage security boundaries, a concise benchmark, and an FAQ so humans and agents can decide whether the plugin fits before installing.
+- Improved the npm package description and search keywords, with matching GitHub About, Topics, and npm homepage metadata for better Chinese, English, and agent-driven discovery.
 
 ## [0.5.6] - 2026-08-27
 

@@ -1,335 +1,233 @@
 # dsh-memoir
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
+[![CI](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/dsh-memoir.svg)](./LICENSE)
 
-[中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [GitHub Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
+[中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
-**dsh-memoir is a local project-memory layer for DeepSeek Harness: it persists an agent's work conclusions, lessons learned, and next actions, then carries them across sessions through bounded Hot Memory injection, on-demand ranked recall, and Web GUI management.**
+**A local-first, cross-session project-memory plugin for DeepSeek Harness (DSH).** It persists an agent's confirmed work, lessons, and next actions, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through local BM25 ranking.
 
-> Cache-aware local project memory for DeepSeek Harness.
-
-- **Local-only** — all data stays on your machine (`~/.dsh/dsh-memoir.json` + per-project `PROJECT_MEMORY.md`)
-- **Zero regular runtime dependencies** — the npm package has no `dependencies`; its core relies only on DSH platform contracts and the Node.js standard library
-- **Zero external memory service** — no vector database, no embedding API, no cloud memory service
-- **Bounded hot-memory injection** — token-budgeted Hot Memory is injected into the system prompt (default 900/1200)
-- **Ranked local recall** — inverted index + BM25 local ranked retrieval; `memoir_read` fetches long-tail history on demand
-- **Traceable and duplicate-aware** — trusted session/turn provenance plus explainable pre-write duplicate/conflict candidates; the caller explicitly updates, supersedes, or keeps both
-- **Web GUI** — a bilingual sidebar panel with complete lifecycle editing, project/global browsing, BM25 search, Hot Memory, diagnostics, and live settings
-
-## Quick Start
+No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
 ```bash
-# install into the web profile from npm (recommended)
-dsh plugin --profile web add dsh-memoir
-
-# or install latest source from GitHub
-dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
-
-# or local development (after cloning)
-dsh plugin --profile web add link:/absolute/path/dsh-memoir
+dsh plugin --profile web add dsh-memoir@latest
 ```
 
-Restart DSH to take effect (`dsh web`), then use it normally:
+Restart `dsh web`. Memory remains local and is not automatically deleted when the plugin is updated or removed.
+
+## Why dsh-memoir
+
+| Capability | What you get |
+| --- | --- |
+| Local-first storage | A JSON single source of truth plus per-project `PROJECT_MEMORY.md`; no memory upload or external service |
+| Automatic distill reminder | Reminds the top-level agent after a worked turn, then persists transparently through `memoir_record`; skips idle, aborted, subagent, and already-recorded turns |
+| Bounded Hot Memory | Only high-value memory enters the system prompt under a hard token limit; a frozen session prefix improves prompt-prefix cache hits |
+| BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
+| Governable memory | Importance, pinning, tags, archive/restore, and supersede lifecycle; similar writes require an explicit update, replacement, or keep-both decision |
+| Provenance | Agent writes retain trusted session/turn sources; the Web panel can copy and make a best-effort jump to the original session |
+| Complete Web GUI | Bilingual project/global browsing, ranked search, editing, Hot Memory inspection, diagnostics, and live settings |
+
+It fits personal and local development workflows where a new agent should continue understanding a project. It is not a raw chat backup, multi-user cloud sync service, or vector-semantic knowledge base.
+
+![dsh-memoir memory management, settings, and Hot Memory](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-memory-scroll-zh.png)
+
+## How it works
 
 ```text
-use the Agent as usual
-      ↓
-end of each worked turn: an automatic distill reminder
-      ↓
-memoir_record persists work / lessons / next steps
-      ↓
-future sessions auto-inherit Hot Memory (bounded, ranked, frozen per session)
-      ↓
-need long-tail history? memoir_read (local relevance-ranked recall)
+worked turn
+    │  automatic distill reminder
+    ▼
+memoir_record / memoir_update
+    │
+    ├── ~/.dsh/dsh-memoir.json       complete structured history (SSOT)
+    ├── <project>/PROJECT_MEMORY.md   readable, committable projection
+    └── Retrieval Index              inverted index + BM25 + query cache
+              │
+              ├── Hot Memory Selector ──> bounded system-prompt injection
+              └── memoir_read / Web ────> on-demand long-tail recall
 ```
 
-## Architecture
+Complete history and Hot Memory are separate layers:
 
-```text
-                   ~/.dsh/dsh-memoir.json
-                            │
-                            │ SSOT (single source of truth)
-                            ▼
-                      MemoirStore
-              ┌─────────────┴─────────────┐
-              │                           │
-              ▼                           ▼
-        PROJECT_MEMORY.md          Retrieval Index
-         human-readable             ranked recall
-         (git-committable)                │
-              │                           ▼
-              │                       memoir_read
-              │                       GUI /search
-              │
-              ▼
-       Hot Memory Selector
-         (token budget)
-              │
-              ▼
-       Session Snapshot
-         (frozen per session)
-              │
-              ▼
-         System Prompt
-```
+- **Full Memory** retains every record for the GUI, human review, Markdown projection, and ranked retrieval.
+- **Hot Memory** selects only budgeted actions, lessons, and recent state; the full `PROJECT_MEMORY.md` is never injected.
+- **Session Snapshot** freezes injected text within a session. New writes are immediately readable by tools and the GUI, while automatic injection refreshes in the next new session.
 
-## Memory Model: Full Memory vs Hot Memory
-
-**Full Memory (complete history)** — the structured JSON SSOT plus the regenerated `PROJECT_MEMORY.md` projection. Used for: complete history, GUI browsing, git commits, manual inspection, and as the source data for ranked recall.
-
-**Hot Memory (bounded injection)** — high-value memories selected by the selector within a token budget, injected into the system prompt. Properties: **bounded / ranked / compact / session-frozen**.
-
-> v0.4+ no longer injects the full PROJECT_MEMORY.md into the model: Hot Memory goes to the prompt, long-tail history goes through ranked recall.
-
-**Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
-
-## v0.5.6 Provenance, similar-memory governance, and Web UX
-
-- Store format v4 records trusted `source.sessionId` / `source.turnId` for Agent writes. Legacy top-level `sessionId` values remain lazily readable and are persisted in the new shape only on a real subsequent write.
-- Entry cards can copy provenance and make a best-effort jump to the source session/turn; manual browser writes cannot spoof trusted provenance.
-- Before `memoir_record` or a manual Web add mutates data, the existing BM25 engine supplies candidates and title similarity plus Token Jaccard rerank them. Only suspected duplicates/conflicts are shown; nothing is changed automatically.
-- A surfaced candidate requires an explicit `update`, `supersede`, or `force-record` decision. The UI explains BM25/title/Jaccard components and reasons, and a resolution target must belong to the current candidate set.
-- The Memoir item under Settings → Web UI Plugins now matches the dsh-web-ui family card and starts collapsed. The Memory panel has one vertical scroll region, so expanded settings, Hot Memory, and diagnostics remain continuously scrollable.
-- The release workflow always tries npm OIDC first and uses `NPM_TOKEN` only as an ephemeral fallback; an expired legacy token can no longer take precedence over healthy trusted publishing.
-
-## v0.5.5 Sidebar visual-parity fix
-
-- Fixed the stylesheet-marker collision: another style carrying the same generic `data-plugin` value no longer makes Memoir skip its own CSS. The owned stylesheet has a unique `data-dsh-memoir-style` marker and is removed on plugin unload.
-- Matched dsh-web-ui-all 0.3.x task-board and skill-center sidebar geometry: 36px row height, 10px horizontal padding, a 24px icon box, an 18px SVG, and an 8px icon-label gap.
-- The collapsed rail now uses the same 36px circular control and 12px row spacing, hiding copy while preserving localized `aria-label` and tooltip text; the open-book glyph remains distinct from Skill Center.
-- Playwright runtime assertions compare expanded and collapsed row/icon/svg/label coordinates, box sizes, typography, and color instead of relying on screenshots alone.
-
-## v0.5.4 Complete GUI, bilingual settings, and Web UI integration
-
-- The development and peer-dependency baseline is `@deepseek-ai/dsh-* 0.1.1-rc.2`.
-- Add/edit forms now cover `importance`, `pinned`, `tags`, and `supersedes`; cards expose importance, tags, and replacement relationships, with a new section filter.
-- Memory Settings now appears both inside the Memory panel and under Settings → Web UI Plugins. It covers agent injection, auto-distill, Hot Memory, recall, session snapshots, and the BM25 query cache.
-- Every saved setting applies live and persists in `~/.dsh/dsh-memoir.settings.json`; version-1 settings remain readable and upgrade to version 2 only on the next save.
-- The GUI follows DSH's `<html lang>` and switches between Chinese and English without a reload, including the sidebar entry, panel, and Settings card.
-- The panel and sidebar emit `data-dsh-plugin="memoir"` / `data-dsh-part` semantic attributes for the dsh-web-ui v0.3 skin contract. Sidebar mounting is idempotent and self-heals after a complete shell rebuild.
-- Center-panel coordination now responds to any sibling through the generic `dsh-panel-activate` protocol instead of recognizing only SSH and Task Board.
-- Auto-distill retains per-agent worked-turn intervals, time cooldowns, and tool-call thresholds; defaults `1 / 0 / 1` preserve prior behavior.
-- Store format v3 migrates v2 entries without changing their `id`, content, or timestamp. The first mutation materializes `importance`, `pinned`, `status`, `supersedes`, and `tags`; startup reads do not rewrite old files.
-- Retrieval defaults to `active`. Archived and superseded history is retained and can be inspected from the Web panel. Explicit `supersedes` marks its targets as superseded; history is never deleted automatically.
-- Agents can use `memoir_update` to edit an entry's section, title, content, and lifecycle in place; the Web panel also supports editing, pinning, marking superseded, archiving, and restoring.
-- `PROJECT_MEMORY.md` is a human-readable projection. Only bounded Hot Memory enters the system prompt; the full file is not injected.
-- GET routes no longer register browser-supplied paths as active workspaces. Only the trusted system-prompt cwd grants panel write authorization. Lock metadata now includes pid, creation time, and nonce, with conservative reclaim only after 60 seconds and a dead owner.
-- `memoir_read(scope: 'all')` uses a deduplicated global ranking so project and global results are not repeated.
-
-## Tools
+## Agent tools and memory lifecycle
 
 | Tool | Purpose |
 | --- | --- |
-| `memoir_record` | write work / lessons / actions / note entries; preflight similar memories and explicitly `update`, `supersede`, or `force-record` |
-| `memoir_update` | edit an existing entry while preserving its id and creation time; update content, tags, lifecycle, or explicitly supersede history |
-| `memoir_read` | local relevance retrieval across project (default) / global / all, with limit and compact/full output shapes |
+| `memoir_record` | Write work / lessons / actions / note entries; returns explainable similar/conflicting candidates before mutation |
+| `memoir_update` | Preserve id and creation time while updating content, section, importance, tags, and lifecycle |
+| `memoir_read` | Local ranked recall across project (default) / global / all with compact or full output |
 
-`memoir_read`'s query description matches its real behavior: **local relevance retrieval over titles and content — supports Chinese phrases, English keywords, code identifiers, and paths, ordered by relevance**.
+Each entry has importance 1–5. The default, **3**, is neutral; pinning adds separate Hot Memory weight. Recall defaults to `active`. Archived or superseded history remains inspectable and restorable and is never deleted automatically.
 
-## Retrieval
+Similar-memory governance starts with BM25 candidates, then combines title similarity and Token Jaccard. The plugin surfaces suspected duplicates or conflicts but does not decide truth on its own. The caller must choose:
 
-- No embeddings, no vector database, no external memory service
-- Tokenization: Chinese 2/3-grams + English words + code/path identifiers
-- BM25 (documents keep true term frequency; queries are deduplicated)
-- 2.5× title boost, exact-phrase boost, section weight, recency decay
-- Separate length normalization for titles and bodies (v0.4.2)
-- Epoch-aware LRU query cache with 1-hour time buckets: limit/detail stay out of the cache key, so every output shape shares one ranked result (v0.4.2)
-- Query-cache metrics (hits/misses/evictions/hit rate) and Last Query (latency/candidates/returned) observability (v0.4.2)
-- Global recall limit is a true global Top-K; output truncation preserves the top-ranked head (v0.4.2)
-- Pre-write governance takes the current project's active BM25 Top-24 candidate set, then combines query-relative BM25, title similarity, and Token Jaccard; at most five explainable candidates are returned (v0.5.6)
+- `update`: update an existing record in place;
+- `supersede`: retain old history and mark it as replaced by the new record;
+- `force-record`: explicitly keep both.
 
-Curated-query Top-5 hit rate: 100% (quality gate ≥ 90%, see `test/recall-quality.test.ts`).
+## Automatic distillation
 
-## GUI
+Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
 
-The Project / Global / Search / Add / Delete / Diagnostics architecture now forms a complete management surface:
+`autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
-- **Search unified on RetrievalEngine**: a non-empty query calls `GET /api/dsh-memoir/search` — the same BM25 ranking as the agent's `memoir_read` — results ordered by relevance with scores shown
-- **Hot Memory Inspector**: expand to see the Hot Memory that will actually be injected for the current workspace (Actions / Lessons / Recent state) — i.e. "what exactly the next session inherits"
-- **Retrieval Diagnostics**: Retrieval Index (docs/terms/epoch), Query Cache (hits/misses/evictions/hit rate/size/capacity), Last Query (latency/returned), Session Snapshot (hash/createdAt/storeRevision)
-- **Complete lifecycle forms (v0.5.4)**: add and edit section, title, content, importance, pinning, tags, and explicit replacement relationships; filter by status and section
-- **Complete live settings (v0.5.4)**: adjust agent injection, auto-distill, Hot Memory target/hard limits, recall defaults/maxima, session snapshots, and query cache immediately
-- **Settings integration (v0.5.4)**: the same bilingual card mounts in the Memory panel and Settings → Web UI Plugins, and redraws immediately when the page language changes
-- **Visual parity with the dsh-web-ui family (v0.5.5)**: the panel, sidebar entry, forms, cards and tabs ride the `--dsw-alias-*` / `--dsw-specific-*` / `--dsw-font-family` design tokens (with standalone fallbacks), matching the task-board / ssh / skill-explorer panels shipped by dsh-web-ui-all; the center-column panel mutual-exclusion protocol is aligned too.
-- **Provenance and similar-memory governance (v0.5.6)**: display/copy/jump session and turn provenance; new records expose duplicate/conflict candidates, three score components, reasons, and three explicit resolution actions
-- **Settings and scrolling fix (v0.5.6)**: the Settings card starts collapsed and follows the family card structure; the panel keeps one scroll owner across the list, settings, Hot Memory, and diagnostics
+## Local recall and caching
 
-## Screenshots
+- Chinese 2/3-grams, English words, and code/path identifier tokenization;
+- document-side BM25 keeps true term frequency, with a 2.5× title boost plus exact-phrase, section, and recency weighting;
+- separate title/body length normalization;
+- deduplicated global Top-K shared by project / global / all;
+- epoch-aware LRU query cache with one-hour time buckets; `limit` and output detail stay outside the key so output shapes share rankings;
+- the GUI and `memoir_read` use the same RetrievalEngine and expose hits, misses, evictions, hit rate, and last-query latency.
 
-**v0.5.6 Settings card**: the Memoir item under Settings → Web UI Plugins starts collapsed and matches sibling title, description, spacing, radius, and chevron geometry.
+Top-5 recall on the fixed quality set is 100%; the repository gate requires at least 90%.
 
-![v0.5.6 Settings card](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
+## Web GUI
 
-**v0.5.6 continuous scrolling**: Memory Settings, Hot Memory preview, and diagnostics share the panel's only scroll region. The Hot Memory text shown here is a redacted demonstration.
+Installing into the `web` profile adds a Memory sidebar entry and a collapsed-by-default card under Settings → Web UI Plugins.
 
-![v0.5.6 continuous Memory-panel scrolling](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-memory-scroll-zh.png)
+- Project memory and all-project global memory;
+- status, section, and keyword filters with BM25 scores;
+- add, edit, pin, archive, restore, and supersede;
+- copy and best-effort navigation for session/turn provenance;
+- Hot Memory Inspector: what the next session will inherit;
+- Retrieval Diagnostics: index, query cache, last query, and session snapshot;
+- one vertical scroll owner, so expanded settings, Hot Memory, and diagnostics remain continuously scrollable;
+- live Chinese/English switching from `<html lang>`.
 
-**v0.5.5 sidebar parity**: Memory now matches Task Board, SSH, and Skill Center in row height, horizontal position, icon box, and SVG size.
+<details>
+<summary>More stable GUI screenshots</summary>
 
-![v0.5.5 sidebar parity](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.5/picture/v0.5.5-sidebar-parity-zh.png)
+![Memory lifecycle and similar-memory governance](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png)
 
-**v0.5.4 memory management**: importance, tags, replacement relationships, status/section filters, and lifecycle actions in one panel.
+![Settings card](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
 
-![v0.5.4 memory management](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-memory-management-zh.png)
+![Sidebar parity](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.5-sidebar-parity-zh.png)
 
-**v0.5.4 complete live settings**: the English Settings → Web UI Plugins card, switched live from the same Chinese-capable GUI.
+</details>
 
-![v0.5.4 complete live settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.4/picture/v0.5.4-settings-en.png)
+## Installation and compatibility
 
-The following screenshots retain the feature history of earlier releases:
+| Channel | DSH baseline | Installation | Status |
+| --- | --- | --- | --- |
+| npm `latest` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@latest` | Recommended stable |
+| GitHub `main` | `0.1.1-rc.2` | source clone + `link:` | Stable development |
+| [`alpha/dsh-0.1.2-alpha.1`](https://github.com/Qinling-Melon-Farmers/dsh-memoir/tree/alpha/dsh-0.1.2-alpha.1) | `0.1.2-alpha.1` | run `pnpm dsh ... link:` from the official DSH alpha source | Source preview only |
 
-**1. Plugin active & overall UI**: the sidebar gains a "Memory" entry (alongside SSH / Task Board, mutually exclusive panels); clicking opens the memory panel in the center column.
+Stable requires Node.js `^22.19.0 || >=24.0.0`. dshmarket and the dsh-web plugin manager should continue installing `@latest`. The alpha branch has no npm package, tag, or Release, preventing stable users from being prompted to upgrade their host by mistake.
 
-![Plugin active & overall UI](picture/插件生效和UI效果1.png)
+<details>
+<summary>Install from source</summary>
 
-**2. Project memory**: the current project session's persistent memory grouped into Work Log / Lessons Learned / Action Guide / Notes; each entry shows time, section chip, title, content, and session origin, with search, refresh, and per-entry delete.
+Stable source:
 
-![Project memory](picture/项目记忆2.png)
-
-**3. Manually adding memory**: a form to pick a section, a one-line title, and content — written to the same data the agent's `memoir_record` writes; PROJECT_MEMORY.md regenerates automatically after submit.
-
-![Manually adding memory](picture/手动添加记忆3.png)
-
-**4. Global memory management**: memory buckets for all projects (name, path, updated time, count) with cross-project search and per-entry maintenance.
-
-![Global memory management](picture/全局记忆管理4.png)
-
-**5. Ranked search + Hot Memory Inspector + Memory Diagnostics (v0.4.2)**: a typed query triggers RetrievalEngine-ranked recall with a relevance score on each result; at the bottom you can expand the Hot Memory Inspector (what the next session will inherit for the current workspace) and the extended Memory Diagnostics (Retrieval index / Query cache / Last query / Session snapshot).
-
-![Ranked search with Hot Memory Inspector and Memory Diagnostics](picture/hot%20memory预览与记忆诊断5.png)
-
-## Storage & Privacy
-
-```text
-~/.dsh/dsh-memoir.json        ← structured JSON v4 (SSOT with trusted session/turn provenance)
-~/.dsh/dsh-memoir.settings.json ← complete runtime overrides saved by either GUI settings surface
-<workspace>/PROJECT_MEMORY.md ← human-readable projection regenerated from the JSON (git-friendly)
-
-No cloud memory DB · No embedding API · No vector DB
+```bash
+git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+cd dsh-memoir
+pnpm install --frozen-lockfile
+pnpm run build
+dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
-JSON is the source of truth and Markdown is the generated projection: the panel, the tools, and the agent write the same data. Since v0.4.2 the panel write API is also workspace-authorized — an absolute path submitted by the browser is not authorization by itself; only the current active cwd or an existing store project can be written to.
+DSH `0.1.2-alpha.1` preview:
+
+```bash
+git clone --branch alpha/dsh-0.1.2-alpha.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+cd dsh-memoir
+pnpm install --frozen-lockfile
+pnpm run build
+
+# run from the official DSH dsh-v0.1.2-alpha.1 source checkout
+pnpm dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
+```
+
+</details>
+
+## Storage, privacy, and security boundaries
+
+```text
+~/.dsh/dsh-memoir.json          structured JSON v4 (single source of truth)
+~/.dsh/dsh-memoir.settings.json live GUI setting overrides
+<project>/PROJECT_MEMORY.md      human-readable projection generated from JSON
+```
+
+- No cloud memory database, embedding API, or vector database;
+- an arbitrary absolute path submitted by the browser does not grant write access; panel writes accept only a trusted active workspace or an existing project bucket;
+- manual browser records cannot spoof trusted session/turn provenance;
+- cross-process writes use an exclusive lock and reread disk inside the critical section, with conservative dead-owner recovery;
+- Windows path keys are case-normalized while display paths retain their original form;
+- `PROJECT_MEMORY.md` may be committed by you, so the user decides whether sensitive content enters Git.
+
+Back up the JSON and project Markdown according to your own policy before upgrades. Removing the plugin does not actively delete them.
 
 ## Configuration
 
-Add a `config` block on the plugin row in `cordis.patch.yml` (all optional; defaults shown):
+Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for `enabled`, each is also live-editable and persisted from the Memory panel or Settings card.
 
-```yaml
-- insert:
-    - id: memoir
-      name: dsh-memoir
-      config:
-        enabled: true            # master switch (tools, routes, prompt section)
-        announceToAgent: true    # system-prompt announcement section
-        autoDistill: true        # auto distill reminder after each worked turn
-        autoDistillEvery: 1      # remind at most once per N worked turns
-        autoDistillCooldownMin: 0 # require M minutes between successful reminders
-        autoDistillMinTools: 1   # triggering turn must contain at least K tool calls
-        hotMemoryTokens: 900     # Hot Memory target tokens
-        hotMemoryMaxTokens: 1200 # Hot Memory hard ceiling (never exceeded)
-        readDefaultLimit: 8      # memoir_read default result count
-        readMaxLimit: 30         # memoir_read maximum result count
-        sessionSnapshotMax: 128  # per-session snapshot LRU cap
-        queryCacheSize: 128      # ranked-query LRU cache size
-```
+| Field | Default | Purpose |
+| --- | ---: | --- |
+| `enabled` | `true` | master switch for tools, routes, and prompt injection |
+| `announceToAgent` | `true` | announce memory tools and rules to the agent |
+| `autoDistill` | `true` | enable top-level worked-turn reminders |
+| `autoDistillEvery` | `1` | remind at most once per N worked turns |
+| `autoDistillCooldownMin` | `0` | minimum minutes between successful reminders |
+| `autoDistillMinTools` | `1` | minimum tool calls required in a triggering turn |
+| `hotMemoryTokens` | `900` | normal Hot Memory target budget |
+| `hotMemoryMaxTokens` | `1200` | hard ceiling that no session exceeds |
+| `readDefaultLimit` | `8` | default `memoir_read` result count |
+| `readMaxLimit` | `30` | live upper bound per recall |
+| `sessionSnapshotMax` | `128` | frozen session-snapshot LRU capacity |
+| `queryCacheSize` | `128` | BM25 query LRU capacity |
 
-The three auto-distill frequency conditions are combined with AND and isolated per agent. Idle, aborted, subagent, and prior-`memoir_record` turns do not advance the interval. A worked turn below `autoDistillMinTools` advances the interval but cannot trigger by itself. Cooldown changes only after a successful steer.
+Shrinking a cache evicts the oldest entries immediately. Existing frozen sessions are not rewritten after budget changes, preserving prompt-prefix stability. “Restore startup configuration” removes Web overrides and returns to profile startup values.
 
-Fields in `cordis.patch.yml` remain startup defaults. Since v0.5.4, the Memory panel or Settings → Web UI Plugins can edit every runtime field except the master `enabled` switch. Saving atomically writes `~/.dsh/dsh-memoir.settings.json`; subsequent requests and turns read the new values immediately, and shrinking snapshot/query-cache capacities evicts the oldest entries at once. Already frozen session snapshots are not rewritten when budgets change, preserving prompt-prefix cache stability. Restore Startup Config removes the Web override and returns to the profile values resolved when the plugin mounted.
+## Performance and verification
 
-## Design Trade-offs
+v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report.md`](./bench/report.md)):
 
-- **Bounded vs full injection**: v0.3 injected the full history into the prompt and it kept growing; v0.4+ injects only budgeted Hot Memory, with long-tail history recalled on demand. Token benchmarks below.
-- **Frozen vs fresh**: within a session the injected text is frozen to gain prompt-prefix cache hits; without a unique session identity it is not frozen (v0.4.2), so new sessions always see new memory.
-- **Hot Memory quota**: Recent state (newest work, 1–3 entries) is guaranteed a floor, actions/lessons fill by ranking, and work only appears in Recent state — never injected twice (v0.4.2).
-- **Multi-process safety**: store record/remove runs inside a cross-process critical section on `~/.dsh/dsh-memoir.lock` (exclusive O_EXCL creation with timeout); the section force-reloads from disk before mutating, so two interleaved DSH processes lose no updates (v0.4.2).
-- **Windows paths**: canonical keys are fully lowercased (`C:\A` / `c:\a\` / `C:/A` share one bucket) while display paths keep the original casing (v0.4.2).
-- **GUI and Agent share one engine**: panel search and `memoir_read` use the same RetrievalEngine instead of separate filter logic (v0.4.2).
-- **Auto-distill cadence**: the default still reminds after every worked turn; research-heavy sessions can combine interval, cooldown, and activity thresholds and tune them immediately from either GUI settings surface (v0.5.4).
-- **Similarity governance, not automatic merging**: lexical similarity can identify candidates but cannot reliably decide semantic truth, so v0.5.6 always requires an explicit update, supersede, or keep-both choice.
+| Entries | Index build | Uncached query | Cached query | Injection reduction vs full Markdown |
+| ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 10.5 ms | 1.190 ms | 4.07 µs | 97.6% |
+| 10,000 | 126.9 ms | 11.011 ms | 1.45 µs | 99.8% |
+| 100,000 | 1.68 s | 126.933 ms | 1.42 µs | about 100% |
 
-## Use Cases
+Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-| Scenario | How to use it |
-| --- | --- |
-| Recurring environment pitfalls (encoding / escaping / paths / permissions) | record a `lessons` entry with copy-pasteable fix commands |
-| Project rules and conventions (no emoji, run tests before release, branch policy) | record as `actions`, auto-injected for whoever takes over |
-| Root cause of a hard-to-find bug | record as `lessons` / `work` to avoid re-investigation |
-| Fixed deployment/release checklist | record as `actions`; new sessions follow it |
-| Reuse experience across projects | global tab or `memoir_read(scope: 'global', query: ...)` |
+Stable has 171 automated tests covering storage migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual GUI, scrolling, integration, and release automation.
 
-Typical example: after solving "console Chinese mojibake" the first time, record the diagnosis and fix commands as a `lessons` entry (e.g. `chcp 65001 first … always write UTF-8 without BOM`); every new session in this project then inherits the lesson automatically instead of re-debugging, and cross-project global search hits it too. The memory plugin distills "root cause + fix command" into project knowledge — it does not fix the terminal's own encoding defects.
+## FAQ
 
-## Comparison
+**Does it automatically summarize every chat?**<br>
+It does not silently scrape every conversation. At the end of an eligible turn it reminds the current agent to distill, and the agent writes through a public tool, keeping the process observable and reviewable.
 
-| Project | Primary focus |
-| --- | --- |
-| dsh-memory | citation / source-traceable reference memory |
-| dsh-mnemon | a heavier long-term memory system |
-| distill | distilling sessions into skills |
-| **dsh-memoir** | **lightweight project workflow memory: local, bounded injection, ranked recall** |
+**Why does every new memory start at importance 3?**<br>
+Three is the neutral default on a 1–5 scale, so unscored content is neither demoted nor treated as highest priority. Change it through tool arguments or the GUI; pinning has separate weight.
 
-Each plugin has its own focus — pick per need; no "which is stronger" narrative.
+**Why is a new write not reinjected immediately in the current session?**<br>
+The session Hot Memory snapshot is deliberately frozen for prompt-prefix caching. The write is immediately visible to `memoir_read` and the GUI, and the next session rebuilds automatic injection.
 
-## Development / Benchmark / Tests
+**Does it inject all stored memory into context?**<br>
+No. Only Hot Memory bounded by `hotMemoryMaxTokens` is injected automatically. Complete history is recalled on demand.
+
+**Why is the UI missing after installation?**<br>
+Confirm the command used `--profile web`, then fully restart `dsh web`. Refreshing the browser alone is not enough.
+
+## Development and contributing
 
 ```bash
-pnpm install          # install devDeps (typescript, esbuild, @deepseek-ai/* type packages)
-pnpm run build        # tsc builds the host + esbuild builds the client bundle
-pnpm run typecheck    # full type check (src + test)
-pnpm test             # 171 tests: store/migrations/lock, settings, snapshot, selector, BM25/similarity governance, tools/routes, auto-distill, GUI/scrolling/bilingual behavior, integration, bundle, and release notes
-npm run bench         # benchmark (100/1k/10k/100k entries); results written to bench/report.md
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run typecheck
+pnpm test
+npm run bench
 ```
 
-Quality gates: **Top-5 recall ≥ 90% · Hot Memory ≤ configured hardMax · same-session prompt-prefix stability · global recall ≤ limit · zero lost updates across processes**.
-
-v0.5.6 benchmark summary (2026-08-27, node v24.19.0, budget 900/1200 tokens; full report in `bench/report.md`. Uncached queries measure `search()` directly; cached queries warm the same query first, then time it):
-
-| Entries | Cold load | Warm read | Hot Memory build | Index build | Uncached query | Cached query | Cache hit rate | Full markdown tokens | Injected tokens | Reduction |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 100 | 0.9 ms | 0.95 µs | 0.46 ms | 2.1 ms | 0.169 ms | 2.21 µs | 50.0% | 3908 | 902 | 76.9% |
-| 1,000 | 3.0 ms | 0.35 µs | 0.58 ms | 10.5 ms | 1.190 ms | 4.07 µs | 50.0% | 38220 | 916 | 97.6% |
-| 10,000 | 26.4 ms | 0.35 µs | 2.05 ms | 126.9 ms | 11.011 ms | 1.45 µs | 50.0% | 385845 | 902 | 99.8% |
-| 100,000 | 210.7 ms | 0.51 µs | 20.11 ms | 1679.9 ms | 126.933 ms | 1.42 µs | 50.0% | 3907095 | 917 | 100.0% |
-
-## Implementation
-
-- **Full-stack TypeScript**: `src/host/*.ts` (store / settings / tools / retrieval / similarity / governance / selector / snapshot / routes / autodistill / index — tsc emits `lib/*.js`) + `src/client/*.ts(x)` (esbuild emits the `lib/client.js` closure-factory bundle).
-- **Two-sided plugin**: the host half registers the agent tools, `/api/dsh-memoir` routes, the `agent/turn-stopping` auto-distill listener, and the per-project system-prompt injection section; the client half renders the panel. Runtime deps are official NPM SDK packages only.
-- Mounted via the `dsh.bundle.patch` manifest (`insert` row in `cordis.patch.yml`); no DSH source changes.
-- Auto-distill safety boundaries: top-level sessions only (subagents / nested delegations skipped), turns with tool activity that haven't recorded yet, aborted turns skipped, at most one steer per turn.
-
-## Contributing
-
-PRs and issues are managed with templates and automation:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) — PR scope, commit conventions and checklist;
-- [ISSUE_TRIAGE.md](ISSUE_TRIAGE.md) — issue labels, classification and closing criteria;
-- `.github/ISSUE_TEMPLATE` — bug / request templates; `.github/pull_request_template.md` — PR template.
-
-Bug reports must include screenshot / log evidence, a smoke test, code references and a patch. New features and documentation-only PRs must first be discussed in an issue.
-
-## Release
-
-Current stable release: **v0.5.6** (2026-08-27) · [GitHub Release](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6) · [npm](https://www.npmjs.com/package/dsh-memoir/v/0.5.6). Full history is in [CHANGELOG.md](./CHANGELOG.md).
-
-Every version keeps Chinese and English release notes in sync. GitHub Releases show Chinese by default and place the English notes in a collapsible `English` section.
-
-Version releases run automatically in `.github/workflows/publish.yml` when a `v*` tag is pushed: install deps, verify the tag matches the `package.json` version, run typecheck/test, publish to npm, then create a same-tag GitHub Release with the tarball asset. Authentication is OIDC-first with a token fallback:
-
-- npm Trusted Publishing: GitHub repo `Qinling-Melon-Farmers/dsh-memoir`, workflow `publish.yml`
-- GitHub Actions secret `NPM_TOKEN`: optional fallback, using a granular token with publish rights and 2FA bypass; it is read only if OIDC fails and the version is still unpublished
-
-Publishing a patch release:
-
-```bash
-npm version patch
-git push
-git push origin vX.Y.Z  # use the actual version printed by npm version
-```
-
-`npm version patch` updates `package.json`, creates the version commit and the tag; no manual `git tag` or local `npm publish` needed.
-
-## License
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Stable packages are published by the tag workflow through npm OIDC. The current stable release is [v0.5.6](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6).
 
 Apache-2.0
