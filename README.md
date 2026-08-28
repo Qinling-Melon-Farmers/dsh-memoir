@@ -4,6 +4,9 @@
 
 [English](./README.en.md) · 中文 · [更新日志](./CHANGELOG.md) · [GitHub Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
+> [!IMPORTANT]
+> 当前分支是 **DSH `0.1.2-alpha.1` 的源码适配线**：分支 `alpha/dsh-0.1.2-alpha.1`，源码版本标识 `0.6.0-alpha.1`。它不会发布到 npm、不会打 tag 或创建 Release。DSH 稳定版用户请继续安装 npm `latest`（当前为 `dsh-memoir@0.5.6`），不要把此分支安装到 DSH `0.1.1-rc.2`。
+
 **dsh-memoir 是 DeepSeek Harness 的本地项目记忆层：把 Agent 的工作结论、经验教训和后续行动持久化，并通过有界 Hot Memory 自动继承、按需排序召回和 Web GUI 管理，实现跨会话项目记忆。**
 
 > Cache-aware local project memory for DeepSeek Harness.
@@ -14,22 +17,57 @@
 - **Bounded hot-memory injection**：token 预算内的 Hot Memory 自动注入 system prompt（默认 900/1200）
 - **Ranked local recall**：倒排索引 + BM25 本地排序召回，`memoir_read` 按需检索长尾历史
 - **可追溯且防重复**：记录可信 session/turn 来源；写入前解释疑似重复或冲突，由用户/Agent 显式选择更新、替代或并存
-- **Web GUI**：中英双语侧边栏面板——完整生命周期编辑、项目/全局浏览、BM25 搜索、Hot Memory、诊断和实时设置
+- **Web GUI**：完整生命周期编辑、项目/全局浏览、BM25 搜索、Hot Memory、诊断和实时设置；本 alpha 分支使用 DSH 原生「记忆」会话视图与「记忆」设置分区，并保持中英双语即时切换
+
+## 兼容与更新通道
+
+| 通道 | dsh-memoir | DSH | 安装与更新 |
+| --- | --- | --- | --- |
+| 稳定版 | npm `latest`（`0.5.6`） | `0.1.1-rc.2` | npm、dshmarket、plugins-manager；始终指向稳定版 |
+| Alpha 源码版 | `alpha/dsh-0.1.2-alpha.1`（源码标识 `0.6.0-alpha.1`） | 源码 tag `dsh-v0.1.2-alpha.1` 或更高兼容 alpha | 手工 clone/build/link；不进入 npm 更新通道 |
+
+`package.json#dsh.engines.dsh` 明确要求 `>=0.1.2-alpha.1`。如果源码/Git 更新器显示 `0.6.0-alpha.1`，这表示 **DSH alpha 专用源码更新**：必须先把 DSH 切换并构建到兼容 alpha，不能直接在稳定版 Harness 上安装。dshmarket 与集成 plugins-manager 继续解析 npm `latest`，因此稳定用户不会收到这条源码 alpha。
 
 ## Quick Start
 
+### 稳定用户
+
 ```bash
-# 从 npm 安装到 web profile（推荐）
-dsh plugin --profile web add dsh-memoir
-
-# 或从 GitHub 安装最新源码
-dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
-
-# 或本地开发（克隆后）
-dsh plugin --profile web add link:/绝对路径/dsh-memoir
+# npm、dshmarket 和 plugins-manager 均保持稳定通道
+dsh plugin --profile web add dsh-memoir@latest
 ```
 
-安装后重启 DSH 生效（`dsh web`）。正常使用即可：
+### DSH Alpha 源码用户
+
+先准备官方 DSH alpha 源码：
+
+```bash
+git clone --branch dsh-v0.1.2-alpha.1 --depth 1 https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+再克隆并构建 Memoir alpha 分支：
+
+```bash
+git clone --branch alpha/dsh-0.1.2-alpha.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+cd dsh-memoir
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+最后从官方 DSH 源码目录把本地 checkout 链接到隔离的 `web` profile：
+
+```bash
+cd /绝对路径/deepseek-harness
+pnpm dsh plugin --profile web add "link:/绝对路径/dsh-memoir"
+pnpm dsh web
+```
+
+后续更新只需在两个 checkout 中 `git pull --ff-only` 并重新构建；该流程不会下载或增加 npm alpha 包的统计。记忆数据继续位于 `$DSH_HOME/dsh-memoir.json` 与各项目的 `PROJECT_MEMORY.md`，切换客户端适配层不会迁移、清空或重写现有记忆。
+
+安装并启动后正常使用即可：
 
 ```text
 正常使用 Agent
@@ -82,6 +120,14 @@ memoir_record 沉淀工作 / 教训 / 下一步
 > v0.4+ 不再把完整 PROJECT_MEMORY.md 注入模型：Hot Memory 进 prompt，长尾历史走排序召回。
 
 **Session Snapshot 冻结语义**：同一 session 的注入文本只构建一次并冻结（prompt 前缀稳定，最大化 prompt-prefix cache 命中）；当前 session 不重新消费自己刚写的记忆，新 session 重建并看到最新记忆。v0.4.2 起，没有唯一会话身份（session.id / agent.id）时**不做冻结**——宁可 cache miss，不可跨 session 错复用旧快照。
+
+## v0.6.0-alpha.1：DSH 原生 Alpha UI 适配
+
+- 移除已被 DSH alpha 删除的 `dsh-client-runtime` 依赖和 DOM 选择器挂载，不再接管 dsh-web-ui 旧侧边栏。
+- 通过官方 `conversation.view` 注册原生「记忆」会话页，通过 `settings.section` 注册原生「记忆」设置页；页面布局和导航由 DSH shell 管理。
+- 记忆 CRUD、来源跳转、生命周期、相似记忆治理、BM25、Hot Memory、自动蒸馏、缓存诊断和实时设置继续共用既有实现。
+- 存储与设置路径现在完整遵守 `DSH_HOME`；未设置时仍回退到 `~/.dsh`。格式保持 v4/v2，不触发数据迁移。
+- 这是源码兼容验证分支，不是发布版本；稳定版截图与 v0.5.x 说明作为历史能力记录保留。
 
 ## v0.5.6 来源追踪、相似记忆治理与 Web 体验
 

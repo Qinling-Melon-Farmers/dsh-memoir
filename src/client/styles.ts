@@ -30,6 +30,27 @@ export function mountPanelStyles(target: Document = document): () => void {
  */
 
 export const PANEL_CSS = `
+/* --- DSH 0.1.2 alpha native slot surfaces ---------------------------------- */
+
+.memoir-native-view,
+.memoir-settings-section {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base, var(--bg-panel, #ffffff));
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  font-family: var(--dsw-font-family, inherit);
+}
+
+.memoir-settings-section .memoir-panel {
+  padding: 0;
+}
+
 /* --- center-column takeover (mirrors dsh-ssh / dsh-task-board) --------------- */
 
 [data-pane='conversation'],

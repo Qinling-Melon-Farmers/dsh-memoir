@@ -3,7 +3,8 @@
  *
  * cordis.patch.yml remains the source of startup defaults. Once the user
  * saves either GUI settings surface, the normalized override is stored in
- * ~/.dsh/dsh-memoir.settings.json and applied without a profile restart.
+ * $DSH_HOME/dsh-memoir.settings.json (defaulting to ~/.dsh) and applied
+ * without a profile restart.
  * Resetting removes the override and restores the startup defaults captured
  * when the plugin mounted.
  */
@@ -33,7 +34,7 @@ export type AutoDistillSettingsPatch = MemoirSettingsPatch;
 export type AutoDistillSettingsSnapshot = MemoirSettingsSnapshot;
 /** Built-in fallback values; profile values override these at construction. */
 export declare const DEFAULT_MEMOIR_SETTINGS: MemoirSettings;
-/** Default settings location: <home>/.dsh/dsh-memoir.settings.json. */
+/** Default settings location: $DSH_HOME/dsh-memoir.settings.json (fallback ~/.dsh). */
 export declare function defaultSettingsPath(): string;
 /** Normalize an untrusted partial value against known-good defaults. */
 export declare function resolveMemoirSettings(value: unknown, defaults: MemoirSettings): MemoirSettings;

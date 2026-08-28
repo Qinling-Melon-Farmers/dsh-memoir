@@ -23,11 +23,9 @@ const PLATFORM_MODULES = new Set([
   'react-dom',
   'react-dom/client',
   '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-web-react',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-schema-form',
-  '@deepseek-ai/dsh-client-runtime/client',
 ])
 
 test('client bundle builds without errors', () => {
@@ -63,15 +61,20 @@ test('client bundle requires only platform modules (purity)', () => {
     )
   }
   assert.ok(required.has('react/jsx-runtime'), 'jsx runtime comes from the module table')
-  assert.ok(required.has('react-dom/client'), 'createRoot comes from the module table')
+  assert.ok(required.has('react'), 'native slot components share the shell React instance')
 })
 
-test('client bundle carries v0.5.6 provenance, governance, and Settings contracts', () => {
+test('client bundle carries native DSH alpha view and Settings contracts', () => {
   const source = readFileSync(OUT, 'utf8')
   assert.ok(source.includes('data-dsh-plugin'), 'React surfaces expose their plugin owner')
   assert.ok(source.includes('data-dsh-part'), 'React surfaces expose stable part names')
   assert.ok(source.includes('data-dsh-memoir-style'), 'the stylesheet uses a collision-free ownership marker')
-  assert.ok(source.includes('web-ui.plugin.item'), 'complete settings card registers into dsh-web-ui Settings')
+  assert.ok(source.includes('conversation.view'), 'Memoir registers a native Conversation view')
+  assert.ok(source.includes('settings.section'), 'Memoir registers a native Settings section')
+  assert.ok(source.includes('memoir-native-view'), 'native Conversation wrapper is bundled')
+  assert.ok(source.includes('memoir-settings-section'), 'native Settings wrapper is bundled')
+  assert.ok(!source.includes('web-ui.plugin.item'), 'legacy dsh-web-ui Settings slot is not registered')
+  assert.ok(!source.includes('dsh-client-runtime'), 'removed alpha runtime cannot leak into the bundle')
   assert.ok(source.includes('hotMemoryTokens'), 'complete runtime settings are bundled')
   assert.ok(source.includes('memoir-settings-slot-chevron'), 'Settings card uses the family disclosure chrome')
   assert.ok(source.includes('memoir-scroll-region'), 'panel carries one explicit vertical scroll owner')

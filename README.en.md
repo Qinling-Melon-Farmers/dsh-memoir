@@ -4,6 +4,9 @@
 
 [中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [GitHub Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
+> [!IMPORTANT]
+> This branch is the **source-only adaptation line for DSH `0.1.2-alpha.1`**: branch `alpha/dsh-0.1.2-alpha.1`, source version identity `0.6.0-alpha.1`. It will not be published to npm, tagged, or turned into a GitHub Release. Stable DSH users should keep installing npm `latest` (currently `dsh-memoir@0.5.6`) and must not install this branch on DSH `0.1.1-rc.2`.
+
 **dsh-memoir is a local project-memory layer for DeepSeek Harness: it persists an agent's work conclusions, lessons learned, and next actions, then carries them across sessions through bounded Hot Memory injection, on-demand ranked recall, and Web GUI management.**
 
 > Cache-aware local project memory for DeepSeek Harness.
@@ -14,22 +17,57 @@
 - **Bounded hot-memory injection** — token-budgeted Hot Memory is injected into the system prompt (default 900/1200)
 - **Ranked local recall** — inverted index + BM25 local ranked retrieval; `memoir_read` fetches long-tail history on demand
 - **Traceable and duplicate-aware** — trusted session/turn provenance plus explainable pre-write duplicate/conflict candidates; the caller explicitly updates, supersedes, or keeps both
-- **Web GUI** — a bilingual sidebar panel with complete lifecycle editing, project/global browsing, BM25 search, Hot Memory, diagnostics, and live settings
+- **Web GUI** — complete lifecycle editing, project/global browsing, BM25 search, Hot Memory, diagnostics, and live settings; this alpha branch uses native DSH Memoir Conversation and Settings surfaces with live Chinese/English switching
+
+## Compatibility and update channels
+
+| Channel | dsh-memoir | DSH | Install and update path |
+| --- | --- | --- | --- |
+| Stable | npm `latest` (`0.5.6`) | `0.1.1-rc.2` | npm, dshmarket, or plugins-manager; always the stable line |
+| Alpha source | `alpha/dsh-0.1.2-alpha.1` (source identity `0.6.0-alpha.1`) | source tag `dsh-v0.1.2-alpha.1` or a later compatible alpha | manual clone/build/link only; never enters npm updates |
+
+`package.json#dsh.engines.dsh` explicitly requires `>=0.1.2-alpha.1`. If a source/Git updater exposes `0.6.0-alpha.1`, it is a **DSH-alpha-only source update**: switch and build DSH to a compatible alpha first. dshmarket and the integrated plugins-manager continue to resolve npm `latest`, so stable users are not offered this source alpha.
 
 ## Quick Start
 
+### Stable users
+
 ```bash
-# install into the web profile from npm (recommended)
-dsh plugin --profile web add dsh-memoir
-
-# or install latest source from GitHub
-dsh plugin --profile web add github:Qinling-Melon-Farmers/dsh-memoir
-
-# or local development (after cloning)
-dsh plugin --profile web add link:/absolute/path/dsh-memoir
+# npm, dshmarket, and plugins-manager all remain on the stable channel
+dsh plugin --profile web add dsh-memoir@latest
 ```
 
-Restart DSH to take effect (`dsh web`), then use it normally:
+### DSH Alpha source users
+
+Prepare the official DSH alpha checkout first:
+
+```bash
+git clone --branch dsh-v0.1.2-alpha.1 --depth 1 https://github.com/deepseek-ai/deepseek-harness.git
+cd deepseek-harness
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+Then clone and build the Memoir alpha branch:
+
+```bash
+git clone --branch alpha/dsh-0.1.2-alpha.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+cd dsh-memoir
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+Finally, link the checkout into an isolated `web` profile from the official DSH source directory:
+
+```bash
+cd /absolute/path/deepseek-harness
+pnpm dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
+pnpm dsh web
+```
+
+For later updates, run `git pull --ff-only` and rebuild in both checkouts. This path neither downloads nor increments an npm alpha package. Memory remains in `$DSH_HOME/dsh-memoir.json` and each project's `PROJECT_MEMORY.md`; switching the client adapter does not migrate, clear, or rewrite existing memories.
+
+After installation and startup, use it normally:
 
 ```text
 use the Agent as usual
@@ -82,6 +120,14 @@ need long-tail history? memoir_read (local relevance-ranked recall)
 > v0.4+ no longer injects the full PROJECT_MEMORY.md into the model: Hot Memory goes to the prompt, long-tail history goes through ranked recall.
 
 **Session Snapshot freezing semantics**: one session's injected text is built once and frozen (stable prompt prefix, maximizing prompt-prefix cache hits); the current session does not re-consume memory it just wrote, and a new session rebuilds and sees the latest memory. Since v0.4.2, when there is no unique session identity (session.id / agent.id), freezing is skipped — a cache miss beats wrongly reusing another session's snapshot.
+
+## v0.6.0-alpha.1: native DSH Alpha UI adaptation
+
+- Removed the deleted `dsh-client-runtime` dependency and selector-based DOM mounting; this line no longer takes over the legacy dsh-web-ui sidebar.
+- Registers a native Memoir Conversation page through `conversation.view` and a native Memoir Settings page through `settings.section`; the DSH shell owns navigation and layout.
+- Memory CRUD, provenance navigation, lifecycle management, similar-memory governance, BM25, Hot Memory, auto-distill, cache diagnostics, and live settings keep using the established implementation.
+- Store and settings paths now fully honor `DSH_HOME`, with `~/.dsh` retained as the unset fallback. Store v4/settings v2 remain unchanged, so no data migration runs.
+- This is a source compatibility branch, not a release. Stable screenshots and v0.5.x notes remain as historical capability records.
 
 ## v0.5.6 Provenance, similar-memory governance, and Web UX
 

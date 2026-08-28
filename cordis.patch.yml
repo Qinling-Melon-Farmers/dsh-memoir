@@ -1,15 +1,15 @@
 # dsh-memoir bundle patch: inserts the host-half plugin row into the web
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
-# manifest field) over dsh-base; activate with
-#   dsh plugin --profile web add github:<owner>/dsh-memoir
-# or, for local development,
-#   dsh plugin --profile web add file:<abs path to this directory>
+# manifest field) over dsh-base. This source-only alpha branch targets DSH
+# >=0.1.2-alpha.1 and is intentionally not published or tagged. After both
+# source trees have been built, install it from the DSH source checkout with
+#   pnpm dsh plugin --profile web add link:<abs path to this directory>
 #
 # The row is a bare plugin by package name: the node half (exports ".")
 # registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel
 # routes, the turn-end auto-distill listener, and the per-project
-# system-prompt announcement; the browser half (exports "./client") renders
-# the sidebar entry + memory panel.
+# system-prompt announcement; the browser half (exports "./client") registers
+# a native conversation.view plus a native settings.section.
 #
 # Optional config (all default true):
 #   config:
@@ -20,14 +20,15 @@
 #     autoDistillCooldownMin: 0 # minimum minutes between successful reminders
 #     autoDistillMinTools: 1 # minimum tool calls on the triggering turn
 # All fields except enabled are startup defaults. v0.5.4+ can persist complete
-# live overrides from the Memory panel or Settings -> Web UI Plugins:
+# live overrides from the Memory Conversation view or native Settings section:
 #   hotMemoryTokens: 900
 #   hotMemoryMaxTokens: 1200
 #   readDefaultLimit: 8
 #   readMaxLimit: 30
 #   sessionSnapshotMax: 128
 #   queryCacheSize: 128
-# Overrides live in ~/.dsh/dsh-memoir.settings.json and can be reset.
+# Overrides live in $DSH_HOME/dsh-memoir.settings.json (default ~/.dsh) and
+# can be reset without changing the memory store.
 - insert:
     - id: memoir
       name: dsh-memoir

@@ -12,11 +12,20 @@ import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
 
 interface PanelProps {
-  controller: PanelController
+  controller?: PanelController
   api: MemoirApi
-  cwdTracker: CwdTracker
+  cwdTracker?: CwdTracker
+  /** Native alpha slots provide a session-bound cwd directly. */
+  cwd?: string
   t: (key: string) => string
   openSource?: (sessionId: string, turnId?: number) => void
+  /** Native settings may close their owning shell without a legacy controller. */
+  onClose?: () => void
+}
+
+const EMPTY_CWD_TRACKER: CwdTracker = {
+  getSnapshot: () => '',
+  subscribe: () => () => {},
 }
 
 type EntryPatch = {
@@ -591,14 +600,16 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
   )
 }
 
-export function MemoirPanel({ controller, api, cwdTracker, t, openSource }: PanelProps) {
+export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, cwd: fixedCwd, t, openSource, onClose }: PanelProps) {
   const [, setLanguage] = useState(document.documentElement.lang)
   useEffect(() => {
     const observer = new MutationObserver(() => setLanguage(document.documentElement.lang))
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
     return () => observer.disconnect()
   }, [])
-  const cwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
+  const trackedCwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
+  const cwd = fixedCwd ?? trackedCwd
+  const close = onClose ?? (controller === undefined ? undefined : () => controller.close())
   const [tab, setTab] = useState<'project' | 'global'>('project')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<MemoirStatus | 'all'>('active')
@@ -730,7 +741,9 @@ export function MemoirPanel({ controller, api, cwdTracker, t, openSource }: Pane
           <div className="memoir-subtitle">{tab === 'project' ? (cwd === '' ? t('empty.workspace') : cwd) : t('tab.global')}</div>
         </div>
         <button type="button" className="memoir-iconbtn" title={t('panel.refresh')} onClick={reload}>⟳</button>
-        <button type="button" className="memoir-iconbtn" title={t('panel.close')} onClick={() => controller.close()}>×</button>
+        {close === undefined
+          ? null
+          : <button type="button" className="memoir-iconbtn" title={t('panel.close')} onClick={close}>×</button>}
       </div>
       <div className="memoir-tabs" data-dsh-part="tabs">
         <button type="button" className="memoir-tab" data-active={tab === 'project' ? 'true' : undefined} onClick={() => setTab('project')}>{t('tab.project')}</button>

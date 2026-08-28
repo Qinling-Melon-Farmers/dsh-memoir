@@ -6,11 +6,31 @@
 
 ### 中文
 
-- 暂无。
+#### Added
+
+- 建立 DSH `0.1.2-alpha.1` 独立源码适配线 `alpha/dsh-0.1.2-alpha.1`，源码版本标识为 `0.6.0-alpha.1`；不发布 npm、不打 tag、不创建 GitHub Release，npm `latest` 保持 `0.5.6`。
+- 客户端接入 DSH alpha 原生 `conversation.view` 与 `settings.section`，分别提供「记忆」会话视图和设置分区，并继续支持中英文即时切换。
+- 新增 alpha manifest、客户端原生插槽与 `DSH_HOME` 路径边界回归测试。
+
+#### Changed
+
+- 移除 DSH alpha 已删除的 `dsh-client-runtime` / 旧 UI slots 开发依赖以及运行时 DOM 挂载；宿主布局和导航现由 DSH 原生 shell 管理。
+- store 与 settings 默认路径完整遵守 `DSH_HOME`，未设置或空白时保持 `~/.dsh` 回退；既有记忆格式与内容不变。
+- dshmarket 与 plugins-manager 继续使用 npm `latest` 稳定通道；alpha 用户须先构建兼容 DSH alpha，再从源码 clone/build/link。
 
 ### English
 
-- None.
+#### Added
+
+- Created the independent DSH `0.1.2-alpha.1` source adaptation line `alpha/dsh-0.1.2-alpha.1`, with source version identity `0.6.0-alpha.1`. It is not published to npm, tagged, or released on GitHub; npm `latest` remains `0.5.6`.
+- Integrated with the native DSH alpha `conversation.view` and `settings.section` slots for Memoir Conversation and Settings surfaces, retaining live Chinese/English switching.
+- Added regressions for the alpha manifest, native client slots, and the `DSH_HOME` path boundary.
+
+#### Changed
+
+- Removed the deleted DSH-alpha `dsh-client-runtime` / legacy UI-slots development dependencies and runtime DOM mounting. The native DSH shell now owns layout and navigation.
+- Store and settings defaults now fully honor `DSH_HOME`, falling back to `~/.dsh` only when it is unset or blank; existing memory formats and content remain unchanged.
+- dshmarket and plugins-manager stay on npm `latest`; alpha users must build a compatible DSH alpha first and clone/build/link Memoir from source.
 
 ## [0.5.6] - 2026-08-27
 

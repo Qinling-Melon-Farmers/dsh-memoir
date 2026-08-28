@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "DeepSeek Harness 本地项目记忆 / Local project memory: zero regular runtime dependencies, bounded session-frozen Hot Memory, BM25 recall/cache, lifecycle, provenance, duplicate/conflict governance, and a bilingual Web GUI.",
-  "version": "0.5.6",
+  "version": "0.6.0-alpha.1",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -14,25 +14,30 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "engines": {
+      "dsh": ">=0.1.2-alpha.1"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime"
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-settings-general"
       ],
       "platform": "web"
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2"
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2 || >=0.1.2-alpha.1 <0.2.0",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2 || >=0.1.2-alpha.1 <0.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-runtime": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.1-rc.2",
     "@deepseek-ai/dsh-host-webserver": "0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
     "@deepseek-ai/dsh-session": "0.1.1-rc.2",
