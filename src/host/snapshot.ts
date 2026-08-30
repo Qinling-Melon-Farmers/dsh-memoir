@@ -126,6 +126,11 @@ export class MemorySnapshotManager {
   forget(sessionKey: string): void {
     this.snapshots.delete(sessionKey)
   }
+
+  /** Invalidate every snapshot after an explicit prompt-language change. */
+  clear(): void {
+    this.snapshots.clear()
+  }
 }
 
 /**

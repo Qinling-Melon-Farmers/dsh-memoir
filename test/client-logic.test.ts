@@ -155,6 +155,7 @@ test('MemoirApi settings methods use JSON-protected live-policy routes', async (
   const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = []
   const snapshot = {
     settings: {
+      language: 'zh' as const,
       announceToAgent: true,
       autoDistill: true,
       autoDistillEvery: 2,

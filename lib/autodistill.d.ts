@@ -10,7 +10,10 @@
  * Pure decision helpers are exported for unit tests.
  */
 import type { UserMessage } from '@deepseek-ai/dsh-llm';
+import type { MemoirLanguage } from './i18n.js';
 /** The steering prompt injected at the end of an active turn. */
+export declare function distillPrompt(language?: MemoirLanguage): string;
+/** Backwards-compatible Chinese prompt constant. */
 export declare const DISTILL_PROMPT: string;
 /** Plugin identity stamped on the steering message source. */
 export declare const AUTO_DISTILL_PLUGIN = "dsh-memoir";
@@ -83,5 +86,7 @@ export declare function installAutoDistill(wire: AutoDistillWire, options: {
         cooldownMin?: number;
         minTools?: number;
     };
+    /** Optional live language source for the steering instruction. */
+    language?: () => MemoirLanguage;
     now?: () => number;
 }): () => void;

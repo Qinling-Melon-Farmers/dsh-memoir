@@ -8,6 +8,7 @@
  * changing behavior.
  */
 import type { MemoirEntry, SectionKey } from './store.js';
+import type { MemoirLanguage } from './i18n.js';
 /** Token budget for hot-memory injection. */
 export interface MemoryBudget {
     /** Soft target: stop adding entries once reached. */
@@ -45,14 +46,14 @@ interface ScoredEntry {
  */
 export declare function rankEntries(entries: MemoirEntry[], now?: number): ScoredEntry[];
 /** Compact bullet for one entry: title prefix + content (no ids/timestamps). */
-export declare function compactLine(entry: MemoirEntry): string;
+export declare function compactLine(entry: MemoirEntry, language?: MemoirLanguage): string;
 /** The injected header line. */
 export declare const HOT_MEMORY_HEADER = "[Project memory]";
 /**
  * Render the selected entries into the compact injected block (roadmap
  * §2.3): Actions / Lessons / Recent state. Deterministic for a fixed input.
  */
-export declare function renderHotMemory(selected: MemoirEntry[]): string;
+export declare function renderHotMemory(selected: MemoirEntry[], language?: MemoirLanguage): string;
 /** One selection result (diagnostics + injection). */
 export interface HotMemoryResult {
     /** The injected block ('' when nothing was selected). */
@@ -70,7 +71,7 @@ export interface HotMemoryResult {
  * (monotone in the token estimate). Used only for the degenerate case of an
  * oversized FIRST candidate — normal selection never exceeds hardMax.
  */
-export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number): MemoirEntry;
+export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry;
 /**
  * Select hot memory under the budget. v0.4.2 quota-based order:
  *   1. newest work entries (Recent-state floor, 1~RECENT_WORK_COUNT)
@@ -85,5 +86,5 @@ export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens:
  * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).
  * @param now - clock for recency (injectable for deterministic tests).
  */
-export declare function selectHotMemory(entries: MemoirEntry[], budget?: MemoryBudget, now?: number): HotMemoryResult;
+export declare function selectHotMemory(entries: MemoirEntry[], budget?: MemoryBudget, now?: number, language?: MemoirLanguage): HotMemoryResult;
 export {};

@@ -1,117 +1,155 @@
 /**
- * Browser-half entry for the dsh-memoir plugin — runs inside the dsh web GUI.
- * Mounts the sidebar entry row (toggles the panel) and the memoir panel in
- * the center column, bound to the active session's workspace. Failure policy:
- * DOM mounting problems are logged, never thrown — the web shell fails the
- * whole boot when a plugin apply throws, and an external plugin must not take
- * the GUI down.
+ * Browser-half entry for the DSH 0.1.2 alpha client architecture.
+ *
+ * The alpha shell removed dsh-client-runtime and exposes additive UI through
+ * domain-owned slots. Memoir therefore registers as a native Conversation
+ * view and a native Settings section. No CSS-module selector or DOM takeover
+ * is used for mounting; the host remains the sole owner of layout and view
+ * navigation.
  */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-ui-slots'
-import { useEffect, useState } from 'react'
-import { PanelController } from './controller.js'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { useEffect } from 'react'
 import { MemoirApi } from './api.js'
-import { createCwdTracker } from './cwd.js'
 import { makeT } from './i18n.js'
+import { MemoirPanel } from './panel.jsx'
 import { mountPanelStyles } from './styles.js'
-import { mountSidebarEntry } from './sidebar-entry.js'
-import { mountPanel } from './mount.jsx'
-import { MemoirSettingsPanel } from './panel.jsx'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap {
-    /** Optional dsh-web-ui group slot for external plugin settings cards. */
-    'web-ui.plugin.item': { kind: 'list'; scope: 'root'; owner: SettingsPluginItemOwnerProps }
-  }
-}
+type NativeGlobalProps = { useSessions: UseSessions }
+type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
 
-/** Owner share of a plugin settings card; the group supplies no values. */
-export interface SettingsPluginItemOwnerProps {
-  children?: never
-}
-
-/** Required services (fiber inject waiting — the runtime must be up first). */
+/** Required alpha services; package.json injects the packages that provide them. */
 export const inject = ['sessions', 'slots']
 
-function SettingsSlotCard({ api, t }: { api: MemoirApi; t: (key: string) => string }) {
-  const [, setLanguage] = useState(document.documentElement.lang)
-  const [refreshKey, setRefreshKey] = useState(0)
-  const [open, setOpen] = useState(false)
+/** Reveal a source turn after the Session Controller has opened its session. */
+function revealSourceTurn(turnId: number | undefined): void {
+  if (turnId === undefined) return
+  const reveal = () => document
+    .querySelector<HTMLElement>(`[data-turn-tail="${turnId}"]`)
+    ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  setTimeout(reveal, 0)
+  setTimeout(reveal, 250)
+}
+
+/** Native per-session Conversation view. */
+function ConversationMemoirView({
+  api,
+  ctx,
+  t,
+  sessionId,
+  useSessions,
+  viewRequest,
+  completeViewRequest,
+}: ConvViewProps & NativeGlobalProps & {
+  api: MemoirApi
+  ctx: Context
+  t: (key: string) => string
+}) {
+  const cwd = useSessions((snapshot: SessionListState) => snapshot.byId[sessionId]?.cwd ?? '')
+
+  // A future native deep-link may select Memoir with an opaque focus token.
+  // The current panel has no focus-addressed rows, so acknowledge it once to
+  // avoid retaining a stale one-shot request in the Conversation store.
   useEffect(() => {
-    const observer = new MutationObserver(() => setLanguage(document.documentElement.lang))
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
-    return () => observer.disconnect()
-  }, [])
+    if (viewRequest?.view === 'memoir') completeViewRequest()
+  }, [viewRequest, completeViewRequest])
+
   return (
-    <li className={`memoir-settings-slot${open ? ' memoir-settings-slot-open' : ''}`} data-dsh-plugin="memoir" data-dsh-part="settings-card">
-      <button
-        type="button"
-        className="memoir-settings-slot-header"
-        aria-expanded={open}
-        aria-label={`${t(open ? 'settings.collapse' : 'settings.expand')}: ${t('settings.title')}`}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="memoir-settings-slot-headtext">
-          <span className="memoir-settings-slot-name" title={t('settings.title')}>{t('settings.title')}</span>
-          <span className="memoir-settings-slot-description" title={t('settings.description')}>{t('settings.description')}</span>
-        </span>
-        <svg className={`memoir-settings-slot-chevron${open ? ' memoir-settings-slot-chevron-open' : ''}`} width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z" fill="currentColor" />
-        </svg>
-      </button>
-      {open
-        ? <div className="memoir-settings-slot-body">
-            <MemoirSettingsPanel
-              api={api}
-              t={t}
-              refreshKey={refreshKey}
-              onChanged={() => setRefreshKey((value) => value + 1)}
-              alwaysOpen
-              showDescription={false}
-            />
-          </div>
-        : null}
-    </li>
+    <div className="memoir-native-view" data-dsh-plugin="memoir" data-dsh-part="conversation-view">
+      <MemoirPanel
+        api={api}
+        cwd={cwd}
+        t={t}
+        openSource={(sourceSessionId, turnId) => {
+          ctx.sessions.open(sourceSessionId as SessionId)
+          revealSourceTurn(turnId)
+        }}
+      />
+    </div>
+  )
+}
+
+/** Root-scoped Settings page; it also preserves global-memory access with no session selected. */
+function SettingsMemoirSection({
+  api,
+  ctx,
+  t,
+  close,
+  useSessions,
+}: NativeSettingsSectionProps & {
+  api: MemoirApi
+  ctx: Context
+  t: (key: string) => string
+}) {
+  const cwd = useSessions((snapshot: SessionListState) => {
+    const current = snapshot.current
+    return current === undefined ? '' : snapshot.byId[current]?.cwd ?? ''
+  })
+  return (
+    <div className="memoir-settings-section" data-dsh-plugin="memoir" data-dsh-part="settings-section">
+      <MemoirPanel
+        api={api}
+        cwd={cwd}
+        t={t}
+        onClose={close}
+        openSource={(sourceSessionId, turnId) => {
+          close()
+          ctx.sessions.open(sourceSessionId as SessionId)
+          revealSourceTurn(turnId)
+        }}
+      />
+    </div>
   )
 }
 
 /**
- * Mount the memoir panel.
- * @param ctx - client root context (sessions service).
+ * Register the native alpha surfaces.
+ * @param rawCtx - DSH alpha client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(rawCtx: Context): void {
+  const ctx = rawCtx
+  const api = new MemoirApi()
   const t = makeT(document)
-  const disposers: Array<() => void> = []
-  try {
-    const controller = new PanelController()
-    const api = new MemoirApi()
-    const cwdTracker = createCwdTracker(ctx.sessions)
-    disposers.push(mountPanelStyles())
-    disposers.push(mountSidebarEntry(controller, t))
-    disposers.push(mountPanel(controller, api, cwdTracker, t, (sessionId, turnId) => {
-      try {
-        ctx.sessions.open(sessionId as Parameters<typeof ctx.sessions.open>[0])
-      } catch (error) {
-        console.warn('[dsh-memoir] source session is unavailable:', error)
-        return
-      }
-      controller.close()
-      if (turnId === undefined) return
-      const reveal = () => document.querySelector<HTMLElement>(`[data-turn-tail="${turnId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      setTimeout(reveal, 0)
-      setTimeout(reveal, 250)
-    }))
-    disposers.push(ctx.slots.inject('web-ui.plugin.item', () => ctx.slots.register({
-      name: 'web-ui.plugin.item',
-      id: 'memoir',
-      order: 130,
-    }, () => <SettingsSlotCard api={api} t={t} />)))
-  } catch (error) {
-    // DOM failures degrade the panel, never the GUI.
-    console.warn('[dsh-memoir] mount failed:', error)
-  }
-  ctx.effect(() => () => {
-    for (const dispose of disposers.splice(0)) dispose()
-  }, 'dsh-memoir: ui mounts')
+
+  ctx.effect(() => mountPanelStyles(), 'dsh-memoir: native alpha styles')
+  ctx.effect(() => {
+    let disposers: Array<() => void> = []
+    const register = (): void => {
+      for (const dispose of disposers.splice(0)) dispose()
+      disposers = [
+        ctx.slots.inject('conversation.view', () => ctx.slots.register({
+          name: 'conversation.view',
+          id: 'memoir',
+          order: 20,
+          label: () => t('entry.label'),
+        }, props => <ConversationMemoirView {...props} api={api} ctx={ctx} t={t} />)),
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'memoir',
+          order: 25,
+          label: () => t('entry.label'),
+        }, props => <SettingsMemoirSection {...props} api={api} ctx={ctx} t={t} />)),
+      ]
+    }
+
+    register()
+    // Memoir owns a tiny bilingual dictionary rather than importing the
+    // unpublished alpha locale package. Re-registering bumps both native
+    // rosters so their labels switch with the shell language immediately.
+    const observer = new MutationObserver(register)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    return () => {
+      observer.disconnect()
+      for (const dispose of disposers.splice(0)) dispose()
+    }
+  }, 'dsh-memoir: native alpha slots')
 }

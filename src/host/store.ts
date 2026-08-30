@@ -1,8 +1,9 @@
 /**
  * Structured memory store for dsh-memoir — the single source of truth is the
- * global index JSON (~/.dsh/dsh-memoir.json); the per-project PROJECT_MEMORY.md
- * is a regenerated human-readable rendering of the same entries (git-friendly,
- * auto-injected into future sessions). Pure node:fs, no cordis dependency —
+ * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
+ * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
+ * the same entries (git-friendly, auto-injected into future sessions). Pure
+ * node:fs, no cordis dependency —
  * unit-testable with an injected path.
  *
  * v0.3.1: revision-based in-memory snapshot cache — cold start reads the file
@@ -17,7 +18,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
+import { resolveDshHome } from './dsh-home.js'
+import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
+import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
 
 /** Global index format version. */
 export const FORMAT_VERSION = 4
@@ -159,9 +162,9 @@ export interface CacheStats {
 /** How often (ms) warm load() calls re-probe the file mtime; 0 = every call. */
 export const DEFAULT_MTIME_CHECK_MS = 2000
 
-/** Default store location: <home>/.dsh/dsh-memoir.json. */
+/** Default store location: $DSH_HOME/dsh-memoir.json (fallback ~/.dsh). */
 export function defaultStorePath(): string {
-  return join(homedir(), '.dsh', 'dsh-memoir.json')
+  return join(resolveDshHome(), 'dsh-memoir.json')
 }
 
 /** Cross-process mutation lock defaults (roadmap §2.2). */
@@ -316,54 +319,56 @@ export function bounded(value: string, limit: number): string {
 }
 
 /** Validate one record payload; returns an error message or undefined. */
-export function validateEntryPayload(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null) return 'payload must be a JSON object'
+export function validateEntryPayload(payload: unknown, language: MemoirLanguage = 'en'): string | undefined {
+  const copy = hostCopy(language).validation
+  if (typeof payload !== 'object' || payload === null) return copy.payloadObject
   const record = payload as Record<string, unknown>
   if (typeof record.section !== 'string' || !Object.prototype.hasOwnProperty.call(SECTIONS, record.section)) {
-    return `section must be one of ${SECTION_KEYS.join('/')}`
+    return copy.section(SECTION_KEYS.join('/'))
   }
-  if (typeof record.content !== 'string' || record.content.trim() === '') return 'content is required'
+  if (typeof record.content !== 'string' || record.content.trim() === '') return copy.contentRequired
   if (record.title !== undefined && (typeof record.title !== 'string' || record.title.length > 200)) {
-    return 'title must be a string of at most 200 chars'
+    return copy.title
   }
   if (record.importance !== undefined && (!Number.isInteger(record.importance) || (record.importance as number) < 1 || (record.importance as number) > 5)) {
-    return 'importance must be an integer from 1 to 5'
+    return copy.importance
   }
-  if (record.pinned !== undefined && typeof record.pinned !== 'boolean') return 'pinned must be a boolean'
+  if (record.pinned !== undefined && typeof record.pinned !== 'boolean') return copy.pinned
   if (record.supersedes !== undefined && (!Array.isArray(record.supersedes) || record.supersedes.some((id) => typeof id !== 'string' || id.trim() === ''))) {
-    return 'supersedes must be an array of entry ids'
+    return copy.supersedes
   }
   if (record.tags !== undefined && (!Array.isArray(record.tags) || record.tags.some((tag) => typeof tag !== 'string' || tag.trim() === ''))) {
-    return 'tags must be an array of non-empty strings'
+    return copy.tags
   }
   return undefined
 }
 
 /** Validate a partial update without requiring the immutable record fields. */
-export function validateEntryUpdate(payload: unknown): string | undefined {
-  if (typeof payload !== 'object' || payload === null) return 'patch must be a JSON object'
+export function validateEntryUpdate(payload: unknown, language: MemoirLanguage = 'en'): string | undefined {
+  const copy = hostCopy(language).validation
+  if (typeof payload !== 'object' || payload === null) return copy.patchObject
   const patch = payload as Record<string, unknown>
   const fields = ['section', 'title', 'content', 'importance', 'pinned', 'status', 'supersedes', 'tags']
-  if (!fields.some((field) => Object.prototype.hasOwnProperty.call(patch, field))) return 'at least one update field is required'
+  if (!fields.some((field) => Object.prototype.hasOwnProperty.call(patch, field))) return copy.updateRequired
   if (patch.section !== undefined && (typeof patch.section !== 'string' || !Object.prototype.hasOwnProperty.call(SECTIONS, patch.section))) {
-    return `section must be one of ${SECTION_KEYS.join('/')}`
+    return copy.section(SECTION_KEYS.join('/'))
   }
   if (patch.title !== undefined && patch.title !== null && (typeof patch.title !== 'string' || patch.title.length > 200)) {
-    return 'title must be a string of at most 200 chars, or null to clear it'
+    return copy.titleOrNull
   }
-  if (patch.content !== undefined && (typeof patch.content !== 'string' || patch.content.trim() === '')) return 'content cannot be empty'
+  if (patch.content !== undefined && (typeof patch.content !== 'string' || patch.content.trim() === '')) return copy.contentNotEmpty
   if (patch.importance !== undefined && (!Number.isInteger(patch.importance) || (patch.importance as number) < 1 || (patch.importance as number) > 5)) {
-    return 'importance must be an integer from 1 to 5'
+    return copy.importance
   }
-  if (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') return 'pinned must be a boolean'
+  if (patch.pinned !== undefined && typeof patch.pinned !== 'boolean') return copy.pinned
   if (patch.status !== undefined && (typeof patch.status !== 'string' || !MEMOIR_STATUSES.includes(patch.status as MemoirStatus))) {
-    return `status must be one of ${MEMOIR_STATUSES.join('/')}`
+    return copy.status(MEMOIR_STATUSES.join('/'))
   }
   if (patch.supersedes !== undefined && (!Array.isArray(patch.supersedes) || patch.supersedes.some((id) => typeof id !== 'string' || id.trim() === ''))) {
-    return 'supersedes must be an array of entry ids'
+    return copy.supersedes
   }
   if (patch.tags !== undefined && (!Array.isArray(patch.tags) || patch.tags.some((tag) => typeof tag !== 'string' || tag.trim() === ''))) {
-    return 'tags must be an array of non-empty strings'
+    return copy.tags
   }
   return undefined
 }
@@ -435,6 +440,7 @@ export class MemoirStore {
   private renderCache = new Map<string, { signature: string; markdown: string }>()
   private renderCount = 0
   private renderComputeCount = 0
+  private readonly languageSource: MemoirLanguageSource
 
   /**
    * @param path - store file path (defaults to the standard location).
@@ -443,12 +449,18 @@ export class MemoirStore {
    * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
    *   tuning (tests shrink these; defaults 25ms / 5000ms).
    */
-  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number }) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number; language?: MemoirLanguageSource }) {
     this.path = path ?? defaultStorePath()
     this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
     this.lockRetryMs = options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS
     this.lockTimeoutMs = options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
     this.lockStaleAfterMs = options?.lockStaleAfterMs ?? DEFAULT_LOCK_STALE_AFTER_MS
+    this.languageSource = options?.language ?? DEFAULT_MEMOIR_LANGUAGE
+  }
+
+  /** Current model-facing language (live when backed by Web settings). */
+  language(): MemoirLanguage {
+    return languageFrom(this.languageSource)
   }
 
   /** The cross-process lock file guarding mutations of this store. */
@@ -679,7 +691,7 @@ export class MemoirStore {
 
   /** Append one entry and regenerate the project markdown. Returns the entry. */
   record(cwd: string, payload: EntryPayload, source?: MemoirSource | string): MemoirEntry {
-    const error = validateEntryPayload(payload)
+    const error = validateEntryPayload(payload, this.language())
     if (error !== undefined) throw new Error(error)
     return this.mutateLocked(() => {
       const store = this.load()
@@ -782,7 +794,7 @@ export class MemoirStore {
 
   /** Render one entry as a markdown bullet line. */
   renderEntryLine(entry: MemoirEntry): string {
-    const label = SECTIONS[entry.section]?.label ?? entry.section
+    const label = sectionCopy(entry.section, this.language()).label
     const when = formatTime(entry.time)
     const head = entry.title !== undefined ? `${entry.title} — ` : ''
     return `- [${when}] [${label}] ${head}${entry.content}`
@@ -792,7 +804,7 @@ export class MemoirStore {
   private renderSignature(project: MemoirProject | undefined): string {
     const entries = project?.entries ?? []
     const last = entries[entries.length - 1]
-    return `${entries.length}|${project?.updatedAt ?? 0}|${last?.id ?? ''}|${last?.time ?? ''}`
+    return `${this.language()}|${entries.length}|${project?.updatedAt ?? 0}|${last?.id ?? ''}|${last?.time ?? ''}`
   }
 
   /** Regenerate the full PROJECT_MEMORY.md content for one project. */
@@ -811,24 +823,19 @@ export class MemoirStore {
 
   /** Pure markdown assembly for one project's entries (no cache access). */
   private renderMarkdownNow(entries: MemoirEntry[]): string {
-    const header = [
-      '# 项目持久记忆 Project Memory',
-      '',
-      '> 本文件由 dsh-memoir 插件维护：记录本项目历次会话的工作归纳、经验教训与行动指南，',
-      '> 作为未来 AGENTS 接手本项目时的行动指南；它是人类可读的投影，不是 system prompt 的完整注入内容。',
-      '> 新会话只注入有界的 Hot Memory，完整历史通过 memoir_read 按需检索。',
-      '',
-    ]
+    const language = this.language()
+    const copy = hostCopy(language).markdown
+    const header = [copy.title, '', ...copy.intro, '']
     const body: string[] = []
     for (const key of SECTION_KEYS) {
       const group = entries.filter((e) => e.section === key)
       if (group.length === 0) continue
-      body.push(SECTIONS[key].header, '')
+      body.push(sectionCopy(key, language).header, '')
       for (const entry of group) body.push(this.renderEntryLine(entry))
       body.push('')
     }
     if (body.length === 0) {
-      body.push('> 暂无条目。让 agent 用 memoir_record 沉淀，或在「记忆」面板中手动记录。', '')
+      body.push(copy.empty, '')
     }
     return [...header, ...body].join('\n')
   }
@@ -851,6 +858,17 @@ export class MemoirStore {
     }
     writeFileAtomic(path, markdown)
     return path
+  }
+
+  /** Re-render all known project projections after a language change. */
+  refreshProjectFiles(): void {
+    for (const project of this.listProjects()) {
+      try {
+        this.writeProjectFile(project.path)
+      } catch {
+        // A stale or read-only workspace must not make a settings save fail.
+      }
+    }
   }
 }
 

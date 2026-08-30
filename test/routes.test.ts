@@ -244,6 +244,32 @@ test('settings route reads, persists, validates, and resets the live auto-distil
   }
 })
 
+test('route errors follow the live agent language', async () => {
+  const path = makeTempStorePath()
+  try {
+    const provider = new MemoirSettingsStore({ ...DEFAULT_MEMOIR_SETTINGS, language: 'en' }, path)
+    const handler = makeRoutes(new MemoirStore(makeTempStorePath()), undefined, undefined, undefined, undefined, undefined, provider)[0]!.handler
+    const english = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: 'relative', section: 'work', content: 'x' }),
+    })
+    assert.equal(english.envelope.error?.message, 'path must be an absolute workspace path')
+
+    provider.update({ language: 'zh' })
+    const chinese = await callRoute(handler, {
+      method: 'POST',
+      url: '/api/dsh-memoir/entries',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: 'relative', section: 'work', content: 'x' }),
+    })
+    assert.equal(chinese.envelope.error?.message, 'path 必须是绝对工作区路径')
+  } finally {
+    rmSync(path, { force: true })
+  }
+})
+
 test('POST rejects malformed payloads', async () => {
   const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
   for (const payload of [
@@ -464,7 +490,7 @@ test('GET diagnostics reports cache stats and hot-memory selection', async () =>
           lastQuery: { query: 'q', latencyMs: 0.1, candidates: 1, returned: 1, at: 1 },
         },
         snapshot: { hash: 'abc123', createdAt: 1, storeRevision: 1 },
-        config: { announceToAgent: true, autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
+        config: { language: 'zh' as const, announceToAgent: true, autoDistill: true, autoDistillEvery: 1, autoDistillCooldownMin: 0, autoDistillMinTools: 1, hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8, readMaxLimit: 30, sessionSnapshotMax: 128, queryCacheSize: 128 },
       }
     })[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/diagnostics?path=' + encodeURIComponent(ws.cwd) })

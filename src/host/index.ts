@@ -38,6 +38,8 @@ import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
 import { RetrievalEngine } from './retrieval.js'
 import { MemoirSettingsStore } from './settings.js'
+import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, resolveMemoirLanguage } from './i18n.js'
+import type { MemoirLanguage } from './i18n.js'
 
 /** Stable cordis plugin name. */
 export const name = 'memoir'
@@ -52,6 +54,8 @@ const SECTION_ORDER = 150
 export interface Config {
   /** Master switch for the plugin (tools, routes, prompt section). */
   enabled?: boolean
+  /** Language for agent-facing prompts, tools, results, and errors. */
+  language?: MemoirLanguage
   /** When true (default), a system-prompt section announces the plugin. */
   announceToAgent?: boolean
   /** When true (default), turns with real work are auto-distilled at turn end. */
@@ -91,16 +95,23 @@ const DEFAULT_AUTO_DISTILL_MIN_TOOLS = 1
 
 /** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
  *  details live in the tool schemas, not in every prompt. */
-export const MEMOIR_GUIDANCE =
-  'dsh-memoir 提供项目持久记忆。下方仅注入本项目高优先级记忆；' +
-  '需要历史细节时调用 memoir_read；产生可复用的工作结论、经验或后续行动时调用 memoir_record。'
+export function memoirGuidance(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): string {
+  return hostCopy(language).guidance
+}
+
+export const MEMOIR_GUIDANCE = memoirGuidance()
 
 /** The injected-memory heading (kept stable across versions). */
-export const MEMOIR_SECTION_HEADING = '## 项目持久记忆（自动注入）'
+export function memoirSectionHeading(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): string {
+  return hostCopy(language).sectionHeading
+}
+
+export const MEMOIR_SECTION_HEADING = memoirSectionHeading()
 
 /** Resolved runtime switches (schema defaults applied). */
 export interface ResolvedConfig {
   enabled: boolean
+  language: MemoirLanguage
   announceToAgent: boolean
   autoDistill: boolean
   autoDistillEvery: number
@@ -124,6 +135,7 @@ function resolveConfig(config: Config | undefined): ResolvedConfig {
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
   return {
     enabled: config?.enabled ?? DEFAULT_ENABLED,
+    language: resolveMemoirLanguage(config?.language),
     announceToAgent: config?.announceToAgent ?? DEFAULT_ANNOUNCE,
     autoDistill: config?.autoDistill ?? DEFAULT_AUTO_DISTILL,
     autoDistillEvery: integerAtLeast(config?.autoDistillEvery, DEFAULT_AUTO_DISTILL_EVERY, 1),
@@ -161,18 +173,21 @@ export function memoirSectionText(
   },
   manager?: MemorySnapshotManager,
   budget: MemoryBudget = DEFAULT_MEMORY_BUDGET,
+  language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE,
 ): string {
+  const guidance = memoirGuidance(language)
+  const heading = memoirSectionHeading(language)
   const cwd = context?.agent?.session?.header?.cwd
-  if (typeof cwd !== 'string' || cwd === '') return MEMOIR_GUIDANCE
+  if (typeof cwd !== 'string' || cwd === '') return guidance
   const build = (): { storeRevision: number; text: string } => {
     const entries = store.entries(cwd)
-    const hot = selectHotMemory(entries, budget)
+    const hot = selectHotMemory(entries, budget, Date.now(), language)
     if (hot.selected.length === 0) {
-      return { storeRevision: store.currentRevision(), text: MEMOIR_GUIDANCE }
+      return { storeRevision: store.currentRevision(), text: guidance }
     }
     return {
       storeRevision: store.currentRevision(),
-      text: MEMOIR_GUIDANCE + '\n\n' + MEMOIR_SECTION_HEADING + '\n' + hot.text,
+      text: guidance + '\n\n' + heading + '\n' + hot.text,
     }
   }
   const key = sessionKeyOf(context)
@@ -197,8 +212,8 @@ export function apply(ctx: Context, config?: Config): void {
   const value = resolveConfig(config)
   if (!value.enabled) return
 
-  const store = new MemoirStore(config?.storePath)
   const liveSettings = new MemoirSettingsStore({
+    language: value.language,
     announceToAgent: value.announceToAgent,
     autoDistill: value.autoDistill,
     autoDistillEvery: value.autoDistillEvery,
@@ -211,6 +226,9 @@ export function apply(ctx: Context, config?: Config): void {
     sessionSnapshotMax: value.sessionSnapshotMax,
     queryCacheSize: value.queryCacheSize,
   }, config?.settingsPath)
+  const store = new MemoirStore(config?.storePath, {
+    language: () => liveSettings.get().settings.language,
+  })
   const initialLive = liveSettings.get().settings
   const snapshotManager = new MemorySnapshotManager({ max: initialLive.sessionSnapshotMax })
   const retrieval = new RetrievalEngine(store, { cacheSize: initialLive.queryCacheSize })
@@ -224,16 +242,29 @@ export function apply(ctx: Context, config?: Config): void {
   }
 
   ctx.effect(() => {
-    const tools = [
-      memoirRecordTool(store, retrieval),
-      memoirUpdateTool(store),
-      memoirReadTool(store, () => {
+    let language = liveSettings.get().settings.language
+    let disposers: Array<() => void> = []
+    const register = (): void => {
+      for (const dispose of disposers) dispose()
+      const languageSource = () => liveSettings.get().settings.language
+      const tools = [
+        memoirRecordTool(store, retrieval, languageSource),
+        memoirUpdateTool(store, languageSource),
+        memoirReadTool(store, () => {
         const current = liveSettings.get().settings
         return { defaultLimit: current.readDefaultLimit, maxLimit: current.readMaxLimit }
-      }, retrieval),
-    ]
-    const disposers = tools.map((tool) => ctx.tools.register(tool))
+        }, retrieval, languageSource),
+      ]
+      disposers = tools.map((tool) => ctx.tools.register(tool))
+    }
+    register()
+    const unsubscribe = liveSettings.subscribe(({ settings }) => {
+      if (settings.language === language) return
+      language = settings.language
+      register()
+    })
     return () => {
+      unsubscribe()
       for (const dispose of disposers) dispose()
     }
   }, 'dsh-memoir: tools')
@@ -243,7 +274,7 @@ export function apply(ctx: Context, config?: Config): void {
       const current = liveSettings.get().settings
       const budget = { targetTokens: current.hotMemoryTokens, hardMaxTokens: current.hotMemoryMaxTokens }
       const entries = typeof path === 'string' && path !== '' ? store.entries(path) : []
-      const hot = entries.length === 0 ? null : selectHotMemory(entries, budget)
+      const hot = entries.length === 0 ? null : selectHotMemory(entries, budget, Date.now(), current.language)
       const stats = store.stats()
       const latest = snapshotManager.latest()
       return {
@@ -264,6 +295,7 @@ export function apply(ctx: Context, config?: Config): void {
           storeRevision: latest.storeRevision,
         },
         config: {
+          language: current.language,
           announceToAgent: current.announceToAgent,
           autoDistill: current.autoDistill,
           autoDistillEvery: current.autoDistillEvery,
@@ -286,7 +318,7 @@ export function apply(ctx: Context, config?: Config): void {
       const hot = selectHotMemory(entries, {
         targetTokens: current.hotMemoryTokens,
         hardMaxTokens: current.hotMemoryMaxTokens,
-      })
+      }, Date.now(), current.language)
       return {
         text: hot.text,
         selected: hot.selected,
@@ -313,14 +345,23 @@ export function apply(ctx: Context, config?: Config): void {
           minTools: current.autoDistillMinTools,
         }
       },
+      language: () => liveSettings.get().settings.language,
     }),
     'dsh-memoir: auto-distill',
   )
 
-  ctx.effect(() => liveSettings.subscribe(({ settings }) => {
+  ctx.effect(() => {
+    let language = initialLive.language
+    return liveSettings.subscribe(({ settings }) => {
+      if (settings.language !== language) {
+        language = settings.language
+        snapshotManager.clear()
+        store.refreshProjectFiles()
+      }
     snapshotManager.resize(settings.sessionSnapshotMax)
     retrieval.resizeCache(settings.queryCacheSize)
-  }), 'dsh-memoir: live cache capacities')
+    })
+  }, 'dsh-memoir: live settings effects')
 
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'plugin:dsh-memoir',
@@ -336,7 +377,7 @@ export function apply(ctx: Context, config?: Config): void {
       return memoirSectionText(store, context, snapshotManager, {
         targetTokens: current.hotMemoryTokens,
         hardMaxTokens: current.hotMemoryMaxTokens,
-      })
+      }, current.language)
     },
   }), 'dsh-memoir: live prompt section')
 }

@@ -23,12 +23,12 @@ interface ListenerRecord {
 /** Build a recording mock cordis context. */
 function makeCtx() {
   const ctx = {
-    registeredTools: [] as Array<{ name: string; execute: (args: any, exec: any) => Promise<any> }>,
+    registeredTools: [] as Array<{ name: string; description: string; execute: (args: any, exec: any) => Promise<any> }>,
     registeredRoutes: [] as Array<{ kind: string; path: string; handler: (req: any, res: any) => Promise<void> | void }>,
     listeners: [] as ListenerRecord[],
     sections: [] as Array<{ name: string; order: number; text: ((context: unknown) => string) | string }>,
     tools: {
-      register: (def: { name: string }) => {
+      register: (def: { name: string; description: string }) => {
         ctx.registeredTools.push(def as never)
         return () => {}
       },
@@ -122,6 +122,40 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
   assert.equal(ctx.listeners.length, 1)
+})
+
+test('agent language switches tools, prompt guidance, and auto-distill live', async () => {
+  const ctx = makeCtx()
+  applyTest(ctx, { language: 'zh' })
+  assert.match(ctx.registeredTools[0]!.description, /记忆/)
+
+  const updated = await callRoute(ctx.registeredRoutes[0]!.handler, {
+    method: 'PUT',
+    url: '/api/dsh-memoir/settings',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ language: 'en' }),
+  })
+  assert.equal(updated.status, 200)
+  assert.equal(ctx.registeredTools.length, 6, 'the three tool schemas are registered again in the new language')
+  assert.match(ctx.registeredTools[3]!.description, /Persist one project-memory entry/)
+  assert.doesNotMatch(ctx.registeredTools[3]!.description, /[\u3400-\u9fff]/u)
+
+  const provider = ctx.sections[0]!.text as (context: unknown) => string
+  assert.match(provider({}), /persistent project memory/i)
+  assert.doesNotMatch(provider({}), /[\u3400-\u9fff]/u)
+
+  const messages: Array<{ content?: Array<{ text?: string }> }> = []
+  ctx.listeners[0]!.listener({
+    agent: {
+      id: 'english-agent',
+      session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] },
+      steer: (message: { content?: Array<{ text?: string }> }) => messages.push(message),
+    },
+    turn: 1,
+    signal: new AbortController().signal,
+  })
+  assert.match(messages[0]!.content![0]!.text!, /automatic wrap-up/i)
+  assert.doesNotMatch(messages[0]!.content![0]!.text!, /[\u3400-\u9fff]/u)
 })
 
 test('apply forwards auto-distill frequency config to the turn-end listener', () => {

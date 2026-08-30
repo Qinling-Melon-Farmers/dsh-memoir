@@ -24,6 +24,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { MemoirStore } from './store.js';
 import { MemorySnapshotManager } from './snapshot.js';
 import type { MemoryBudget } from './selector.js';
+import type { MemoirLanguage } from './i18n.js';
 /** Stable cordis plugin name. */
 export declare const name = "memoir";
 /** Services required before the memory surfaces can mount. */
@@ -32,6 +33,8 @@ export declare const inject: string[];
 export interface Config {
     /** Master switch for the plugin (tools, routes, prompt section). */
     enabled?: boolean;
+    /** Language for agent-facing prompts, tools, results, and errors. */
+    language?: MemoirLanguage;
     /** When true (default), a system-prompt section announces the plugin. */
     announceToAgent?: boolean;
     /** When true (default), turns with real work are auto-distilled at turn end. */
@@ -61,12 +64,15 @@ export interface Config {
 }
 /** Model-facing announcement: minimal by design (roadmap §2.6) — parameter
  *  details live in the tool schemas, not in every prompt. */
+export declare function memoirGuidance(language?: MemoirLanguage): string;
 export declare const MEMOIR_GUIDANCE: string;
 /** The injected-memory heading (kept stable across versions). */
-export declare const MEMOIR_SECTION_HEADING = "## \u9879\u76EE\u6301\u4E45\u8BB0\u5FC6\uFF08\u81EA\u52A8\u6CE8\u5165\uFF09";
+export declare function memoirSectionHeading(language?: MemoirLanguage): string;
+export declare const MEMOIR_SECTION_HEADING: string;
 /** Resolved runtime switches (schema defaults applied). */
 export interface ResolvedConfig {
     enabled: boolean;
+    language: MemoirLanguage;
     announceToAgent: boolean;
     autoDistill: boolean;
     autoDistillEvery: number;
@@ -102,7 +108,7 @@ export declare function memoirSectionText(store: MemoirStore, context: {
             };
         };
     };
-}, manager?: MemorySnapshotManager, budget?: MemoryBudget): string;
+}, manager?: MemorySnapshotManager, budget?: MemoryBudget, language?: MemoirLanguage): string;
 /**
  * Mount the memory tools, the panel routes, the auto-distill listener, and
  * the per-project announcement.

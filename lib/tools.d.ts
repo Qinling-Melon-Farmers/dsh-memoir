@@ -14,6 +14,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 import type { MemoirEntry, MemoirSource, MemoirStore } from './store.js';
 import type { RetrievalEngine } from './retrieval.js';
+import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
 /** One text content block (the only render shape these tools emit). */
 export declare function text(value: string): ContentBlock[];
 /** Resolve the caller session's workspace cwd (absolute), or undefined. */
@@ -36,12 +37,12 @@ export declare function resolveMemorySource(exec: ToolRunContext | undefined): M
 /** Static startup values or a live provider backed by GUI settings. */
 export type ReadToolOptionsSource = ReadToolOptions | (() => ReadToolOptions);
 /** Full-detail entry line (time + label + title + content). */
-export declare function renderEntryFull(entry: MemoirEntry): string;
+export declare function renderEntryFull(entry: MemoirEntry, language?: MemoirLanguage): string;
 /** Compact one-line entry (id + title + collapsed single-line content). */
 export declare function renderEntryCompact(entry: MemoirEntry, maxContent?: number): string;
 /** The record tool: persist one memory entry with pre-write governance. */
-export declare function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** Update one existing entry while preserving its id and creation time. */
-export declare function memoirUpdateTool(store: MemoirStore): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirUpdateTool(store: MemoirStore, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */
-export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptionsSource, retrieval?: RetrievalEngine): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptionsSource, retrieval?: RetrievalEngine, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;

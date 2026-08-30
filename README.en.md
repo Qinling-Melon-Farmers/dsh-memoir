@@ -11,7 +11,11 @@
 
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
+> [!IMPORTANT]
+> `dsh-memoir@0.6.0` is the formal plugin release for the npm-published DSH `0.1.2-alpha.2` line and requires `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`. Upgrade DSH first. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
+
 ```bash
+npm install --global @deepseek-ai/dsh@alpha
 dsh plugin --profile web add dsh-memoir@latest
 ```
 
@@ -27,11 +31,11 @@ Restart `dsh web`. Memory remains local and is not automatically deleted when th
 | BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
 | Governable memory | Importance, pinning, tags, archive/restore, and supersede lifecycle; similar writes require an explicit update, replacement, or keep-both decision |
 | Provenance | Agent writes retain trusted session/turn sources; the Web panel can copy and make a best-effort jump to the original session |
-| Complete Web GUI | Bilingual project/global browsing, ranked search, editing, Hot Memory inspection, diagnostics, and live settings |
+| Complete Web GUI | Bilingual project/global browsing, ranked search, editing, Hot Memory inspection, diagnostics, and live settings, with an independent agent-facing language choice |
 
 It fits personal and local development workflows where a new agent should continue understanding a project. It is not a raw chat backup, multi-user cloud sync service, or vector-semantic knowledge base.
 
-![dsh-memoir memory management, settings, and Hot Memory](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-memory-scroll-zh.png)
+![dsh-memoir native Settings and agent-language selection on DSH alpha.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-settings-zh.png)
 
 ## How it works
 
@@ -77,6 +81,8 @@ Automatic distillation is an observable agent turn-end reminder, not silent back
 
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
+`language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. It defaults to `zh` for backward compatibility and can be switched to `en` in the GUI. Tool schemas and subsequent prompts update live without restarting DSH.
+
 ## Local recall and caching
 
 - Chinese 2/3-grams, English words, and code/path identifier tokenization;
@@ -90,7 +96,7 @@ Top-5 recall on the fixed quality set is 100%; the repository gate requires at l
 
 ## Web GUI
 
-Installing into the `web` profile adds a Memory sidebar entry and a collapsed-by-default card under Settings → Web UI Plugins.
+Installing into a DSH-alpha `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
 
 - Project memory and all-project global memory;
 - status, section, and keyword filters with BM25 scores;
@@ -99,10 +105,12 @@ Installing into the `web` profile adds a Memory sidebar entry and a collapsed-by
 - Hot Memory Inspector: what the next session will inherit;
 - Retrieval Diagnostics: index, query cache, last query, and session snapshot;
 - one vertical scroll owner, so expanded settings, Hot Memory, and diagnostics remain continuously scrollable;
-- live Chinese/English switching from `<html lang>`.
+- live GUI Chinese/English switching from `<html lang>`, with a separate `language` setting for agent-facing copy.
 
 <details>
 <summary>More stable GUI screenshots</summary>
+
+![Native Memory Conversation view on DSH alpha.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png)
 
 ![Memory lifecycle and similar-memory governance](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png)
 
@@ -116,35 +124,24 @@ Installing into the `web` profile adds a Memory sidebar entry and a collapsed-by
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@latest` | Recommended stable |
-| GitHub `main` | `0.1.1-rc.2` | source clone + `link:` | Stable development |
-| [`alpha/dsh-0.1.2-alpha.1`](https://github.com/Qinling-Melon-Farmers/dsh-memoir/tree/alpha/dsh-0.1.2-alpha.1) | `0.1.2-alpha.1` | run `pnpm dsh ... link:` from the official DSH alpha source | Source preview only |
+| npm `latest` (`0.6.0`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current formal release for the npm alpha line |
+| pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
+| GitHub `main` | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | 0.6.x development line |
 
-Stable requires Node.js `^22.19.0 || >=24.0.0`. dshmarket and the dsh-web plugin manager should continue installing `@latest`. The alpha branch has no npm package, tag, or Release, preventing stable users from being prompted to upgrade their host by mistake.
+Node.js `^22.19.0 || >=24.0.0` is required. v0.6.0 uses the native DSH-alpha `conversation.view` / `settings.section` slots and the Remote-era client module architecture. A formal plugin version means Memoir itself is released; it does not imply compatibility with the older rc2 host. `dsh.engines.dsh` rejects incompatible hosts.
 
 <details>
 <summary>Install from source</summary>
 
-Stable source:
+0.6.x source:
 
 ```bash
 git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
+npm install --global @deepseek-ai/dsh@alpha
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
-```
-
-DSH `0.1.2-alpha.1` preview:
-
-```bash
-git clone --branch alpha/dsh-0.1.2-alpha.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
-pnpm install --frozen-lockfile
-pnpm run build
-
-# run from the official DSH dsh-v0.1.2-alpha.1 source checkout
-pnpm dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
 </details>
@@ -173,6 +170,7 @@ Every field below can be set in the memoir `config` row in `cordis.patch.yml`. E
 | Field | Default | Purpose |
 | --- | ---: | --- |
 | `enabled` | `true` | master switch for tools, routes, and prompt injection |
+| `language` | `zh` | agent-facing prompt, tool schema/result, projection-heading, and error language; `zh` or `en` |
 | `announceToAgent` | `true` | announce memory tools and rules to the agent |
 | `autoDistill` | `true` | enable top-level worked-turn reminders |
 | `autoDistillEvery` | `1` | remind at most once per N worked turns |
@@ -199,7 +197,7 @@ v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report
 
 Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-Stable has 171 automated tests covering storage migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual GUI, scrolling, integration, and release automation.
+v0.6.0 has 182 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, scrolling, DSH alpha.2 integration, and release automation.
 
 ## FAQ
 
@@ -228,6 +226,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Stable packages are published by the tag workflow through npm OIDC. The current stable release is [v0.5.6](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6).
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current release is [v0.6.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0).
 
 Apache-2.0

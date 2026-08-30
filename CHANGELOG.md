@@ -6,15 +6,43 @@
 
 ### 中文
 
-- 重构 README 中英双语信息架构：首屏突出 npm 安装、local-first、零捆绑运行时依赖、有界缓存友好 Hot Memory、BM25 召回/缓存、来源与生命周期等差异化能力；发布历史下沉到更新日志。
-- 新增稳定版与 DSH alpha 源码分支兼容矩阵、自动蒸馏真实语义、重要度默认值、存储安全边界、精简基准与 FAQ，方便用户和 Agent 判断是否适合安装。
-- 优化 npm package description 与搜索关键词，并同步更新 GitHub About、Topics 和 npm 主页链接，提高中文/英文及 Agent 搜索场景下的可发现性。
+- 暂无。
 
 ### English
 
-- Reworked the bilingual README information architecture so the first screen leads with npm installation and the differentiators: local-first storage, zero bundled runtime dependencies, bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, and lifecycle. Version history now stays in the changelog.
-- Added a stable/DSH-alpha source compatibility matrix, precise automatic-distillation semantics, the neutral importance default, storage security boundaries, a concise benchmark, and an FAQ so humans and agents can decide whether the plugin fits before installing.
-- Improved the npm package description and search keywords, with matching GitHub About, Topics, and npm homepage metadata for better Chinese, English, and agent-driven discovery.
+- None.
+
+## [0.6.0] - 2026-08-31
+
+### 中文
+
+#### Added
+
+- 正式适配 npm 已发布的 DeepSeek Harness `0.1.2-alpha.2`：通过原生 `conversation.view` 与 `settings.section` 注册「记忆」会话视图和设置分区，完整保留 CRUD、生命周期、可信溯源、相似记忆治理、BM25、Hot Memory、自动蒸馏、诊断和实时设置。
+- 新增 DSH alpha manifest、原生 slot、真实 alpha.2 类型契约、`DSH_HOME` 路径边界及发布包回归；客户端不再依赖本地手写的 slot/session 接口。
+- 完成 Issue #8：新增可实时切换的 `language: zh | en`（默认 `zh`），覆盖 Agent 可见的工具描述与参数、系统注入、自动蒸馏提示、工具结果、Hot Memory、`PROJECT_MEMORY.md` 标题以及校验、治理和路由错误；GUI 页面语言与 Agent 输出语言可独立选择。
+
+#### Changed
+
+- 移除 alpha 已删除的 `dsh-client-runtime`、旧 UI slots 与 DOM 选择器挂载；布局、导航、作用域和卸载由 DSH 原生 shell 管理。开发依赖统一锁定 `@deepseek-ai/dsh-* 0.1.2-alpha.2`，`dsh.engines.dsh` 明确要求 `>=0.1.2-alpha.2 <0.1.3`。
+- store 与 settings 默认路径完整遵守 `DSH_HOME`，未设置或空白时回退到 `~/.dsh`；store v4 不变，settings v3 懒兼容 v1/v2，既有记忆与 `PROJECT_MEMORY.md` 不迁移、不清空。
+- 将此前仅源码验证的 alpha 适配提升为正式 `dsh-memoir@0.6.0` npm/tag/Release；DSH `0.1.1-rc.2` 用户继续固定使用 `dsh-memoir@0.5.6`。
+- 重构中英双语 README：首屏突出 npm 安装、local-first、零捆绑运行时依赖、有界缓存友好 Hot Memory、BM25 召回/缓存、来源和生命周期，并更新 alpha.2 兼容矩阵、自动蒸馏语义、FAQ 与 Agent 搜索元数据。
+
+### English
+
+#### Added
+
+- Added formal compatibility with the npm-published DeepSeek Harness `0.1.2-alpha.2`: Memoir now registers native Memory Conversation and Settings surfaces through `conversation.view` and `settings.section`, retaining CRUD, lifecycle, trusted provenance, similar-memory governance, BM25, Hot Memory, automatic distillation, diagnostics, and live settings.
+- Added regressions for the DSH-alpha manifest, native slots, real alpha.2 type contracts, the `DSH_HOME` path boundary, and the packed release. Client compilation no longer relies on locally retyped slot/session interfaces.
+- Completed Issue #8 with live `language: zh | en` selection (default `zh`) across agent-visible tool descriptions and parameters, system injection, distillation prompts, tool results, Hot Memory, `PROJECT_MEMORY.md` headings, and validation, governance, and route errors. GUI locale and agent-output language can be selected independently.
+
+#### Changed
+
+- Removed the alpha-deleted `dsh-client-runtime`, legacy UI slots, and selector-based DOM mounting. The native DSH shell now owns layout, navigation, scope, and unload lifecycle. Development packages are pinned to `@deepseek-ai/dsh-* 0.1.2-alpha.2`, while `dsh.engines.dsh` requires `>=0.1.2-alpha.2 <0.1.3`.
+- Store and settings defaults now fully honor `DSH_HOME`, falling back to `~/.dsh` only when unset or blank. Store v4 remains unchanged, settings v3 lazily accepts v1/v2, and existing memory plus `PROJECT_MEMORY.md` are neither migrated nor reset.
+- Promoted the former source-only alpha validation into the formal `dsh-memoir@0.6.0` npm/tag/Release. DSH `0.1.1-rc.2` users remain on the pinned `dsh-memoir@0.5.6` compatibility line.
+- Reworked the bilingual README to lead with npm installation, local-first storage, zero bundled runtime dependencies, bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, and lifecycle, with an alpha.2 compatibility matrix, precise distillation semantics, FAQ, and agent-search metadata.
 
 ## [0.5.6] - 2026-08-27
 

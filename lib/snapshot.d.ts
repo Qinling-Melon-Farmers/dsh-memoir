@@ -69,6 +69,8 @@ export declare class MemorySnapshotManager {
     latest(): SessionSnapshot | undefined;
     /** Drop one session's snapshot (disposal hygiene). */
     forget(sessionKey: string): void;
+    /** Invalidate every snapshot after an explicit prompt-language change. */
+    clear(): void;
 }
 /**
  * Derive a stable session key from the system-prompt assemble context:

@@ -104,6 +104,7 @@ export interface WireDiagnostics {
   /** v0.4.2: the most recently frozen session snapshot. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    language: 'zh' | 'en'
     announceToAgent: boolean
     autoDistill: boolean
     autoDistillEvery: number
@@ -120,6 +121,7 @@ export interface WireDiagnostics {
 
 /** Full live runtime settings managed by both GUI settings surfaces. */
 export interface WireMemoirSettings {
+  language: 'zh' | 'en'
   announceToAgent: boolean
   autoDistill: boolean
   autoDistillEvery: number

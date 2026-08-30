@@ -17,6 +17,7 @@ import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js'
 import { governedRecord, type RecordResolution } from './governance.js'
 import { validateMemoirSettingsPatch } from './settings.js'
 import type { MemoirSettingsPatch, MemoirSettingsSnapshot } from './settings.js'
+import { hostCopy } from './i18n.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
@@ -31,6 +32,7 @@ export interface DiagnosticsValue {
   /** v0.4.2: the most recently frozen session snapshot, if any. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
+    language: 'zh' | 'en'
     announceToAgent: boolean
     autoDistill: boolean
     autoDistillEvery: number
@@ -63,11 +65,6 @@ export interface Envelope<T = unknown> {
   value?: T
   error?: { code: string; message: string }
 }
-
-const BAD_REQUEST = { code: 'bad-request', message: 'malformed request' }
-const NOT_FOUND = { code: 'not-found', message: 'unknown route' }
-const METHOD = { code: 'method', message: 'method not allowed' }
-const CONTENT_TYPE = { code: 'content-type', message: 'application/json content-type required' }
 
 const OK = <T>(value: T): Envelope<T> => ({ ok: true, value })
 const FAIL = (error: { code: string; message: string }): Envelope<never> => ({ ok: false, error })
@@ -167,6 +164,14 @@ export function makeRoutes(
   settings?: MemoirSettingsProvider,
 ): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // Without a settings provider, retain the route layer's historical
+    // English errors. The real plugin always supplies its live language.
+    const language = settings?.get().settings.language ?? 'en'
+    const copy = hostCopy(language).routes
+    const BAD_REQUEST = { code: 'bad-request', message: copy.malformed }
+    const NOT_FOUND = { code: 'not-found', message: copy.notFound }
+    const METHOD = { code: 'method', message: copy.method }
+    const CONTENT_TYPE = { code: 'content-type', message: copy.contentType }
     const url = new URL(req.url ?? '/', 'http://x')
     const pathname = url.pathname
     const method = (req.method ?? 'GET').toUpperCase()
@@ -337,14 +342,14 @@ export function makeRoutes(
     }
     const path = strField(payload, 'path')
     if (path === null || !validPath(path)) {
-      json(res, FAIL({ code: 'bad-request', message: 'path must be an absolute workspace path' }), 400)
+      json(res, FAIL({ code: 'bad-request', message: copy.absolutePath }), 400)
       return
     }
     // v0.4.2 workspace authorization: a browser-submitted absolute path is
     // not authorization — writes are limited to the active workspace(s) or
     // projects already in the store.
     if (allowedWorkspace !== undefined && !allowedWorkspace(path)) {
-      json(res, FAIL({ code: 'forbidden', message: 'path 不在允许的工作区中：仅当前活动 cwd 或已有 store 项目可写' }), 403)
+      json(res, FAIL({ code: 'forbidden', message: copy.forbiddenPath }), 403)
       return
     }
 
@@ -356,14 +361,14 @@ export function makeRoutes(
         return
       }
       if (!Object.prototype.hasOwnProperty.call(SECTIONS, section)) {
-        json(res, FAIL({ code: 'bad-request', message: `section must be one of ${SECTION_KEYS.join('/')}` }), 400)
+        json(res, FAIL({ code: 'bad-request', message: copy.section(SECTION_KEYS.join('/')) }), 400)
         return
       }
       const title = strField(payload, 'title', true) ?? undefined
       const record = payload as Record<string, unknown>
       const resolution = record.resolution
       if (resolution !== undefined && resolution !== 'update' && resolution !== 'supersede' && resolution !== 'force-record') {
-        json(res, FAIL({ code: 'bad-request', message: 'resolution must be update, supersede, or force-record' }), 400)
+        json(res, FAIL({ code: 'bad-request', message: copy.resolution }), 400)
         return
       }
       const targetId = strField(payload, 'targetId', true) ?? undefined
@@ -376,7 +381,7 @@ export function makeRoutes(
         supersedes: (payload as Record<string, unknown>).supersedes,
         tags: (payload as Record<string, unknown>).tags,
       }
-      const validation = validateEntryPayload(recordPayload)
+      const validation = validateEntryPayload(recordPayload, language)
       if (validation !== undefined) {
         json(res, FAIL({ code: 'bad-request', message: validation }), 400)
         return
@@ -388,9 +393,10 @@ export function makeRoutes(
           : governedRecord(store, retrieval, path, recordPayload as EntryPayload, {
               ...(resolution !== undefined ? { resolution: resolution as RecordResolution } : {}),
               ...(targetId !== undefined ? { targetId } : {}),
+              language,
             })
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'invalid similarity resolution'
+        const message = error instanceof Error ? error.message : copy.invalidResolution
         json(res, FAIL({ code: 'bad-request', message }), 400)
         return
       }
@@ -410,7 +416,7 @@ export function makeRoutes(
       for (const field of ['section', 'title', 'content', 'importance', 'pinned', 'status', 'supersedes', 'tags']) {
         if (Object.prototype.hasOwnProperty.call(record, field)) patch[field] = record[field]
       }
-      const validation = validateEntryUpdate(patch)
+      const validation = validateEntryUpdate(patch, language)
       if (validation !== undefined) {
         json(res, FAIL({ code: 'bad-request', message: validation }), 400)
         return

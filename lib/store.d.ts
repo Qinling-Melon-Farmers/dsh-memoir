@@ -1,8 +1,9 @@
 /**
  * Structured memory store for dsh-memoir — the single source of truth is the
- * global index JSON (~/.dsh/dsh-memoir.json); the per-project PROJECT_MEMORY.md
- * is a regenerated human-readable rendering of the same entries (git-friendly,
- * auto-injected into future sessions). Pure node:fs, no cordis dependency —
+ * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
+ * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
+ * the same entries (git-friendly, auto-injected into future sessions). Pure
+ * node:fs, no cordis dependency —
  * unit-testable with an injected path.
  *
  * v0.3.1: revision-based in-memory snapshot cache — cold start reads the file
@@ -13,6 +14,7 @@
  * normalized (drive-letter case + separators) so C:\A / c:\a\ / C:/A share
  * one bucket.
  */
+import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
 /** Global index format version. */
 export declare const FORMAT_VERSION = 4;
 /** Project memory file name (workspace root, git-committable). */
@@ -136,7 +138,7 @@ export interface CacheStats {
 }
 /** How often (ms) warm load() calls re-probe the file mtime; 0 = every call. */
 export declare const DEFAULT_MTIME_CHECK_MS = 2000;
-/** Default store location: <home>/.dsh/dsh-memoir.json. */
+/** Default store location: $DSH_HOME/dsh-memoir.json (fallback ~/.dsh). */
 export declare function defaultStorePath(): string;
 /** Cross-process mutation lock defaults (roadmap §2.2). */
 export declare const DEFAULT_LOCK_RETRY_MS = 25;
@@ -172,9 +174,9 @@ export declare function writeFileAtomic(path: string, content: string, mode?: nu
 /** Trim a long text to a bounded tail for prompt injection. */
 export declare function bounded(value: string, limit: number): string;
 /** Validate one record payload; returns an error message or undefined. */
-export declare function validateEntryPayload(payload: unknown): string | undefined;
+export declare function validateEntryPayload(payload: unknown, language?: MemoirLanguage): string | undefined;
 /** Validate a partial update without requiring the immutable record fields. */
-export declare function validateEntryUpdate(payload: unknown): string | undefined;
+export declare function validateEntryUpdate(payload: unknown, language?: MemoirLanguage): string | undefined;
 /**
  * The structured memory store.
  */
@@ -207,6 +209,7 @@ export declare class MemoirStore {
     private renderCache;
     private renderCount;
     private renderComputeCount;
+    private readonly languageSource;
     /**
      * @param path - store file path (defaults to the standard location).
      * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
@@ -219,7 +222,10 @@ export declare class MemoirStore {
         lockRetryMs?: number;
         lockTimeoutMs?: number;
         lockStaleAfterMs?: number;
+        language?: MemoirLanguageSource;
     });
+    /** Current model-facing language (live when backed by Web settings). */
+    language(): MemoirLanguage;
     /** The cross-process lock file guarding mutations of this store. */
     private lockFilePath;
     /**
@@ -283,6 +289,8 @@ export declare class MemoirStore {
     projectFilePath(cwd: string): string;
     /** Regenerate and write the project memory file; returns its path. */
     writeProjectFile(cwd: string): string;
+    /** Re-render all known project projections after a language change. */
+    refreshProjectFiles(): void;
 }
 /** SHA-256 hex digest of a string, truncated for prompt-stability hashing. */
 export declare function sha256(text: string, length?: number): string;

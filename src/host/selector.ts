@@ -9,6 +9,8 @@
  */
 
 import type { MemoirEntry, SectionKey } from './store.js'
+import { hostCopy } from './i18n.js'
+import type { MemoirLanguage } from './i18n.js'
 
 /** Token budget for hot-memory injection. */
 export interface MemoryBudget {
@@ -95,8 +97,9 @@ export function rankEntries(entries: MemoirEntry[], now = Date.now()): ScoredEnt
 }
 
 /** Compact bullet for one entry: title prefix + content (no ids/timestamps). */
-export function compactLine(entry: MemoirEntry): string {
-  const head = entry.title !== undefined && entry.title !== '' ? entry.title + '：' : ''
+export function compactLine(entry: MemoirEntry, language?: MemoirLanguage): string {
+  const separator = language === 'en' ? ': ' : '：'
+  const head = entry.title !== undefined && entry.title !== '' ? entry.title + separator : ''
   return '- ' + head + entry.content.replace(/\s+/g, ' ').trim()
 }
 
@@ -107,14 +110,17 @@ export const HOT_MEMORY_HEADER = '[Project memory]'
  * Render the selected entries into the compact injected block (roadmap
  * §2.3): Actions / Lessons / Recent state. Deterministic for a fixed input.
  */
-export function renderHotMemory(selected: MemoirEntry[]): string {
-  const lines: string[] = [HOT_MEMORY_HEADER]
+export function renderHotMemory(selected: MemoirEntry[], language?: MemoirLanguage): string {
+  // Undefined preserves the pre-v0.6 helper output for source consumers;
+  // the plugin itself always supplies its live agent language.
+  const copy = language === undefined ? undefined : hostCopy(language).hotMemory
+  const lines: string[] = [copy?.header ?? HOT_MEMORY_HEADER]
   for (const section of HOT_SECTION_ORDER) {
     const group = selected.filter((e) => e.section === section)
     if (group.length === 0) continue
-    const label = section === 'actions' ? 'Actions:' : 'Lessons:'
+    const label = section === 'actions' ? (copy?.actions ?? 'Actions:') : (copy?.lessons ?? 'Lessons:')
     lines.push(label)
-    for (const entry of group) lines.push(compactLine(entry))
+    for (const entry of group) lines.push(compactLine(entry, language))
     lines.push('')
   }
   // Recent state: the newest selected work entries (activity context).
@@ -124,8 +130,8 @@ export function renderHotMemory(selected: MemoirEntry[]): string {
     .sort((a, b) => b.time - a.time || a.id.localeCompare(b.id))
     .slice(0, RECENT_WORK_COUNT)
   if (recent.length > 0) {
-    lines.push('Recent state:')
-    for (const entry of recent) lines.push(compactLine(entry))
+    lines.push(copy?.recent ?? 'Recent state:')
+    for (const entry of recent) lines.push(compactLine(entry, language))
   }
   return lines.join('\n').replace(/\n\n\n+/g, '\n\n').trim()
 }
@@ -148,15 +154,15 @@ export interface HotMemoryResult {
  * (monotone in the token estimate). Used only for the degenerate case of an
  * oversized FIRST candidate — normal selection never exceeds hardMax.
  */
-export function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number): MemoirEntry {
-  if (estimateTokens(renderHotMemory([entry])) <= hardMaxTokens) return entry
+export function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry {
+  if (estimateTokens(renderHotMemory([entry], language)) <= hardMaxTokens) return entry
   const cps = [...entry.content]
   let lo = 0
   let hi = cps.length
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2)
     const probe = { ...entry, content: cps.slice(0, mid).join('') + '…' }
-    if (estimateTokens(renderHotMemory([probe])) <= hardMaxTokens) lo = mid
+    if (estimateTokens(renderHotMemory([probe], language)) <= hardMaxTokens) lo = mid
     else hi = mid - 1
   }
   return { ...entry, content: cps.slice(0, lo).join('') + '…' }
@@ -180,6 +186,7 @@ export function selectHotMemory(
   entries: MemoirEntry[],
   budget: MemoryBudget = DEFAULT_MEMORY_BUDGET,
   now = Date.now(),
+  language?: MemoirLanguage,
 ): HotMemoryResult {
   const work = entries
     .filter((e) => e.section === 'work' && (e.status ?? 'active') === 'active')
@@ -192,12 +199,12 @@ export function selectHotMemory(
   for (const entry of candidates) {
     if (selectedIds.has(entry.id)) continue
     const probe = selected.length === 0 ? [entry] : [...selected, entry]
-    const tokens = estimateTokens(renderHotMemory(probe))
+    const tokens = estimateTokens(renderHotMemory(probe, language))
     if (tokens > budget.hardMaxTokens) {
       if (selected.length === 0) {
         // A single oversized entry: force it in truncated so output stays
         // bounded and non-empty.
-        selected.push(truncateEntryToBudget(entry, budget.hardMaxTokens))
+        selected.push(truncateEntryToBudget(entry, budget.hardMaxTokens, language))
       }
       break
     }
@@ -205,7 +212,7 @@ export function selectHotMemory(
     selectedIds.add(entry.id)
     if (tokens >= budget.targetTokens) break
   }
-  const text = selected.length === 0 ? '' : renderHotMemory(selected)
+  const text = selected.length === 0 ? '' : renderHotMemory(selected, language)
   return {
     text,
     selected,

@@ -34,6 +34,7 @@ export interface DiagnosticsValue {
         storeRevision: number;
     } | null;
     config: {
+        language: 'zh' | 'en';
         announceToAgent: boolean;
         autoDistill: boolean;
         autoDistillEvery: number;

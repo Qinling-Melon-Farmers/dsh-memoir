@@ -2,6 +2,7 @@
 import type { EntryPayload, MemoirEntry, MemoirSource, MemoirStore } from './store.js';
 import type { RetrievalEngine } from './retrieval.js';
 import { type SimilarityCandidate } from './similarity.js';
+import type { MemoirLanguage } from './i18n.js';
 export type RecordResolution = 'update' | 'supersede' | 'force-record';
 export type RecordAction = 'recorded' | 'needs-resolution' | 'updated' | 'superseded' | 'force-recorded';
 export interface GovernedRecordResult {
@@ -14,6 +15,7 @@ export interface GovernedRecordOptions {
     source?: MemoirSource;
     resolution?: RecordResolution;
     targetId?: string;
+    language?: MemoirLanguage;
 }
 /**
  * Resolve one prospective write. Omission is safe-by-default: no candidate

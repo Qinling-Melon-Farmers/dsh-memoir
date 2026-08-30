@@ -12,13 +12,16 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import { DEFAULT_MEMOIR_LANGUAGE, hostCopy } from './i18n.js'
+import type { MemoirLanguage } from './i18n.js'
 
 /** The steering prompt injected at the end of an active turn. */
-export const DISTILL_PROMPT =
-  '（dsh-memoir 自动收尾）本轮工作已结束，请把本轮归纳沉淀进项目记忆：\n' +
-  '1. 若本轮有实质产出、踩坑结论或下一步安排，调用 memoir_record 分条记录（section 取 work 工作记录 / lessons 经验教训 / actions 行动指南，可用 title 一句话概括）；\n' +
-  '2. 若本轮已经记录过、或没有值得沉淀的内容，直接回复「本轮无需沉淀」，不要调用任何工具。\n' +
-  '最终回复保持一句话以内，不要展开。'
+export function distillPrompt(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): string {
+  return hostCopy(language).distillPrompt
+}
+
+/** Backwards-compatible Chinese prompt constant. */
+export const DISTILL_PROMPT = distillPrompt()
 
 /** Plugin identity stamped on the steering message source. */
 export const AUTO_DISTILL_PLUGIN = 'dsh-memoir'
@@ -144,6 +147,8 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
   minTools?: number
   /** Optional live policy source used by the Web settings panel. */
   policy?: () => { every?: number; cooldownMin?: number; minTools?: number }
+  /** Optional live language source for the steering instruction. */
+  language?: () => MemoirLanguage
   now?: () => number
 }): () => void {
   const gate = new AutoDistillGate()
@@ -168,7 +173,7 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     if (!gate.consume(agent.id, turn, toolCalls, policy, now)) return
     agent.steer(
       createUserMessage({
-        content: [{ type: 'text', text: DISTILL_PROMPT }],
+        content: [{ type: 'text', text: distillPrompt(options.language?.()) }],
         source: { kind: 'plugin', plugin: AUTO_DISTILL_PLUGIN },
       }),
     )
