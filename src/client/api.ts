@@ -71,6 +71,8 @@ export interface WireProject {
   title: string
   updatedAt: number
   entries: WireEntry[]
+  /** Lifecycle totals before any route-level status/section filter. */
+  stats?: { total: number; active: number; superseded: number; archived: number }
 }
 
 /** The host /diagnostics payload (v0.4 observability, v0.4.2 extended). */

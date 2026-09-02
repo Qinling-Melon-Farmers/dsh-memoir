@@ -12,7 +12,7 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
 > [!IMPORTANT]
-> `dsh-memoir@0.6.0` is the formal plugin release for the npm-published DSH `0.1.2-alpha.2` line and requires `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`. Upgrade DSH first. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
+> npm `latest` is `dsh-memoir@0.6.1` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4 and the current alpha.5. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
 
 ```bash
 npm install --global @deepseek-ai/dsh@alpha
@@ -35,7 +35,7 @@ Restart `dsh web`. Memory remains local and is not automatically deleted when th
 
 It fits personal and local development workflows where a new agent should continue understanding a project. It is not a raw chat backup, multi-user cloud sync service, or vector-semantic knowledge base.
 
-![dsh-memoir native Settings and agent-language selection on DSH alpha.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-settings-zh.png)
+![dsh-memoir v0.6.1 global memory grouped and collapsed by project](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png)
 
 ## How it works
 
@@ -98,17 +98,24 @@ Top-5 recall on the fixed quality set is 100%; the repository gate requires at l
 
 Installing into a DSH-alpha `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
 
-- Project memory and all-project global memory;
+- Project memory and all-project global memory, with project groups collapsed by default and complete lifecycle totals;
 - status, section, and keyword filters with BM25 scores;
 - add, edit, pin, archive, restore, and supersede;
 - copy and best-effort navigation for session/turn provenance;
 - Hot Memory Inspector: what the next session will inherit;
 - Retrieval Diagnostics: index, query cache, last query, and session snapshot;
-- one vertical scroll owner, so expanded settings, Hot Memory, and diagnostics remain continuously scrollable;
+- permanent `Browse / Settings / Hot Memory / Diagnostics` navigation with an independent bounded scroll position per surface;
+- progressive batches of 20 entries or projects, plus a controlled six-line preview for long memory bodies;
+- the native DSH composer-overlay contract, keeping the final memory visible above the conversation composer while the list scrolls fully;
+- arrow-key, Home, and End navigation for surface tabs, plus `aria-expanded` project disclosures and visible focus states;
 - live GUI Chinese/English switching from `<html lang>`, with a separate `language` setting for agent-facing copy.
 
 <details>
-<summary>More stable GUI screenshots</summary>
+<summary>More GUI screenshots</summary>
+
+![v0.6.1 permanent surface navigation and live settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png)
+
+![v0.6.1 conversation view scrolled to the end above the composer](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png)
 
 ![Native Memory Conversation view on DSH alpha.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png)
 
@@ -124,11 +131,11 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.6.0`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current formal release for the npm alpha line |
+| npm `latest` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release; alpha.4 compile and alpha.5 + dsh-web-all browser validated |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| GitHub `main` | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | 0.6.x development line |
+| GitHub `main` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | Synchronized with npm `0.6.1`; intended for development and debugging |
 
-Node.js `^22.19.0 || >=24.0.0` is required. v0.6.0 uses the native DSH-alpha `conversation.view` / `settings.section` slots and the Remote-era client module architecture. A formal plugin version means Memoir itself is released; it does not imply compatibility with the older rc2 host. `dsh.engines.dsh` rejects incompatible hosts.
+Node.js `^22.19.0 || >=24.0.0` is required. v0.6.x uses the native DSH-alpha `conversation.view` / `settings.section` slots and the Remote-era client module architecture. v0.6.1 supports both the public `session.events` surface in alpha.2/alpha.3 and `session.snapshotEvents()` in alpha.4+. `dsh.engines.dsh` rejects incompatible hosts.
 
 <details>
 <summary>Install from source</summary>
@@ -197,7 +204,7 @@ v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report
 
 Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-v0.6.0 has 182 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, scrolling, DSH alpha.2 integration, and release automation.
+v0.6.1 has 189 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, project disclosure/progressive loading, scrolling, and DSH-alpha compatibility. An isolated DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` profile also passed Settings and real-session browser regression; alpha.4 type compilation passed separately.
 
 ## FAQ
 
@@ -226,6 +233,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current release is [v0.6.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0).
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.6.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1), and `main` is synchronized with it.
 
 Apache-2.0

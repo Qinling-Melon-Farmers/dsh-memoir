@@ -120,6 +120,81 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   white-space: nowrap;
 }
 
+/* Stable secondary navigation: browsing, settings, Hot Memory and diagnostics
+   never compete for vertical position in one long document. */
+.memoir-surface-tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px;
+  overflow-x: auto;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .1));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .02)));
+  scrollbar-width: none;
+}
+.memoir-surface-tabs::-webkit-scrollbar {
+  display: none;
+}
+.memoir-surface-tab {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.memoir-surface-tab:hover {
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06));
+}
+.memoir-surface-tab[data-active='true'] {
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  background: var(--dsw-alias-bg-base, var(--bg-panel, #ffffff));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+  font-weight: 600;
+}
+.memoir-surface-stack,
+.memoir-surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.memoir-surface[hidden] {
+  display: none;
+}
+.memoir-browse-head {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.memoir-surface-scroll {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 2px 20px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.memoir-native-view .memoir-surface-scroll {
+  padding-bottom: calc(var(--dsh-composer-height, 112px) + 16px);
+  scroll-padding-bottom: calc(var(--dsh-composer-height, 112px) + 16px);
+}
+
 /* Header icon controls: square ghost icons (dsh-ssh / dsh-task-board iconButton). */
 .memoir-header .memoir-iconbtn {
   display: inline-flex;
@@ -179,6 +254,10 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   gap: 8px;
   flex: none;
   padding: 0;
+}
+.memoir-project-actions {
+  display: inline-flex;
+  gap: 6px;
 }
 .memoir-search {
   flex: 0 1 260px;
@@ -268,6 +347,19 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 .memoir-body {
   min-height: 0;
   padding: 4px 0 16px;
+}
+.memoir-surface-scroll > .memoir-form,
+.memoir-surface-scroll > .memoir-similarity {
+  margin-bottom: 10px;
+}
+.memoir-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 0 14px;
+  color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
+  font-size: 11px;
 }
 .memoir-section-title {
   display: flex;
@@ -370,6 +462,25 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   white-space: pre-wrap;
   word-break: break-word;
 }
+.memoir-entry-content[data-collapsible='true']:not([data-expanded='true']) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+.memoir-content-toggle {
+  margin-top: 5px;
+  padding: 1px 0;
+  border: 0;
+  color: var(--dsw-alias-state-business-primary, #2563eb);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.memoir-content-toggle:hover {
+  text-decoration: underline;
+}
 .memoir-entry-actions {
   display: flex;
   flex-wrap: wrap;
@@ -395,15 +506,55 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 .memoir-project-card {
   border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .1));
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 0;
   margin-bottom: 12px;
   background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .02)));
+  overflow: clip;
+}
+.memoir-project-toggle {
+  appearance: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.memoir-project-toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .04));
+}
+.memoir-project-chevron {
+  flex: none;
+  margin-top: 1px;
+  color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+.memoir-project-card[data-expanded='true'] .memoir-project-chevron {
+  transform: rotate(90deg);
+}
+.memoir-project-heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.memoir-project-body {
+  padding: 0 12px 10px 30px;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .08));
 }
 .memoir-project-head {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 2px;
 }
 .memoir-project-title {
   font-size: 13px;
@@ -411,6 +562,8 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
 }
 .memoir-project-path {
+  flex: 1;
+  min-width: 120px;
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary, rgba(0, 0, 0, .5));
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -419,9 +572,11 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   white-space: nowrap;
 }
 .memoir-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
-  margin-bottom: 6px;
 }
 
 /* Empty / status / error. */
@@ -731,6 +886,22 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   font-size: 12px;
   color: var(--dsw-alias-state-success-primary, #15803d);
 }
+.memoir-surface .memoir-settings {
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+}
+.memoir-surface .memoir-settings-body {
+  margin-top: 0;
+}
+.memoir-surface .memoir-settings-body > .memoir-form-actions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  margin: 0 -2px -2px;
+  padding: 10px 2px 2px;
+  background: linear-gradient(to bottom, transparent, var(--dsw-alias-bg-layer-2, var(--bg-card, #ffffff)) 32%);
+}
 @media (max-width: 760px) {
   .memoir-settings-grid {
     grid-template-columns: 1fr;
@@ -779,6 +950,26 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   margin-top: 6px;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
+}
+.memoir-surface-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .1));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, var(--bg-card, rgba(0, 0, 0, .02)));
+}
+.memoir-surface-card h3 {
+  margin: 0 0 8px;
+  color: var(--dsw-alias-label-primary, var(--text-primary, #1f2328));
+  font-size: 14px;
+}
+.memoir-surface-summary {
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c));
+  font-size: 11px;
+}
+.memoir-surface-card .memoir-inspector-body {
+  margin-top: 0;
 }
 
 /* --- sidebar entry row (plain DOM, matches the web-ui family rows) ------------- */
@@ -845,12 +1036,15 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 /* --- focus / motion (web-ui family polish) ------------------------------------ */
 
 .memoir-tab:focus-visible,
+.memoir-surface-tab:focus-visible,
 .memoir-search:focus-visible,
 .memoir-primary:focus-visible,
 .memoir-iconbtn:focus-visible,
 .memoir-delete:focus-visible,
 .memoir-status-filter select:focus-visible,
 .memoir-diagnostics-toggle:focus-visible,
+.memoir-project-toggle:focus-visible,
+.memoir-content-toggle:focus-visible,
 .memoir-field input:focus-visible,
 .memoir-field select:focus-visible,
 .memoir-field textarea:focus-visible,
@@ -859,12 +1053,15 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   outline-offset: 2px;
 }
 .memoir-tab,
+.memoir-surface-tab,
 .memoir-search,
 .memoir-primary,
 .memoir-iconbtn,
 .memoir-delete,
 .memoir-status-filter select,
 .memoir-diagnostics-toggle,
+.memoir-project-toggle,
+.memoir-content-toggle,
 .memoir-field input,
 .memoir-field select,
 .memoir-field textarea,
@@ -873,17 +1070,46 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
 }
 @media (prefers-reduced-motion: reduce) {
   .memoir-tab,
+  .memoir-surface-tab,
   .memoir-search,
   .memoir-primary,
   .memoir-iconbtn,
   .memoir-delete,
   .memoir-status-filter select,
   .memoir-diagnostics-toggle,
+  .memoir-project-toggle,
+  .memoir-content-toggle,
   .memoir-field input,
   .memoir-field select,
   .memoir-field textarea,
   .memoir-entry-row {
     transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .memoir-panel {
+    padding: 10px 10px 12px;
+    gap: 8px;
+  }
+  .memoir-toolbar {
+    align-items: stretch;
+  }
+  .memoir-search {
+    flex: 1 0 100%;
+  }
+  .memoir-status-filter {
+    flex: 1;
+  }
+  .memoir-status-filter select {
+    flex: 1;
+    max-width: none;
+  }
+  .memoir-project-actions {
+    width: 100%;
+  }
+  .memoir-project-body {
+    padding-left: 12px;
   }
 }
 

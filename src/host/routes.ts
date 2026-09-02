@@ -132,12 +132,15 @@ function wireProject(
   project: { path: string; title: string; updatedAt: number; entries: MemoirEntry[] },
   filter: (entry: MemoirEntry) => boolean,
 ) {
+  const stats = { total: project.entries.length, active: 0, superseded: 0, archived: 0 }
+  for (const entry of project.entries) stats[entry.status ?? 'active'] += 1
   return {
     key,
     path: project.path,
     title: project.title || projectTitle(project.path),
     updatedAt: project.updatedAt,
     entries: project.entries.filter(filter).map(wireEntry),
+    stats,
   }
 }
 

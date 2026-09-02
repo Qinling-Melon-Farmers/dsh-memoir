@@ -64,7 +64,12 @@ function ConversationMemoirView({
   }, [viewRequest, completeViewRequest])
 
   return (
-    <div className="memoir-native-view" data-dsh-plugin="memoir" data-dsh-part="conversation-view">
+    <div
+      className="memoir-native-view"
+      data-dsh-plugin="memoir"
+      data-dsh-part="conversation-view"
+      data-conversation-composer-overlay=""
+    >
       <MemoirPanel
         api={api}
         cwd={cwd}

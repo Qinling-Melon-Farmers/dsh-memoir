@@ -97,6 +97,8 @@ test('GET global aggregates projects newest-first', async () => {
   try {
     const store = new MemoirStore(makeTempStorePath())
     store.record(a.cwd, { section: 'work', content: 'A' })
+    const archived = store.record(a.cwd, { section: 'lessons', content: 'A archived' })
+    store.update(a.cwd, archived.id, { status: 'archived' })
     // Guarantee b's updatedAt is strictly newer (same-ms ties are possible).
     const waitUntil = Date.now() + 5
     while (Date.now() < waitUntil) { /* busy-wait for a fresh millisecond */ }
@@ -104,10 +106,13 @@ test('GET global aggregates projects newest-first', async () => {
     const handler = makeRoutes(store)[0]!.handler
     const { status, envelope } = await callRoute(handler, { url: '/api/dsh-memoir/global' })
     assert.equal(status, 200)
-    const projects = (envelope.value as { projects: Array<{ path: string }> }).projects
+    const projects = (envelope.value as { projects: Array<{ path: string; entries: unknown[]; stats: { total: number; active: number; superseded: number; archived: number } }> }).projects
     assert.equal(projects.length, 2)
     // b was recorded later → sorts first (newest-first).
     assert.equal(projects[0]?.path, b.cwd)
+    const projectA = projects.find((project) => project.path === a.cwd)
+    assert.equal(projectA?.entries.length, 1, 'default response still includes active entries only')
+    assert.deepEqual(projectA?.stats, { total: 2, active: 1, superseded: 0, archived: 1 })
   } finally {
     a.cleanup()
     b.cleanup()

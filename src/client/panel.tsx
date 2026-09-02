@@ -4,12 +4,22 @@
  * container by mount.tsx; visibility is CSS-driven (html data attribute).
  */
 
-import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { SECTION_KEYS } from './i18n.js'
 import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireMemoirSettings, WireProject, WireRecordResolution, WireRecordResult, WireSearchResult, WireSimilarityCandidate } from './api.js'
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
+import {
+  ENTRY_PAGE_SIZE,
+  PROJECT_PAGE_SIZE,
+  buildProjectGroups,
+  filterEntries,
+  groupRankedResults,
+  nextPageSize,
+  shouldCollapseEntry,
+  type EntryStats,
+} from './view-model.js'
 
 interface PanelProps {
   controller?: PanelController
@@ -115,6 +125,7 @@ function EntryMeta({ entry, t, openSource }: {
 
 function EntryCard({ entry, t, onDelete, onUpdate, openSource, score }: { entry: WireEntry; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; openSource?: (sessionId: string, turnId?: number) => void; score?: number }) {
   const [editing, setEditing] = useState(false)
+  const [contentExpanded, setContentExpanded] = useState(false)
   const [section, setSection] = useState<SectionKey>(entry.section)
   const [title, setTitle] = useState(entry.title ?? '')
   const [content, setContent] = useState(entry.content)
@@ -189,14 +200,24 @@ function EntryCard({ entry, t, onDelete, onUpdate, openSource, score }: { entry:
           </div>
         : <>
             {entry.title !== undefined ? <div className="memoir-entry-title">{entry.title}</div> : null}
-            <div className="memoir-entry-content">{entry.content}</div>
+            <div className="memoir-entry-content" data-expanded={contentExpanded ? 'true' : undefined} data-collapsible={shouldCollapseEntry(entry.content) ? 'true' : undefined}>{entry.content}</div>
+            {shouldCollapseEntry(entry.content)
+              ? <button
+                  type="button"
+                  className="memoir-content-toggle"
+                  aria-expanded={contentExpanded}
+                  onClick={() => setContentExpanded((value) => !value)}
+                >{contentExpanded ? t('entry.collapse') : t('entry.expand')}</button>
+              : null}
           </>}
     </div>
   )
 }
 
-/** Sectioned entry list in canonical order. */
-function SectionedEntries({ entries, t, onDelete, onUpdate, openSource }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; openSource?: (sessionId: string, turnId?: number) => void }) {
+/** Sectioned list with a per-section progressive rendering cap. */
+function SectionedEntries({ entries, t, onDelete, onUpdate, openSource, resetKey }: { entries: WireEntry[]; t: (key: string) => string; onDelete: (entry: WireEntry) => void; onUpdate?: (entry: WireEntry, patch: EntryPatch) => void; openSource?: (sessionId: string, turnId?: number) => void; resetKey: string }) {
+  const [limit, setLimit] = useState(ENTRY_PAGE_SIZE)
+  useEffect(() => setLimit(ENTRY_PAGE_SIZE), [resetKey])
   const groups = useMemo(
     () => SECTION_KEYS.map((key) => ({ key, entries: entries.filter((e) => e.section === key) })).filter((g) => g.entries.length > 0),
     [entries],
@@ -208,6 +229,9 @@ function SectionedEntries({ entries, t, onDelete, onUpdate, openSource }: { entr
       </div>
     )
   }
+  const visibleCount = groups.reduce((count, group) => count + Math.min(group.entries.length, limit), 0)
+  const maxGroupSize = Math.max(...groups.map((group) => group.entries.length))
+  const hasMore = visibleCount < entries.length
   return (
     <Fragment>
       {groups.map((group) => (
@@ -216,24 +240,28 @@ function SectionedEntries({ entries, t, onDelete, onUpdate, openSource }: { entr
             {t('sections.' + group.key)}
             <span className="memoir-count">({group.entries.length})</span>
           </div>
-          {group.entries.map((entry) => (
+          {group.entries.slice(0, limit).map((entry) => (
             <EntryCard key={entry.id} entry={entry} t={t} onDelete={onDelete} onUpdate={onUpdate} openSource={openSource} />
           ))}
         </Fragment>
       ))}
+      {hasMore
+        ? <div className="memoir-load-more">
+            <span>{t('pagination.showing')} {visibleCount}/{entries.length}</span>
+            <button type="button" className="memoir-iconbtn" onClick={() => setLimit((value) => nextPageSize(value, maxGroupSize, ENTRY_PAGE_SIZE))}>{t('pagination.more')}</button>
+          </div>
+        : null}
     </Fragment>
   )
 }
 
 /**
- * Ranked search results (v0.4.2): the host RetrievalEngine order, flat for
- * the project tab or grouped by project for the global tab. Scores are
- * shown as chips so the ranking is inspectable.
+ * Ranked project search results (v0.4.2): the host RetrievalEngine order.
+ * Global ranked results use the same collapsible project shell as browsing.
  */
-function RankedResults({ results, pending, grouped, t, onDelete, onUpdate, openSource }: {
+function RankedResults({ results, pending, t, onDelete, onUpdate, openSource }: {
   results: WireSearchResult[]
   pending: boolean
-  grouped: boolean
   t: (key: string) => string
   onDelete: (entry: WireEntry, path: string) => void
   onUpdate?: (entry: WireEntry, path: string, patch: EntryPatch) => void
@@ -248,36 +276,45 @@ function RankedResults({ results, pending, grouped, t, onDelete, onUpdate, openS
       </div>
     )
   }
-  if (!grouped) {
-    return (
-      <Fragment>
-        <div className="memoir-ranked-note">{t('search.ranked')}</div>
-        {results.map((r) => (
-          <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} onUpdate={(entry, patch) => onUpdate?.(entry, r.projectPath, patch)} openSource={openSource} />
-        ))}
-      </Fragment>
-    )
-  }
-  const groups = new Map<string, WireSearchResult[]>()
-  for (const result of results) {
-    const bucket = groups.get(result.projectPath) ?? []
-    bucket.push(result)
-    groups.set(result.projectPath, bucket)
-  }
   return (
     <Fragment>
-      {[...groups.entries()].map(([path, bucket]) => (
-        <div className="memoir-project-card" key={path}>
-          <div className="memoir-project-head">
-            <span className="memoir-project-title">{path.split('/').filter(Boolean).pop() || path}</span>
-            <span className="memoir-project-path">{path}</span>
-          </div>
-          {bucket.map((r) => (
-            <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, path)} onUpdate={(entry, patch) => onUpdate?.(entry, path, patch)} openSource={openSource} />
-          ))}
-        </div>
+      <div className="memoir-ranked-note">{t('search.ranked')}</div>
+      {results.map((r) => (
+        <EntryCard key={r.entry.id} entry={r.entry} score={r.score} t={t} onDelete={(entry) => onDelete(entry, r.projectPath)} onUpdate={(entry, patch) => onUpdate?.(entry, r.projectPath, patch)} openSource={openSource} />
       ))}
     </Fragment>
+  )
+}
+
+function ProjectDisclosure({ project, open, t, onToggle, children }: {
+  project: { path: string; title: string; updatedAt: number; stats: EntryStats }
+  open: boolean
+  t: (key: string) => string
+  onToggle: () => void
+  children: ReactNode
+}) {
+  const when = new Date(project.updatedAt)
+  const title = project.title || t('project.unscoped')
+  const path = project.path || t('project.unscopedHint')
+  return (
+    <section className="memoir-project-card" data-expanded={open ? 'true' : undefined}>
+      <button type="button" className="memoir-project-toggle" aria-expanded={open} onClick={onToggle}>
+        <span className="memoir-project-chevron" aria-hidden="true">›</span>
+        <span className="memoir-project-heading">
+          <span className="memoir-project-head">
+            <span className="memoir-project-title">{title}</span>
+            <span className="memoir-project-path" title={project.path}>{path}</span>
+          </span>
+          <span className="memoir-project-meta">
+            <span>{t('status.active')}: {project.stats.active}</span>
+            <span>{t('status.archived')}: {project.stats.archived}</span>
+            <span>{t('status.superseded')}: {project.stats.superseded}</span>
+            <span>{t('updated')} {when.toISOString().slice(0, 16).replace('T', ' ')}</span>
+          </span>
+        </span>
+      </button>
+      {open ? <div className="memoir-project-body">{children}</div> : null}
+    </section>
   )
 }
 
@@ -614,6 +651,15 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
   )
 }
 
+type PanelSurface = 'browse' | 'settings' | 'hot-memory' | 'diagnostics'
+
+const PANEL_SURFACES: Array<{ id: PanelSurface; label: string }> = [
+  { id: 'browse', label: 'surface.browse' },
+  { id: 'settings', label: 'surface.settings' },
+  { id: 'hot-memory', label: 'surface.hotMemory' },
+  { id: 'diagnostics', label: 'surface.diagnostics' },
+]
+
 export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, cwd: fixedCwd, t, openSource, onClose }: PanelProps) {
   const [, setLanguage] = useState(document.documentElement.lang)
   useEffect(() => {
@@ -624,6 +670,8 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
   const trackedCwd = useSyncExternalStore(cwdTracker.subscribe, cwdTracker.getSnapshot)
   const cwd = fixedCwd ?? trackedCwd
   const close = onClose ?? (controller === undefined ? undefined : () => controller.close())
+  const panelId = useId().replace(/:/g, '')
+  const [surface, setSurface] = useState<PanelSurface>('browse')
   const [tab, setTab] = useState<'project' | 'global'>('project')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<MemoirStatus | 'all'>('active')
@@ -637,10 +685,10 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [diag, setDiag] = useState<WireDiagnostics | null>(null)
-  const [diagOpen, setDiagOpen] = useState(false)
   const [searchResults, setSearchResults] = useState<WireSearchResult[] | null>(null)
   const [hotMemory, setHotMemory] = useState<WireHotMemory | null>(null)
-  const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
+  const [projectLimit, setProjectLimit] = useState(PROJECT_PAGE_SIZE)
 
   const q = query.trim().toLowerCase()
 
@@ -653,18 +701,24 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
         return undefined
       }
       setLoading(true)
-      api.project(cwd, { status: statusFilter, section: sectionFilter === 'all' ? undefined : sectionFilter })
+      api.project(cwd, { status: 'all' })
         .then((value) => { if (!cancelled) setProject(value.project) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     } else {
       setLoading(true)
-      api.global({ status: statusFilter, section: sectionFilter === 'all' ? undefined : sectionFilter })
+      api.global({ status: 'all' })
         .then((value) => { if (!cancelled) setProjects(value.projects) })
         .catch((e: Error) => { if (!cancelled) setError(e.message) })
         .finally(() => { if (!cancelled) setLoading(false) })
     }
-    // Diagnostics follow the active workspace (observability, roadmap §4).
+    return () => { cancelled = true }
+  }, [tab, cwd, refreshKey])
+
+  useEffect(() => {
+    let cancelled = false
+    // Diagnostics and Hot Memory follow the active workspace independently
+    // from browse filters so surface switches never trigger redundant reads.
     api.diagnostics(cwd === '' ? undefined : cwd)
       .then((value) => { if (!cancelled) setDiag(value) })
       .catch(() => { if (!cancelled) setDiag(null) })
@@ -677,7 +731,7 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
         .catch(() => { if (!cancelled) setHotMemory(null) })
     }
     return () => { cancelled = true }
-  }, [tab, cwd, statusFilter, sectionFilter, refreshKey])
+  }, [cwd, refreshKey])
 
   // v0.4.2: a non-empty query searches through the host RetrievalEngine —
   // the same BM25 ranking memoir_read uses. Debounced; empty query resets.
@@ -686,7 +740,12 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
       setSearchResults(null)
       return undefined
     }
+    if (tab === 'project' && cwd === '') {
+      setSearchResults([])
+      return undefined
+    }
     let cancelled = false
+    setSearchResults(null)
     const timer = setTimeout(() => {
       const scope = tab === 'project' ? 'project' : 'global'
       api.search({
@@ -706,9 +765,6 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
     }, 200)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [q, tab, cwd, statusFilter, sectionFilter, refreshKey])
-
-  const filterEntries = (entries: WireEntry[]) =>
-    q === '' ? entries : entries.filter((e) => `${e.title ?? ''} ${e.content}`.toLowerCase().includes(q))
 
   const reload = () => setRefreshKey((k) => k + 1)
 
@@ -745,154 +801,233 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
       .finally(() => setBusy(false))
   }
 
-  const projectEntries = project === null ? [] : filterEntries(project.entries)
+  const projectEntries = useMemo(
+    () => project === null ? [] : filterEntries(project.entries, statusFilter, sectionFilter),
+    [project, statusFilter, sectionFilter],
+  )
+  const globalGroups = useMemo(
+    () => buildProjectGroups(projects, statusFilter, sectionFilter),
+    [projects, statusFilter, sectionFilter],
+  )
+  const rankedGlobalGroups = useMemo(
+    () => groupRankedResults(searchResults ?? [], projects),
+    [searchResults, projects],
+  )
+  const displayedGlobalGroups = q === '' ? globalGroups : rankedGlobalGroups
+  const projectSignature = displayedGlobalGroups.map((group) => group.key).join('\n')
+  const narrowingSignature = q === '' && statusFilter === 'active' && sectionFilter === 'all'
+    ? ''
+    : `${q}\n${statusFilter}\n${sectionFilter}\n${projectSignature}`
+
+  useEffect(() => {
+    setProjectLimit(PROJECT_PAGE_SIZE)
+  }, [tab, q, statusFilter, sectionFilter, refreshKey])
+
+  useEffect(() => {
+    if (tab !== 'global' || narrowingSignature === '') return
+    setExpandedProjects((current) => {
+      const next = { ...current }
+      for (const group of displayedGlobalGroups) next[group.key] = true
+      return next
+    })
+  }, [tab, narrowingSignature])
+
+  const setAllProjects = (open: boolean) => {
+    setExpandedProjects((current) => {
+      const next = { ...current }
+      for (const group of displayedGlobalGroups) next[group.key] = open
+      return next
+    })
+  }
+
+  const onSurfaceKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % PANEL_SURFACES.length
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + PANEL_SURFACES.length) % PANEL_SURFACES.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = PANEL_SURFACES.length - 1
+    if (nextIndex === undefined) return
+    event.preventDefault()
+    const next = PANEL_SURFACES[nextIndex]
+    setSurface(next.id)
+    document.getElementById(`${panelId}-${next.id}-tab`)?.focus()
+  }
+
+  const headerSubtitle = surface === 'browse'
+    ? (tab === 'project' ? (cwd === '' ? t('empty.workspace') : cwd) : t('tab.global'))
+    : t(PANEL_SURFACES.find((item) => item.id === surface)?.label ?? 'surface.browse')
+  const visibleGlobalGroups = displayedGlobalGroups.slice(0, projectLimit)
+  const listResetKey = `${tab}:${q}:${statusFilter}:${sectionFilter}:${refreshKey}`
 
   return (
     <div className="memoir-panel" data-dsh-plugin="memoir" data-dsh-part="panel">
       <div className="memoir-header" data-dsh-part="header">
         <div className="memoir-title">
           {t('panel.title')}
-          <div className="memoir-subtitle">{tab === 'project' ? (cwd === '' ? t('empty.workspace') : cwd) : t('tab.global')}</div>
+          <div className="memoir-subtitle">{headerSubtitle}</div>
         </div>
         <button type="button" className="memoir-iconbtn" title={t('panel.refresh')} onClick={reload}>⟳</button>
         {close === undefined
           ? null
           : <button type="button" className="memoir-iconbtn" title={t('panel.close')} onClick={close}>×</button>}
       </div>
-      <div className="memoir-tabs" data-dsh-part="tabs">
-        <button type="button" className="memoir-tab" data-active={tab === 'project' ? 'true' : undefined} onClick={() => setTab('project')}>{t('tab.project')}</button>
-        <button type="button" className="memoir-tab" data-active={tab === 'global' ? 'true' : undefined} onClick={() => setTab('global')}>{t('tab.global')}</button>
-      </div>
-      <div className="memoir-toolbar" data-dsh-part="toolbar">
-        <input className="memoir-search" placeholder={t('toolbar.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="memoir-status-filter">
-          <span>{t('filter.status')}</span>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as MemoirStatus | 'all')}>
-            <option value="active">{t('status.active')}</option>
-            <option value="all">{t('filter.all')}</option>
-            <option value="superseded">{t('status.superseded')}</option>
-            <option value="archived">{t('status.archived')}</option>
-          </select>
-        </label>
-        <label className="memoir-status-filter">
-          <span>{t('filter.section')}</span>
-          <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value as SectionKey | 'all')}>
-            <option value="all">{t('filter.all')}</option>
-            {SECTION_KEYS.map((key) => <option key={key} value={key}>{t('sections.' + key)}</option>)}
-          </select>
-        </label>
-        {tab === 'project' && cwd !== ''
-          ? <button type="button" className="memoir-primary" onClick={() => {
-              setFormOpen((value) => !value)
-              setPendingRecord(null)
-            }}>{formOpen ? t('toolbar.cancel') : t('toolbar.add')}</button>
-          : null}
-      </div>
-      {formOpen && tab === 'project' && cwd !== ''
-        ? pendingRecord === null
-          ? <AddForm t={t} onSubmit={onRecord} onCancel={() => setFormOpen(false)} />
-          : <SimilarityResolution
-              result={pendingRecord.result}
-              t={t}
-              busy={busy}
-              onResolve={(resolution, targetId) => onRecord(pendingRecord.payload, resolution, targetId)}
-              onBack={() => setPendingRecord(null)}
-            />
-        : null}
-      {error !== null ? <div className="memoir-error">{error}</div> : null}
-      <div className="memoir-scroll-region" data-dsh-part="scroll-region">
-        <div className="memoir-body">
-        {loading
-          ? <div className="memoir-empty">…</div>
-          : q !== ''
-            ? (
-                <RankedResults
-                  results={searchResults ?? []}
-                  pending={searchResults === null}
-                  grouped={tab === 'global'}
-                  t={t}
-                  openSource={openSource}
-                  onDelete={(entry, path) => onDelete(entry, path)}
-                  onUpdate={onUpdate}
-                />
-              )
-            : tab === 'project'
-              ? cwd === ''
-                ? (
-                    <div className="memoir-empty">
-                      <div className="memoir-empty-title">{t('empty.workspace')}</div>
-                      <div className="memoir-empty-hint">{t('empty.workspaceHint')}</div>
-                    </div>
-                  )
-                : projectEntries.length === 0
-                  ? (
-                      <div className="memoir-empty">
-                        <div className="memoir-empty-title">{t('empty.project')}</div>
-                        <div className="memoir-empty-hint">{t('empty.projectHint')}</div>
-                      </div>
-                    )
-                  : <SectionedEntries entries={projectEntries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} onUpdate={(entry, patch) => onUpdate(entry, project?.path ?? cwd, patch)} />
-              : projects.length === 0
-                ? (
-                    <div className="memoir-empty">
-                      <div className="memoir-empty-title">{t('empty.global')}</div>
-                      <div className="memoir-empty-hint">{t('empty.globalHint')}</div>
-                    </div>
-                  )
-                : projects.map((p) => {
-                    const entries = filterEntries(p.entries)
-                    if (entries.length === 0) return null
-                    const when = new Date(p.updatedAt)
-                    return (
-                      <div className="memoir-project-card" key={p.key}>
-                        <div className="memoir-project-head">
-                          <span className="memoir-project-title">{p.title}</span>
-                          <span className="memoir-project-path">{p.path}</span>
-                        </div>
-                        <div className="memoir-project-meta">
-                          {`${t('updated')} ${when.toISOString().slice(0, 16).replace('T', ' ')} · ${entries.length} ${t('entries')}`}
-                        </div>
-                        <SectionedEntries entries={entries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, p.path)} onUpdate={(entry, patch) => onUpdate(entry, p.path, patch)} />
-                      </div>
-                    )
-                  })}
-        </div>
-        {busy ? <div className="memoir-empty memoir-busy">…</div> : null}
-        <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} />
-        <div className="memoir-inspector" data-dsh-part="hot-memory">
-        <button type="button" className="memoir-diagnostics-toggle" onClick={() => setInspectorOpen((v) => !v)}>
-          {t('inspector.title')} {inspectorOpen ? '▾' : '▸'}
-        </button>
-        {inspectorOpen
-          ? hotMemory === null || hotMemory.text === ''
-            ? <div className="memoir-inspector-body">{t('inspector.empty')}</div>
-            : <pre className="memoir-inspector-body">{hotMemory.text}</pre>
-          : null}
-        </div>
-        <div className="memoir-diagnostics" data-dsh-part="diagnostics">
-        <button type="button" className="memoir-diagnostics-toggle" onClick={() => setDiagOpen((v) => !v)}>
-          {t('diag.title')} {diagOpen ? '▾' : '▸'}
-        </button>
-        {diagOpen && diag !== null
-          ? (
-              <div className="memoir-diagnostics-body">
-                <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>
-                <div>{t('diag.cache')}: {diag.cache.hits}/{diag.cache.loads} 命中 ({Math.round(diag.cache.hitRate * 100)}%) · {t('diag.render')}: {Math.round(diag.cache.renderHitRate * 100)}%</div>
-                {diag.hotMemory !== null
-                  ? <div>{t('diag.hot')}: {diag.hotMemory.selected}/{diag.hotMemory.total} 条 · ~{diag.hotMemory.estimatedTokens} tokens（预算 {diag.config.hotMemoryTokens}/{diag.config.hotMemoryMaxTokens}）</div>
-                  : null}
-                <div>{t('diag.retrieval')}: {diag.retrieval.index === null ? '—' : `${diag.retrieval.index.docs} docs · ${diag.retrieval.index.terms} terms · epoch ${diag.retrieval.index.epoch}`}</div>
-                <div>{t('diag.qcache')}: {diag.retrieval.cache.hits} hits / {diag.retrieval.cache.misses} misses ({Math.round(diag.retrieval.cache.hitRate * 100)}%) · {diag.retrieval.cache.size}/{diag.retrieval.cache.capacity} · {diag.retrieval.cache.evictions} evicted</div>
-                {diag.retrieval.lastQuery !== null
-                  ? <div>{t('diag.lastQuery')}: {diag.retrieval.lastQuery.latencyMs.toFixed(1)} ms · {diag.retrieval.lastQuery.returned}/{diag.retrieval.lastQuery.candidates} returned</div>
-                  : null}
-                {diag.snapshot !== null
-                  ? <div>{t('diag.snapshotInfo')}: {diag.snapshot.hash} · rev {diag.snapshot.storeRevision}</div>
-                  : null}
-              </div>
-            )
-          : null}
-        </div>
+      <nav className="memoir-surface-tabs" data-dsh-part="surface-tabs" role="tablist" aria-label={t('surface.navigation')}>
+        {PANEL_SURFACES.map((item, index) => (
+          <button
+            type="button"
+            id={`${panelId}-${item.id}-tab`}
+            className="memoir-surface-tab"
+            role="tab"
+            aria-selected={surface === item.id}
+            aria-controls={`${panelId}-${item.id}-panel`}
+            tabIndex={surface === item.id ? 0 : -1}
+            data-active={surface === item.id ? 'true' : undefined}
+            onClick={() => setSurface(item.id)}
+            onKeyDown={(event) => onSurfaceKeyDown(event, index)}
+            key={item.id}
+          >{t(item.label)}</button>
+        ))}
+      </nav>
+      <div className="memoir-surface-stack">
+        <section
+          id={`${panelId}-browse-panel`}
+          className="memoir-surface memoir-browse-surface"
+          role="tabpanel"
+          aria-labelledby={`${panelId}-browse-tab`}
+          hidden={surface !== 'browse'}
+        >
+          <div className="memoir-browse-head">
+            <div className="memoir-tabs" data-dsh-part="tabs" role="tablist" aria-label={t('browse.scope')}>
+              <button type="button" className="memoir-tab" role="tab" aria-selected={tab === 'project'} data-active={tab === 'project' ? 'true' : undefined} onClick={() => setTab('project')}>{t('tab.project')}</button>
+              <button type="button" className="memoir-tab" role="tab" aria-selected={tab === 'global'} data-active={tab === 'global' ? 'true' : undefined} onClick={() => setTab('global')}>{t('tab.global')}</button>
+            </div>
+            <div className="memoir-toolbar" data-dsh-part="toolbar">
+              <input className="memoir-search" aria-label={t('toolbar.search')} placeholder={t('toolbar.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
+              <label className="memoir-status-filter">
+                <span>{t('filter.status')}</span>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as MemoirStatus | 'all')}>
+                  <option value="active">{t('status.active')}</option>
+                  <option value="all">{t('filter.all')}</option>
+                  <option value="superseded">{t('status.superseded')}</option>
+                  <option value="archived">{t('status.archived')}</option>
+                </select>
+              </label>
+              <label className="memoir-status-filter">
+                <span>{t('filter.section')}</span>
+                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value as SectionKey | 'all')}>
+                  <option value="all">{t('filter.all')}</option>
+                  {SECTION_KEYS.map((key) => <option key={key} value={key}>{t('sections.' + key)}</option>)}
+                </select>
+              </label>
+              {tab === 'project' && cwd !== ''
+                ? <button type="button" className="memoir-primary" onClick={() => {
+                    setFormOpen((value) => !value)
+                    setPendingRecord(null)
+                  }}>{formOpen ? t('toolbar.cancel') : t('toolbar.add')}</button>
+                : null}
+              {tab === 'global' && displayedGlobalGroups.length > 0
+                ? <div className="memoir-project-actions">
+                    <button type="button" className="memoir-iconbtn" onClick={() => setAllProjects(true)}>{t('project.expandAll')}</button>
+                    <button type="button" className="memoir-iconbtn" onClick={() => setAllProjects(false)}>{t('project.collapseAll')}</button>
+                  </div>
+                : null}
+            </div>
+            {error !== null ? <div className="memoir-error" role="alert">{error}</div> : null}
+          </div>
+          <div className="memoir-surface-scroll memoir-scroll-region" data-dsh-part="browse-scroll" tabIndex={0} aria-label={t('surface.browse')}>
+            {formOpen && tab === 'project' && cwd !== ''
+              ? pendingRecord === null
+                ? <AddForm t={t} onSubmit={onRecord} onCancel={() => setFormOpen(false)} />
+                : <SimilarityResolution
+                    result={pendingRecord.result}
+                    t={t}
+                    busy={busy}
+                    onResolve={(resolution, targetId) => onRecord(pendingRecord.payload, resolution, targetId)}
+                    onBack={() => setPendingRecord(null)}
+                  />
+              : null}
+            <div className="memoir-body" aria-busy={loading || busy}>
+              {loading
+                ? <div className="memoir-empty">…</div>
+                : tab === 'project'
+                  ? q !== ''
+                    ? <RankedResults results={searchResults ?? []} pending={searchResults === null} t={t} openSource={openSource} onDelete={onDelete} onUpdate={onUpdate} />
+                    : cwd === ''
+                      ? <div className="memoir-empty"><div className="memoir-empty-title">{t('empty.workspace')}</div><div className="memoir-empty-hint">{t('empty.workspaceHint')}</div></div>
+                      : projectEntries.length === 0
+                        ? <div className="memoir-empty"><div className="memoir-empty-title">{t('empty.project')}</div><div className="memoir-empty-hint">{t('empty.projectHint')}</div></div>
+                        : <SectionedEntries resetKey={listResetKey} entries={projectEntries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, project?.path ?? cwd)} onUpdate={(entry, patch) => onUpdate(entry, project?.path ?? cwd, patch)} />
+                  : q !== '' && searchResults === null
+                    ? <div className="memoir-empty">…</div>
+                    : displayedGlobalGroups.length === 0
+                      ? <div className="memoir-empty"><div className="memoir-empty-title">{projects.length === 0 && q === '' ? t('empty.global') : t('empty.search')}</div><div className="memoir-empty-hint">{projects.length === 0 && q === '' ? t('empty.globalHint') : t('search.ranked')}</div></div>
+                      : <>
+                          {visibleGlobalGroups.map((group) => {
+                            const open = expandedProjects[group.key] === true
+                            return (
+                              <ProjectDisclosure
+                                project={group}
+                                open={open}
+                                t={t}
+                                onToggle={() => setExpandedProjects((current) => ({ ...current, [group.key]: !open }))}
+                                key={group.key}
+                              >
+                                {'results' in group
+                                  ? <>
+                                      <div className="memoir-ranked-note">{t('search.ranked')}</div>
+                                      {group.results.map((result) => <EntryCard key={result.entry.id} entry={result.entry} score={result.score} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, group.path)} onUpdate={(entry, patch) => onUpdate(entry, group.path, patch)} />)}
+                                    </>
+                                  : <SectionedEntries resetKey={`${listResetKey}:${group.key}`} entries={group.entries} t={t} openSource={openSource} onDelete={(entry) => onDelete(entry, group.path)} onUpdate={(entry, patch) => onUpdate(entry, group.path, patch)} />}
+                              </ProjectDisclosure>
+                            )
+                          })}
+                          {projectLimit < displayedGlobalGroups.length
+                            ? <div className="memoir-load-more"><span>{t('pagination.projects')} {visibleGlobalGroups.length}/{displayedGlobalGroups.length}</span><button type="button" className="memoir-iconbtn" onClick={() => setProjectLimit((value) => nextPageSize(value, displayedGlobalGroups.length, PROJECT_PAGE_SIZE))}>{t('pagination.more')}</button></div>
+                            : null}
+                        </>}
+            </div>
+            {busy ? <div className="memoir-empty memoir-busy" aria-live="polite">…</div> : null}
+          </div>
+        </section>
+
+        <section id={`${panelId}-settings-panel`} className="memoir-surface" role="tabpanel" aria-labelledby={`${panelId}-settings-tab`} hidden={surface !== 'settings'}>
+          <div className="memoir-surface-scroll" data-dsh-part="settings-scroll" tabIndex={0} aria-label={t('surface.settings')}>
+            <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} alwaysOpen />
+          </div>
+        </section>
+
+        <section id={`${panelId}-hot-memory-panel`} className="memoir-surface" role="tabpanel" aria-labelledby={`${panelId}-hot-memory-tab`} hidden={surface !== 'hot-memory'}>
+          <div className="memoir-surface-scroll" data-dsh-part="hot-memory-scroll" tabIndex={0} aria-label={t('surface.hotMemory')}>
+            <div className="memoir-surface-card" data-dsh-part="hot-memory">
+              <h3>{t('inspector.title')}</h3>
+              {hotMemory === null || hotMemory.text === ''
+                ? <div className="memoir-empty"><div className="memoir-empty-title">{t('inspector.empty')}</div></div>
+                : <>
+                    <div className="memoir-surface-summary">{t('inspector.selected')}: {hotMemory.selected.length}/{hotMemory.total} · ~{hotMemory.estimatedTokens} tokens</div>
+                    <pre className="memoir-inspector-body">{hotMemory.text}</pre>
+                  </>}
+            </div>
+          </div>
+        </section>
+
+        <section id={`${panelId}-diagnostics-panel`} className="memoir-surface" role="tabpanel" aria-labelledby={`${panelId}-diagnostics-tab`} hidden={surface !== 'diagnostics'}>
+          <div className="memoir-surface-scroll" data-dsh-part="diagnostics-scroll" tabIndex={0} aria-label={t('surface.diagnostics')}>
+            <div className="memoir-surface-card" data-dsh-part="diagnostics">
+              <h3>{t('diag.title')}</h3>
+              {diag === null
+                ? <div className="memoir-empty">{t('diag.unavailable')}</div>
+                : <div className="memoir-diagnostics-body">
+                    <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>
+                    <div>{t('diag.cache')}: {diag.cache.hits}/{diag.cache.loads} {t('diag.hits')} ({Math.round(diag.cache.hitRate * 100)}%) · {t('diag.render')}: {Math.round(diag.cache.renderHitRate * 100)}%</div>
+                    {diag.hotMemory !== null ? <div>{t('diag.hot')}: {diag.hotMemory.selected}/{diag.hotMemory.total} {t('diag.items')} · ~{diag.hotMemory.estimatedTokens} tokens · {t('diag.budget')} {diag.config.hotMemoryTokens}/{diag.config.hotMemoryMaxTokens}</div> : null}
+                    <div>{t('diag.retrieval')}: {diag.retrieval.index === null ? '—' : `${diag.retrieval.index.docs} ${t('diag.documents')} · ${diag.retrieval.index.terms} ${t('diag.terms')} · ${t('diag.epoch')} ${diag.retrieval.index.epoch}`}</div>
+                    <div>{t('diag.qcache')}: {diag.retrieval.cache.hits} {t('diag.hits')} / {diag.retrieval.cache.misses} {t('diag.misses')} ({Math.round(diag.retrieval.cache.hitRate * 100)}%) · {diag.retrieval.cache.size}/{diag.retrieval.cache.capacity} · {diag.retrieval.cache.evictions} {t('diag.evicted')}</div>
+                    {diag.retrieval.lastQuery !== null ? <div>{t('diag.lastQuery')}: {diag.retrieval.lastQuery.latencyMs.toFixed(1)} ms · {diag.retrieval.lastQuery.returned}/{diag.retrieval.lastQuery.candidates} {t('diag.returned')}</div> : null}
+                    {diag.snapshot !== null ? <div>{t('diag.snapshotInfo')}: {diag.snapshot.hash} · {t('diag.revision')} {diag.snapshot.storeRevision}</div> : null}
+                  </div>}
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   )

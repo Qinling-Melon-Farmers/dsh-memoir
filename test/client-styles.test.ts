@@ -67,10 +67,15 @@ test('sidebar row geometry matches the web-ui-all 0.3.x family contract', () => 
   }
 })
 
-test('settings card chrome and panel use the web-ui family disclosure and one scroll owner', () => {
+test('settings card chrome and each v0.6.1 surface own one bounded scroll region', () => {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>
     <div class="memoir-panel">
-      <div class="memoir-scroll-region"><div class="memoir-body"><div class="memoir-settings-body"></div><pre class="memoir-inspector-body"></pre></div></div>
+      <nav class="memoir-surface-tabs"></nav>
+      <div class="memoir-surface-stack">
+        <section class="memoir-surface"><div class="memoir-surface-scroll memoir-scroll-region"><div class="memoir-body"></div></div></section>
+        <section class="memoir-surface" hidden><div class="memoir-surface-scroll"><div class="memoir-settings-body"></div></div></section>
+        <section class="memoir-surface" hidden><div class="memoir-surface-scroll"><pre class="memoir-inspector-body"></pre></div></section>
+      </div>
     </div>
     <li class="memoir-settings-slot"><button class="memoir-settings-slot-header"><span class="memoir-settings-slot-headtext"></span><svg class="memoir-settings-slot-chevron"></svg></button></li>
   </body></html>`)
@@ -78,7 +83,10 @@ test('settings card chrome and panel use the web-ui family disclosure and one sc
     const dispose = mountPanelStyles(dom.window.document)
     const card = dom.window.document.querySelector<HTMLElement>('.memoir-settings-slot')!
     const header = dom.window.document.querySelector<HTMLElement>('.memoir-settings-slot-header')!
-    const scroller = dom.window.document.querySelector<HTMLElement>('.memoir-scroll-region')!
+    const panel = dom.window.document.querySelector<HTMLElement>('.memoir-panel')!
+    const stack = dom.window.document.querySelector<HTMLElement>('.memoir-surface-stack')!
+    const surface = dom.window.document.querySelector<HTMLElement>('.memoir-surface:not([hidden])')!
+    const scrollers = [...dom.window.document.querySelectorAll<HTMLElement>('.memoir-surface-scroll')]
     const body = dom.window.document.querySelector<HTMLElement>('.memoir-body')!
     const settings = dom.window.document.querySelector<HTMLElement>('.memoir-settings-body')!
     const inspector = dom.window.document.querySelector<HTMLElement>('.memoir-inspector-body')!
@@ -86,7 +94,11 @@ test('settings card chrome and panel use the web-ui family disclosure and one sc
     assert.equal(dom.window.getComputedStyle(card).borderRadius, '12px')
     assert.equal(dom.window.getComputedStyle(header).padding, '14px 16px')
     assert.equal(dom.window.getComputedStyle(header).display, 'flex')
-    assert.equal(dom.window.getComputedStyle(scroller).overflowY, 'auto')
+    assert.equal(dom.window.getComputedStyle(panel).overflow, 'hidden')
+    assert.equal(dom.window.getComputedStyle(stack).minHeight, '0')
+    assert.equal(dom.window.getComputedStyle(surface).overflow, 'hidden')
+    for (const scroller of scrollers) assert.equal(dom.window.getComputedStyle(scroller).overflowY, 'auto')
+    assert.equal(dom.window.getComputedStyle(dom.window.document.querySelector<HTMLElement>('.memoir-surface[hidden]')!).display, 'none')
     assert.notEqual(dom.window.getComputedStyle(body).overflowY, 'auto')
     assert.notEqual(dom.window.getComputedStyle(settings).overflowY, 'auto')
     assert.notEqual(dom.window.getComputedStyle(inspector).overflowY, 'auto')

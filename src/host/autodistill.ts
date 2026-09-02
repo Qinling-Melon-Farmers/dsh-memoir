@@ -38,6 +38,21 @@ export interface TurnActivity {
   toolCalls: number
 }
 
+/**
+ * Session-log compatibility surface. DSH <= alpha.3 exposed `events` while
+ * alpha.4+ keeps the log private and exposes an immutable snapshot method.
+ */
+export interface SessionEventSource {
+  readonly events?: readonly TurnEventLike[]
+  snapshotEvents?: () => readonly TurnEventLike[]
+}
+
+/** Read a stable session event snapshot across the old and new DSH APIs. */
+export function sessionEventSnapshot(session: SessionEventSource | undefined): readonly TurnEventLike[] {
+  if (typeof session?.snapshotEvents === 'function') return session.snapshotEvents()
+  return session?.events ?? []
+}
+
 /** Scan the tail of a session log for one turn's tool activity. */
 export function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity {
   let recorded = false
@@ -61,7 +76,8 @@ export interface AutoDistillAgentLike {
   id: string
   session: {
     header: { origin?: string; delegationDepth?: number }
-    events: readonly TurnEventLike[]
+    readonly events?: readonly TurnEventLike[]
+    snapshotEvents?: () => readonly TurnEventLike[]
   }
   steer(message: UserMessage): void
 }
@@ -161,7 +177,7 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     const { agent, turn, signal } = payload
     if (isSubagentSession(agent)) return
     if (signal.aborted) return
-    const { worked, recorded, toolCalls } = turnActivity(agent.session.events, turn)
+    const { worked, recorded, toolCalls } = turnActivity(sessionEventSnapshot(agent.session), turn)
     if (!worked || recorded) return
     const live = options.policy?.()
     const policy: AutoDistillPolicy = {

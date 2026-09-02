@@ -21,6 +21,7 @@ import { governedRecord, type RecordResolution } from './governance.js'
 import type { SimilarityCandidate } from './similarity.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
+import { sessionEventSnapshot } from './autodistill.js'
 
 /** One text content block (the only render shape these tools emit). */
 export function text(value: string): ContentBlock[] {
@@ -55,8 +56,8 @@ export function resolveMemorySource(exec: ToolRunContext | undefined): MemoirSou
   const callIds = new Set<string>()
   if (exec?.callId !== undefined) callIds.add(String(exec.callId))
   if (exec?.rootCallId !== undefined) callIds.add(String(exec.rootCallId))
-  const events = exec?.agent?.session?.events
-  if (Array.isArray(events) && callIds.size > 0) {
+  const events = sessionEventSnapshot(exec?.agent?.session)
+  if (callIds.size > 0) {
     for (let index = events.length - 1; index >= 0; index--) {
       const event = events[index] as { type?: unknown; data?: Record<string, unknown> }
       if (event.type !== 'tool/call' || event.data === undefined || !callIds.has(String(event.data.callId ?? ''))) continue

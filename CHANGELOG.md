@@ -12,6 +12,51 @@
 
 - None.
 
+## [0.6.1] - 2026-09-02
+
+> 正式版通过 `v0.6.1` tag 工作流发布至 npm，并同步创建 GitHub Release。
+> Formal release published to npm through the `v0.6.1` tag workflow, with a matching GitHub Release.
+
+### 中文
+
+#### Added
+
+- 新增常驻 `记忆浏览 / 记忆设置 / Hot Memory / 诊断` 二级导航；四个功能区独立保留滚动位置，支持左右方向键、Home、End 与标准 ARIA tab 语义。
+- 全局记忆按规范化项目路径分组并默认折叠，项目摘要展示 active / archived / superseded 完整计数与最近更新时间；筛选或搜索时仅保留命中项目并自动展开。
+- 记忆与项目均按每批 20 项渐进渲染，覆盖 0/1/20/100/1000 条记忆及 50 项目夹具；长正文默认限制六行并可显式展开/收起。
+- README 中英文同步加入当前 DSH alpha.5 + dsh-web-all 实机截图，覆盖全局项目折叠、常驻设置导航和会话页滚动到底。
+
+#### Fixed
+
+- 修复设置、Hot Memory 和诊断被长记忆列表推到页面底部的问题；筛选栏固定在浏览功能区顶部，设置保存/恢复按钮保持可达。
+- 按 DSH 官方轨迹视图使用的 `data-conversation-composer-overlay` 契约接入会话页，并读取动态 `--dsh-composer-height`，修复长列表撑高宿主、页面滚动冲突以及最后一项被输入框遮挡。
+- 兼容 DSH alpha.4 移除公开 `Session.events` 的变更：自动蒸馏活动统计和可信 turn 溯源优先使用 `session.snapshotEvents()`，同时保留 alpha.2/alpha.3 的只读回退。
+
+#### Compatibility
+
+- DSH 兼容范围保持 `>=0.1.2-alpha.2 <0.1.3`，store v4、settings v3、工具协议及零普通运行时依赖均不变；alpha.4 类型编译及当前 alpha.5 完整编译/测试通过。
+- 189/189 自动化测试通过；隔离 profile 中 DSH `0.1.2-alpha.5` + `@linxin666/dsh-web-all@0.3.12` 的 Settings 和真实会话浏览器回归通过。测试环境中唯一 503 来自未配置 doctor 服务的 `/api/doctor/status`，Memoir 路由无失败。
+
+### English
+
+#### Added
+
+- Added permanent `Browse / Settings / Hot Memory / Diagnostics` navigation. Each surface retains an independent scroll position, with ArrowLeft/ArrowRight/Home/End keyboard navigation and standard ARIA tab semantics.
+- Grouped global memory by canonical project path and collapsed projects by default. Project summaries expose complete active / archived / superseded totals and last-updated time; search or filtering keeps and expands only matching projects.
+- Added progressive batches of 20 memories or projects, covered by 0/1/20/100/1000-entry and 50-project fixtures. Long bodies now use a controlled six-line preview with explicit expand/collapse controls.
+- Updated both READMEs with current DSH alpha.5 + dsh-web-all screenshots for global project disclosure, permanent Settings navigation, and end-of-list scrolling in a real session.
+
+#### Fixed
+
+- Kept Settings, Hot Memory, and diagnostics directly reachable instead of placing them below an unbounded memory list. Browse filters stay fixed and Settings save/reset actions remain reachable.
+- Adopted the native `data-conversation-composer-overlay` contract used by DSH's official Trajectory view and the dynamic `--dsh-composer-height`, fixing host-page scroll contention and final memories being obscured by the composer.
+- Adapted to DSH alpha.4 removing public `Session.events`: automatic-distillation activity and trusted turn provenance now prefer `session.snapshotEvents()` while retaining a read-only alpha.2/alpha.3 fallback.
+
+#### Compatibility
+
+- The DSH range remains `>=0.1.2-alpha.2 <0.1.3`; store v4, settings v3, tool contracts, and zero regular runtime dependencies are unchanged. Alpha.4 type compilation and the current alpha.5 full compile/test suite pass.
+- All 189 automated tests pass. An isolated DSH `0.1.2-alpha.5` + `@linxin666/dsh-web-all@0.3.12` profile passed Settings and real-session browser regression. The only 503 in that fixture came from the unconfigured `/api/doctor/status`; no Memoir route failed.
+
 ## [0.6.0] - 2026-08-31
 
 ### 中文
@@ -412,7 +457,9 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.6.0...HEAD
+[0.6.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1
+[0.6.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0
 [0.5.6]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6
 [0.5.5]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.5
 [0.5.4]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.4

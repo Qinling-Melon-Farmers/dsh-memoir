@@ -238,6 +238,17 @@ test('memoir_read limit/detail: full restores timestamps, limit clamps to max', 
 
 test('resolveMemorySource correlates the tool call with its DSH turn', () => {
   assert.deepEqual(resolveMemorySource(makeExec('C:\\proj', 'session-source', 7)), { sessionId: 'session-source', turnId: 7 })
+  assert.deepEqual(resolveMemorySource({
+    callId: 'call-alpha4',
+    rootCallId: 'call-alpha4',
+    agent: {
+      id: 'session-alpha4',
+      session: {
+        header: { cwd: 'C:\\proj' },
+        snapshotEvents: () => [{ type: 'tool/call', data: { turn: 8, callId: 'call-alpha4', name: 'memoir_record' } }],
+      },
+    },
+  } as never), { sessionId: 'session-alpha4', turnId: 8 })
   assert.equal(resolveMemorySource(undefined), undefined)
 })
 

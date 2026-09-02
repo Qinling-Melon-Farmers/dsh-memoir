@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
-  turnActivity, isSubagentSession, AutoDistillGate,
+  turnActivity, sessionEventSnapshot, isSubagentSession, AutoDistillGate,
   installAutoDistill, DISTILL_PROMPT,
 } from '../lib/autodistill.js'
 import type { AutoDistillAgentLike, TurnEventLike, TurnStoppingPayload } from '../lib/autodistill.js'
@@ -39,6 +39,13 @@ test('turnActivity stops scanning at lower turns (monotonic log)', () => {
   ]
   assert.deepEqual(turnActivity(events, 5), { worked: true, recorded: false, toolCalls: 1 })
   assert.deepEqual(turnActivity(events, 3), { worked: false, recorded: false, toolCalls: 0 })
+})
+
+test('sessionEventSnapshot supports legacy events and alpha.4 snapshotEvents', () => {
+  const events = [toolCallEvent(2, 'read')]
+  assert.equal(sessionEventSnapshot({ events }), events)
+  assert.equal(sessionEventSnapshot({ events: [], snapshotEvents: () => events }), events)
+  assert.deepEqual(sessionEventSnapshot(undefined), [])
 })
 
 test('isSubagentSession excludes subagents and nested delegations', () => {

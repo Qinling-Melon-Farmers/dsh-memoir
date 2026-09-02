@@ -17,15 +17,15 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>
 }
 
-test('v0.6.0 declares the published DSH alpha.2 compatibility floor', () => {
-  assert.equal(packageJson.version, '0.6.0')
+test('v0.6.1 retains the published DSH alpha.2 compatibility floor', () => {
+  assert.equal(packageJson.version, '0.6.1')
   assert.equal(packageJson.dsh?.engines?.dsh, '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-tools'], '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.dependencies, undefined, 'the published package keeps zero bundled runtime dependencies')
 })
 
-test('v0.6.0 injects only native alpha client providers', () => {
+test('v0.6.1 injects only native alpha client providers and compiles on the current alpha.5 baseline', () => {
   assert.deepEqual(packageJson.dsh?.client?.inject, [
     '@deepseek-ai/dsh-api-session-controller',
     '@deepseek-ai/dsh-client-ui-renderer',
@@ -34,18 +34,19 @@ test('v0.6.0 injects only native alpha client providers', () => {
     '@deepseek-ai/dsh-client-ui-settings-general',
   ])
   assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-runtime'], undefined)
-  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.1.2-alpha.2')
+  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.1.2-alpha.5')
   for (const [name, version] of Object.entries(packageJson.devDependencies ?? {})) {
     if (name.startsWith('@deepseek-ai/dsh-') && version.includes('alpha')) {
-      assert.equal(version, '0.1.2-alpha.2', `${name} must compile against the release baseline`)
+      assert.equal(version, '0.1.2-alpha.5', `${name} must compile against the current alpha baseline`)
     }
   }
 })
 
-test('native client adapters compile against official alpha.2 contracts', () => {
+test('native client adapters compile against official alpha.5 contracts', () => {
   assert.match(clientSource, /import type \{ ConvViewProps \} from '@deepseek-ai\/dsh-client-ui-conversation\/client'/)
   assert.match(clientSource, /PropsRuntime<'settings\.section'>/)
   assert.match(clientSource, /SessionListState/)
+  assert.match(clientSource, /data-conversation-composer-overlay/)
   assert.ok(!clientSource.includes('interface NativeSlotsLike'))
   assert.ok(!clientSource.includes('as unknown as'))
 })
