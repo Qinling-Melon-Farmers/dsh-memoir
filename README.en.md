@@ -12,7 +12,7 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
 > [!IMPORTANT]
-> npm `latest` is `dsh-memoir@0.6.1` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4 and the current alpha.5. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
+> npm `latest` is `dsh-memoir@0.6.1` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4, alpha.5, and 0.1.2-rc.1. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
 
 ```bash
 npm install --global @deepseek-ai/dsh@alpha
@@ -131,7 +131,7 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release; alpha.4 compile and alpha.5 + dsh-web-all browser validated |
+| npm `latest` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release; alpha.4 compile, alpha.5 + dsh-web-all browser, and 0.1.2-rc.1 regression validated |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
 | GitHub `main` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | Synchronized with npm `0.6.1`; intended for development and debugging |
 
@@ -204,7 +204,7 @@ v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report
 
 Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-v0.6.1 has 189 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, project disclosure/progressive loading, scrolling, and DSH-alpha compatibility. An isolated DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` profile also passed Settings and real-session browser regression; alpha.4 type compilation passed separately.
+v0.6.1 has 189 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, project disclosure/progressive loading, scrolling, and DSH-alpha compatibility. An isolated DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` profile also passed Settings and real-session browser regression; alpha.4 type compilation and a DSH 0.1.2-rc.1 regression (189 tests, live API/tools/GUI/auto-distill checks) passed separately.
 
 ## FAQ
 

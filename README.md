@@ -11,7 +11,7 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
 
 > [!IMPORTANT]
-> npm `latest` 为 `dsh-memoir@0.6.1`，适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`，已验证 DSH alpha.4 与当前 alpha.5。仍使用 `0.1.1-rc.2` 的用户应固定安装 `dsh-memoir@0.5.6`。
+> npm `latest` 为 `dsh-memoir@0.6.1`，适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`，已验证 DSH alpha.4、alpha.5 与 0.1.2-rc.1。仍使用 `0.1.1-rc.2` 的用户应固定安装 `dsh-memoir@0.5.6`。
 
 ```bash
 npm install --global @deepseek-ai/dsh@alpha
@@ -130,7 +130,7 @@ memoir_record / memoir_update
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | 当前正式版；已验证 alpha.4 编译及 alpha.5 + dsh-web-all 实机 UI |
+| npm `latest`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | 当前正式版；已验证 alpha.4 编译、alpha.5 + dsh-web-all 实机 UI 与 0.1.2-rc.1 回归 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
 | GitHub `main`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | 源码 clone + `link:` | 与 npm `0.6.1` 同步；供开发和调试使用 |
 
@@ -203,7 +203,7 @@ v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`
 
 基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
 
-v0.6.1 有 189 项自动化测试，覆盖存储/设置迁移与锁、Hot Memory、BM25 质量/缓存、生命周期、来源防伪、相似治理、自动蒸馏、Agent 侧与 GUI 双语、项目折叠/渐进加载、滚动布局及 DSH alpha 兼容。另在隔离 profile 中以 DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` 完成 Settings 与真实会话页浏览器回归；alpha.4 类型编译也已通过。
+v0.6.1 有 189 项自动化测试，覆盖存储/设置迁移与锁、Hot Memory、BM25 质量/缓存、生命周期、来源防伪、相似治理、自动蒸馏、Agent 侧与 GUI 双语、项目折叠/渐进加载、滚动布局及 DSH alpha 兼容。另在隔离 profile 中以 DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` 完成 Settings 与真实会话页浏览器回归；alpha.4 类型编译与 DSH 0.1.2-rc.1 回归（189 项测试、API/工具/GUI/自动蒸馏实机验证）也已通过。
 
 ## 常见问题
 
