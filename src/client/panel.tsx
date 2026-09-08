@@ -1017,6 +1017,13 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
               {diag === null
                 ? <div className="memoir-empty">{t('diag.unavailable')}</div>
                 : <div className="memoir-diagnostics-body">
+                    {diag.autoDistill ? <div>
+                      <h4>{t('distill.title')}</h4>
+                      <div>{t('distill.worked')}: {diag.autoDistill.workedTurns} · {t('distill.agents')}: {diag.autoDistill.agents}/1024</div>
+                      <div>{t('distill.note')}</div>
+                      {Object.entries(diag.autoDistill.counts).map(([reason, count]) => <div key={reason}>{t(`distill.${reason}`)}: {count}</div>)}
+                      {diag.autoDistill.last ? <div>{t('distill.last')}: {t(`distill.${diag.autoDistill.last.outcome}`)} · {new Date(diag.autoDistill.last.at).toLocaleString()} · turn {diag.autoDistill.last.turn}</div> : null}
+                    </div> : null}
                     <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>
                     <div>{t('diag.cache')}: {diag.cache.hits}/{diag.cache.loads} {t('diag.hits')} ({Math.round(diag.cache.hitRate * 100)}%) · {t('diag.render')}: {Math.round(diag.cache.renderHitRate * 100)}%</div>
                     {diag.hotMemory !== null ? <div>{t('diag.hot')}: {diag.hotMemory.selected}/{diag.hotMemory.total} {t('diag.items')} · ~{diag.hotMemory.estimatedTokens} tokens · {t('diag.budget')} {diag.config.hotMemoryTokens}/{diag.config.hotMemoryMaxTokens}</div> : null}

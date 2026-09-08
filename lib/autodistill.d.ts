@@ -62,6 +62,10 @@ export interface AutoDistillPolicy {
 /** Per-agent frequency, cooldown, and duplicate-turn state (with pruning). */
 export declare class AutoDistillGate {
     private states;
+    readonly capacity = 1024;
+    reason: 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'ready';
+    get size(): number;
+    clear(): void;
     /**
      * Consume one eligible worked turn and decide whether all policy conditions
      * are ready. Duplicate events never advance the worked-turn counter.
@@ -72,6 +76,39 @@ export declare class AutoDistillGate {
     /** Drop all state for one agent (disposal hygiene). */
     forget(agentId: string): void;
 }
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed';
+/** Process-local counters only; never retains message content or credentials. */
+export declare class DistillDiagnostics {
+    private counts;
+    private last;
+    private workedTurns;
+    private agents;
+    record(outcome: DistillOutcome, at: number, turn: number, toolCalls: number, agents: number): void;
+    snapshot(): {
+        counts: {
+            subagent?: number | undefined;
+            duplicate?: number | undefined;
+            interval?: number | undefined;
+            tools?: number | undefined;
+            cooldown?: number | undefined;
+            disabled?: number | undefined;
+            aborted?: number | undefined;
+            idle?: number | undefined;
+            recorded?: number | undefined;
+            steered?: number | undefined;
+            failed?: number | undefined;
+        };
+        workedTurns: number;
+        agents: number;
+        last: {
+            outcome: DistillOutcome;
+            at: number;
+            turn: number;
+            toolCalls: number;
+        } | null;
+    };
+    setAgents(agents: number): void;
+}
 export interface TurnStoppingPayload {
     agent: AutoDistillAgentLike;
     turn: number;
@@ -80,6 +117,7 @@ export interface TurnStoppingPayload {
 /** The event-wire surface the installer needs (satisfied by ctx.on). */
 export interface AutoDistillWire {
     on(name: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void): () => void;
+    onDisposed?(listener: (agentId: string) => void): () => void;
 }
 /**
  * Install the turn-end listener. The returned disposer removes the listener.
@@ -100,4 +138,5 @@ export declare function installAutoDistill(wire: AutoDistillWire, options: {
     /** Optional live language source for the steering instruction. */
     language?: () => MemoirLanguage;
     now?: () => number;
+    diagnostics?: DistillDiagnostics;
 }): () => void;

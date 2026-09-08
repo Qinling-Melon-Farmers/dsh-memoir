@@ -31,7 +31,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { MemoirStore, projectKey } from './store.js'
 import { memoirReadTool, memoirRecordTool, memoirUpdateTool } from './tools.js'
 import { makeRoutes } from './routes.js'
-import { installAutoDistill } from './autodistill.js'
+import { installAutoDistill, DistillDiagnostics } from './autodistill.js'
 import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
 import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
@@ -199,6 +199,7 @@ export function memoirSectionText(
 function autoDistillWire(ctx: Context): AutoDistillWire {
   return {
     on: (name, listener: (payload: TurnStoppingPayload) => void) => ctx.on(name, listener),
+    onDisposed: (listener) => ctx.on('agent/disposed', ({ agent }) => listener(agent.id)),
   }
 }
 
@@ -211,6 +212,7 @@ function autoDistillWire(ctx: Context): AutoDistillWire {
 export function apply(ctx: Context, config?: Config): void {
   const value = resolveConfig(config)
   if (!value.enabled) return
+  const distillDiagnostics = new DistillDiagnostics()
 
   const liveSettings = new MemoirSettingsStore({
     language: value.language,
@@ -279,6 +281,7 @@ export function apply(ctx: Context, config?: Config): void {
       const latest = snapshotManager.latest()
       return {
         storeRevision: stats.revision,
+        autoDistill: distillDiagnostics.snapshot(),
         snapshotEpoch: stats.epoch,
         cache: stats,
         snapshotCount: snapshotManager.size,
@@ -336,6 +339,7 @@ export function apply(ctx: Context, config?: Config): void {
 
   ctx.effect(
     () => installAutoDistill(autoDistillWire(ctx), {
+      diagnostics: distillDiagnostics,
       enabled: () => liveSettings.get().settings.autoDistill,
       policy: () => {
         const current = liveSettings.get().settings

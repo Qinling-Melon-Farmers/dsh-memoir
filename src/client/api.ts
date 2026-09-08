@@ -77,6 +77,12 @@ export interface WireProject {
 
 /** The host /diagnostics payload (v0.4 observability, v0.4.2 extended). */
 export interface WireDiagnostics {
+  autoDistill?: {
+    counts: Partial<Record<string, number>>
+    workedTurns: number
+    agents: number
+    last: { outcome: string; at: number; turn: number; toolCalls: number } | null
+  }
   storeRevision: number
   snapshotEpoch: number
   cache: {

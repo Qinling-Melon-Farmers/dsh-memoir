@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
   turnActivity, sessionEventSnapshot, isSubagentSession, AutoDistillGate,
-  installAutoDistill, DISTILL_PROMPT,
+  installAutoDistill, DISTILL_PROMPT, DistillDiagnostics,
 } from '../lib/autodistill.js'
 import type { AutoDistillAgentLike, TurnEventLike, TurnStoppingPayload } from '../lib/autodistill.js'
 
@@ -68,7 +68,7 @@ test('AutoDistillGate claims each turn once per agent and prunes', () => {
   const pruned = new AutoDistillGate()
   pruned.consume('a', 1, 1, policy, 0)
   pruned.consume('a', 200, 1, policy, 0)
-  assert.equal(pruned.consume('a', 1, 1, policy, 0), true, 'pruned-out turn may be claimed again')
+  assert.equal(pruned.consume('a', 1, 1, policy, 0), false, 'old turn must not be replayed after 100 turns')
   const forgotten = new AutoDistillGate()
   forgotten.consume('a', 7, 1, policy, 0)
   forgotten.forget('a')
@@ -128,6 +128,48 @@ function makeAgent(options: { events: TurnEventLike[]; origin?: string; delegati
 }
 
 const liveSignal = new AbortController().signal
+test('diagnostics distinguish interval, duplicate, submission and prior update', () => {
+  const harness = makeWire()
+  const diagnostics = new DistillDiagnostics()
+  installAutoDistill(harness.wire, { enabled: () => true, every: 2, diagnostics, now: () => 100 })
+  const { agent, steered } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2), toolCallEvent(3, 'memoir_update')] })
+  for (const turn of [1, 1, 2, 3]) harness.dispatch({ agent, turn, signal: liveSignal })
+  assert.equal(steered.length, 1)
+  const snapshot = diagnostics.snapshot()
+  assert.deepEqual(snapshot.counts, { interval: 1, duplicate: 1, steered: 1, recorded: 1 })
+  assert.equal(snapshot.workedTurns, 2)
+  assert.equal(snapshot.last?.outcome, 'recorded')
+  snapshot.counts.steered = 900
+  assert.equal(diagnostics.snapshot().counts.steered, 1)
+})
+
+test('agent disposal releases turn state and unregisters disposal listener', () => {
+  const harness = makeWire()
+  let onDisposed: ((id: string) => void) | undefined
+  const dispose = installAutoDistill({ ...harness.wire, onDisposed: (listener) => {
+    onDisposed = listener
+    return () => { onDisposed = undefined }
+  } }, { enabled: () => true })
+  const { agent, steered } = makeAgent({ events: [toolCallEvent(1)] })
+  harness.dispatch({ agent, turn: 1, signal: liveSignal })
+  onDisposed?.(agent.id)
+  harness.dispatch({ agent, turn: 1, signal: liveSignal })
+  assert.equal(steered.length, 2)
+  dispose()
+  assert.equal(onDisposed, undefined)
+})
+
+test('gate bounds retained agents and rejects old turns after long sessions', () => {
+  const gate = new AutoDistillGate()
+  const policy = { every: 1, cooldownMs: 0, minTools: 1 }
+  for (let i = 0; i < 2000; i++) gate.consume(`agent-${i}`, 1, 1, policy, 0)
+  assert.equal(gate.size, gate.capacity)
+  gate.consume('active', 2000, 1, policy, 0)
+  assert.equal(gate.consume('active', 1, 1, policy, 0), false)
+  gate.clear()
+  assert.equal(gate.size, 0)
+})
+
 const aborted = new AbortController()
 aborted.abort()
 

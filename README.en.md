@@ -12,10 +12,10 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
 > [!IMPORTANT]
-> npm `latest` is `dsh-memoir@0.6.1` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4, alpha.5, and 0.1.2-rc.1. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
+> npm `latest` is `dsh-memoir@0.6.2` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4, alpha.5, and 0.1.2-rc.1. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
 
 ```bash
-npm install --global @deepseek-ai/dsh@alpha
+npm install --global @deepseek-ai/dsh@0.1.2-rc.1
 dsh plugin --profile web add dsh-memoir@latest
 ```
 
@@ -77,6 +77,10 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 
 ## Automatic distillation
 
+v0.6.2 diagnostics show the latest decision and process-local counters. Turns calling `memoir_record` or `memoir_update` skip reminders; submitting a reminder does not confirm persistence. Agent disposal clears gate state, with a fallback cap of 1024 recently active agents (eviction also forgets their turn watermark and cooldown). Manual recording remains available when automatic distillation is disabled.
+
+The current validated baseline is DSH `0.1.2-rc.1`. The next `0.1.3-alpha.2` line is not yet declared compatible; use the pinned installation command. BM25 is lexical retrieval and does not guarantee cross-language semantic matches without shared terms. Distillation guidance does not replace fact checking.
+
 Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
 
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
@@ -113,6 +117,8 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 <details>
 <summary>More GUI screenshots</summary>
 
+![v0.6.2 automatic distillation lifecycle diagnostics](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
+
 ![v0.6.1 permanent surface navigation and live settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png)
 
 ![v0.6.1 conversation view scrolled to the end above the composer](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png)
@@ -131,9 +137,9 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release; alpha.4 compile, alpha.5 + dsh-web-all browser, and 0.1.2-rc.1 regression validated |
+| npm `latest` (`0.6.2`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release validated on 0.1.2-rc.1 |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| GitHub `main` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | Synchronized with npm `0.6.1`; intended for development and debugging |
+| GitHub `main` (`0.6.2`) | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | Development and debugging |
 
 Node.js `^22.19.0 || >=24.0.0` is required. v0.6.x uses the native DSH-alpha `conversation.view` / `settings.section` slots and the Remote-era client module architecture. v0.6.1 supports both the public `session.events` surface in alpha.2/alpha.3 and `session.snapshotEvents()` in alpha.4+. `dsh.engines.dsh` rejects incompatible hosts.
 
@@ -147,7 +153,7 @@ git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@alpha
+npm install --global @deepseek-ai/dsh@0.1.2-rc.1
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
@@ -204,7 +210,7 @@ v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report
 
 Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-v0.6.1 has 189 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, project disclosure/progressive loading, scrolling, and DSH-alpha compatibility. An isolated DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` profile also passed Settings and real-session browser regression; alpha.4 type compilation and a DSH 0.1.2-rc.1 regression (189 tests, live API/tools/GUI/auto-distill checks) passed separately.
+v0.6.2 passes 192 automated tests and type checking, covering lifecycle, BM25, Hot Memory, writing and injection, provenance, and GUI. An isolated DSH 0.1.2-rc.1 + dsh-web-all 0.3.18 profile passes bilingual diagnostics browser regression. Earlier alpha.2–alpha.5 compatibility evidence is recorded in the v0.6.1 changelog.
 
 ## FAQ
 
@@ -233,6 +239,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.6.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1), and `main` is synchronized with it.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.6.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2), and `main` is synchronized with it.
 
 Apache-2.0

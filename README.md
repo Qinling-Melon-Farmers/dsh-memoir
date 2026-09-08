@@ -11,10 +11,10 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
 
 > [!IMPORTANT]
-> npm `latest` 为 `dsh-memoir@0.6.1`，适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`，已验证 DSH alpha.4、alpha.5 与 0.1.2-rc.1。仍使用 `0.1.1-rc.2` 的用户应固定安装 `dsh-memoir@0.5.6`。
+> npm `latest` 为 `dsh-memoir@0.6.2`，适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`，已验证 DSH alpha.4、alpha.5 与 0.1.2-rc.1。仍使用 `0.1.1-rc.2` 的用户应固定安装 `dsh-memoir@0.5.6`。
 
 ```bash
-npm install --global @deepseek-ai/dsh@alpha
+npm install --global @deepseek-ai/dsh@0.1.2-rc.1
 dsh plugin --profile web add dsh-memoir@latest
 ```
 
@@ -76,6 +76,10 @@ memoir_record / memoir_update
 
 ## 自动蒸馏
 
+v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已经调用 `memoir_record` 或 `memoir_update` 的回合不再提醒；提交提醒不代表写入已完成。Agent 销毁会清理门控状态，最多保留 1024 个最近活动 Agent（淘汰后不再保留其回合水位和冷却）。关闭自动蒸馏后仍可手动记录。
+
+当前验证基线为 DSH `0.1.2-rc.1`；`0.1.3-alpha.2` 属于下一版本线，尚不声明兼容，请使用下方固定版本安装命令。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
+
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
 `autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已调用 `memoir_record` 的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
@@ -112,6 +116,8 @@ memoir_record / memoir_update
 <details>
 <summary>查看更多 GUI 截图</summary>
 
+![v0.6.2 自动蒸馏生命周期诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
+
 ![v0.6.1 常驻功能导航与实时设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png)
 
 ![v0.6.1 对话视图滚动到底且避让输入框](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png)
@@ -130,9 +136,9 @@ memoir_record / memoir_update
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | 当前正式版；已验证 alpha.4 编译、alpha.5 + dsh-web-all 实机 UI 与 0.1.2-rc.1 回归 |
+| npm `latest`（`0.6.2`） | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | 当前发布版本；基于 0.1.2-rc.1 验证 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| GitHub `main`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | 源码 clone + `link:` | 与 npm `0.6.1` 同步；供开发和调试使用 |
+| GitHub `main`（`0.6.2`） | `>=0.1.2-alpha.2 <0.1.3` | 源码 clone + `link:` | 开发和调试使用 |
 
 需要 Node.js `^22.19.0 || >=24.0.0`。`0.6.x` 使用 DSH alpha 的原生 `conversation.view` / `settings.section` 与 Remote 时代客户端模块；`0.6.1` 同时兼容 alpha.2/alpha.3 的公开 `session.events` 与 alpha.4+ 的 `session.snapshotEvents()`。manifest 的 `dsh.engines.dsh` 会拒绝不兼容宿主。
 
@@ -146,7 +152,7 @@ git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@alpha
+npm install --global @deepseek-ai/dsh@0.1.2-rc.1
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
@@ -203,7 +209,7 @@ v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`
 
 基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
 
-v0.6.1 有 189 项自动化测试，覆盖存储/设置迁移与锁、Hot Memory、BM25 质量/缓存、生命周期、来源防伪、相似治理、自动蒸馏、Agent 侧与 GUI 双语、项目折叠/渐进加载、滚动布局及 DSH alpha 兼容。另在隔离 profile 中以 DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` 完成 Settings 与真实会话页浏览器回归；alpha.4 类型编译与 DSH 0.1.2-rc.1 回归（189 项测试、API/工具/GUI/自动蒸馏实机验证）也已通过。
+v0.6.2 的 192 项自动化测试与类型检查通过，覆盖生命周期、BM25、Hot Memory、写入与注入、来源和 GUI。当前隔离 DSH 0.1.2-rc.1 + dsh-web-all 0.3.18 已完成双语诊断页浏览器回归；alpha.2–alpha.5 的旧版兼容证据见 v0.6.1 更新日志。
 
 ## 常见问题
 
@@ -232,6 +238,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.6.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1)，`main` 与该版本同步。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.6.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2)，`main` 与该版本同步。
 
 Apache-2.0

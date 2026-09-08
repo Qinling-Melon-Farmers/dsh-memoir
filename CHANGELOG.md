@@ -12,6 +12,34 @@
 
 - None.
 
+## [0.6.2] - 2026-09-08
+
+### 中文
+
+#### Added
+
+- 自动蒸馏诊断展示有效工作回合、跟踪 Agent 数、最近决策，以及停用、子代理、中止、空闲、已记录、重复、间隔、工具阈值、冷却、提交成功和失败计数；GUI 中英同步。统计仅保存在当前进程，不保存对话正文；提醒提交成功不等于记忆写入成功。
+- 收尾提示明确只提炼已验证的稳定决策、可复用经验、后续行动与环境约束，保留否定和适用范围，排除密钥与工具流水日志。
+
+#### Fixed
+
+- 回合去重使用单调水位，防止长会话超过 100 轮后旧回合重新触发；Agent 销毁时清理状态，最多保留 1024 个最近活动 Agent，卸载时释放全部状态。
+- 已调用 memoir_update 的回合与 memoir_record 一样跳过自动提醒，避免主动维护记忆后重复收尾。判定仍基于工具调用，不冒充写入确认。
+- README 安装命令固定 DSH 0.1.2-rc.1，避免 alpha 标签进入新版本线后安装不兼容宿主。
+
+### English
+
+#### Added
+
+- Bilingual distillation diagnostics show eligible worked turns, tracked agents, latest decision, and counters for disabled, subagent, aborted, idle, already recorded, duplicate, interval, tool threshold, cooldown, submitted, and failed outcomes. Counters are process-local and contain no conversation text; submission does not confirm a memory write.
+- Distillation guidance keeps verified stable decisions, reusable lessons, next actions, and environment constraints, preserving negation and scope while excluding secrets and tool transcripts.
+
+#### Fixed
+
+- A monotonic turn watermark prevents replay after 100 turns. Agent disposal releases state; the fallback retains at most 1024 recently active agents and plugin disposal releases all state.
+- Turns calling memoir_update now skip reminders like memoir_record. This remains call-based detection rather than a claim of confirmed persistence.
+- README installation pins DSH 0.1.2-rc.1 so a moving alpha tag cannot silently select an incompatible release line.
+
 ## [0.6.1] - 2026-09-02
 
 > 正式版通过 `v0.6.1` tag 工作流发布至 npm，并同步创建 GitHub Release。
@@ -457,7 +485,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2
 [0.6.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0
 [0.5.6]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6

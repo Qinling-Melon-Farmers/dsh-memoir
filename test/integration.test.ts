@@ -76,7 +76,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.equal(ctx.sections[0]?.name, 'plugin:dsh-memoir')
   assert.equal(ctx.sections[0]?.order, 150)
   assert.equal(typeof ctx.sections[0]?.text, 'function')
-  assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping'])
+  assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed'])
 })
 
 test('apply with enabled=false mounts nothing', () => {
@@ -97,7 +97,7 @@ test('apply with announceToAgent=false keeps workspace tracking but emits no pro
   const provider = ctx.sections[0]?.text
   assert.equal(typeof provider, 'function')
   assert.equal((provider as (context: unknown) => string)({ agent: { session: { header: { cwd: 'C:\\workspace' } } } }), '')
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 2)
 })
 
 test('apply with autoDistill=false keeps an inert listener for live Web enablement', () => {
@@ -106,7 +106,7 @@ test('apply with autoDistill=false keeps an inert listener for live Web enableme
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 2)
   const messages: unknown[] = []
   ctx.listeners[0]?.listener({
     agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, steer: (message: unknown) => messages.push(message) },
@@ -121,7 +121,7 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
   applyTest(ctx)
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 2)
 })
 
 test('agent language switches tools, prompt guidance, and auto-distill live', async () => {

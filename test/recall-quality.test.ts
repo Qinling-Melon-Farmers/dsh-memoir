@@ -48,6 +48,9 @@ const FIXTURE: Array<[string, string, string]> = [
   ['work', '目标兼容', 'es2022 target 下 Array.at(-1) 可用'],
   ['actions', '快照清理', '每周清理旧会话快照，LRU 上限 128'],
   ['lessons', '端口冲突', '端口冲突：先 lsof -i :3080 再换端口'],
+  ['actions', '禁止发布的环境约束', 'Do not publish from staging. 仅生产环境通过验收后才允许发布；staging 不得部署生产。'],
+  ['lessons', '缓存命中不是语义检索', 'BM25 cache hits do not prove semantic equivalence. 不得把缓存命中解释成语义相同。'],
+  ['actions', 'Windows credential path', 'Use D:\\npm-global for binaries; never commit credentials or npm tokens. 凭据不得提交。'],
 ]
 
 /** query → index of the expected entry in FIXTURE. */
@@ -88,6 +91,11 @@ const QUERIES: Array<[string, number]> = [
   ['Array.at', 33],
   ['LRU', 34],
   ['lsof', 35],
+  ['staging publish', 36],
+  ['禁止发布', 36],
+  ['BM25 semantic equivalence', 37],
+  ['语义检索', 37],
+  ['npm-global credential', 38],
 ]
 
 test('recall quality: Top-5 hit rate ≥ 90% over curated queries', () => {

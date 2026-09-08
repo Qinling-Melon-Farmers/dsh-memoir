@@ -65,7 +65,7 @@ export function turnActivity(events: readonly TurnEventLike[], turn: number): Tu
     if (data.turn !== turn) continue
     if (event.type === 'tool/call') {
       toolCalls += 1
-      if (data.name === 'memoir_record') recorded = true
+      if (data.name === 'memoir_record' || data.name === 'memoir_update') recorded = true
     }
   }
   return { worked: toolCalls > 0, recorded, toolCalls }
@@ -94,7 +94,7 @@ export interface AutoDistillPolicy {
 }
 
 interface AgentGateState {
-  processedTurns: Set<number>
+  lastTurn: number
   workedSinceSteer: number
   lastSteeredAt?: number
 }
@@ -102,6 +102,11 @@ interface AgentGateState {
 /** Per-agent frequency, cooldown, and duplicate-turn state (with pruning). */
 export class AutoDistillGate {
   private states = new Map<string, AgentGateState>()
+  readonly capacity = 1024
+  reason: 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'ready' = 'ready'
+
+  get size(): number { return this.states.size }
+  clear(): void { this.states.clear() }
 
   /**
    * Consume one eligible worked turn and decide whether all policy conditions
@@ -110,20 +115,24 @@ export class AutoDistillGate {
   consume(agentId: string, turn: number, toolCalls: number, policy: AutoDistillPolicy, now: number): boolean {
     let state = this.states.get(agentId)
     if (state === undefined) {
-      state = { processedTurns: new Set(), workedSinceSteer: 0 }
+      state = { lastTurn: -Infinity, workedSinceSteer: 0 }
       this.states.set(agentId, state)
+      if (this.states.size > this.capacity) this.states.delete(this.states.keys().next().value!)
     }
-    if (state.processedTurns.has(turn)) return false
-    state.processedTurns.add(turn)
-    for (const value of [...state.processedTurns]) {
-      if (value < turn - 100) state.processedTurns.delete(value)
+    if (turn <= state.lastTurn) {
+      this.reason = 'duplicate'
+      return false
     }
+    state.lastTurn = turn
+    this.states.delete(agentId)
+    this.states.set(agentId, state)
     state.workedSinceSteer += 1
 
     const intervalReady = state.workedSinceSteer >= policy.every
     const activityReady = toolCalls >= policy.minTools
     const cooldownReady = state.lastSteeredAt === undefined || now - state.lastSteeredAt >= policy.cooldownMs
-    return intervalReady && activityReady && cooldownReady
+    this.reason = !intervalReady ? 'interval' : !activityReady ? 'tools' : !cooldownReady ? 'cooldown' : 'ready'
+    return this.reason === 'ready'
   }
 
   /** Record a successful steer; failed steer attempts do not start cooldown. */
@@ -140,6 +149,26 @@ export class AutoDistillGate {
   }
 }
 
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed'
+
+/** Process-local counters only; never retains message content or credentials. */
+export class DistillDiagnostics {
+  private counts: Partial<Record<DistillOutcome, number>> = {}
+  private last: { outcome: DistillOutcome; at: number; turn: number; toolCalls: number } | null = null
+  private workedTurns = 0
+  private agents = 0
+
+  record(outcome: DistillOutcome, at: number, turn: number, toolCalls: number, agents: number): void {
+    this.counts[outcome] = (this.counts[outcome] ?? 0) + 1
+    if (['interval', 'tools', 'cooldown', 'steered', 'failed'].includes(outcome)) this.workedTurns += 1
+    this.last = { outcome, at, turn, toolCalls }
+    this.agents = agents
+  }
+
+  snapshot() { return { counts: { ...this.counts }, workedTurns: this.workedTurns, agents: this.agents, last: this.last === null ? null : { ...this.last } } }
+  setAgents(agents: number): void { this.agents = agents }
+}
+
 export interface TurnStoppingPayload {
   agent: AutoDistillAgentLike
   turn: number
@@ -149,6 +178,7 @@ export interface TurnStoppingPayload {
 /** The event-wire surface the installer needs (satisfied by ctx.on). */
 export interface AutoDistillWire {
   on(name: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void): () => void
+  onDisposed?(listener: (agentId: string) => void): () => void
 }
 
 /**
@@ -166,33 +196,44 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
   /** Optional live language source for the steering instruction. */
   language?: () => MemoirLanguage
   now?: () => number
+  diagnostics?: DistillDiagnostics
 }): () => void {
   const gate = new AutoDistillGate()
   const integerAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
   const numberAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
-  return wire.on('agent/turn-stopping', (payload) => {
-    if (!options.enabled()) return
+  const dispose = wire.on('agent/turn-stopping', (payload) => {
     const { agent, turn, signal } = payload
-    if (isSubagentSession(agent)) return
-    if (signal.aborted) return
+    const now = options.now?.() ?? Date.now()
+    const report = (outcome: DistillOutcome, tools = 0) => options.diagnostics?.record(outcome, now, turn, tools, gate.size)
+    if (!options.enabled()) { report('disabled'); return }
+    if (isSubagentSession(agent)) { report('subagent'); return }
+    if (signal.aborted) { report('aborted'); return }
     const { worked, recorded, toolCalls } = turnActivity(sessionEventSnapshot(agent.session), turn)
-    if (!worked || recorded) return
+    if (!worked || recorded) { report(recorded ? 'recorded' : 'idle', toolCalls); return }
     const live = options.policy?.()
     const policy: AutoDistillPolicy = {
       every: integerAtLeast(live?.every ?? options.every, 1, 1),
       cooldownMs: numberAtLeast(live?.cooldownMin ?? options.cooldownMin, 0, 0) * 60_000,
       minTools: integerAtLeast(live?.minTools ?? options.minTools, 1, 1),
     }
-    const now = options.now?.() ?? Date.now()
-    if (!gate.consume(agent.id, turn, toolCalls, policy, now)) return
-    agent.steer(
+    if (!gate.consume(agent.id, turn, toolCalls, policy, now)) {
+      report(gate.reason === 'ready' ? 'duplicate' : gate.reason, toolCalls)
+      return
+    }
+    try { agent.steer(
       createUserMessage({
         content: [{ type: 'text', text: distillPrompt(options.language?.()) }],
         source: { kind: 'plugin', plugin: AUTO_DISTILL_PLUGIN },
       }),
-    )
+    ) } catch (error) {
+      report('failed', toolCalls)
+      throw error
+    }
     gate.recordSteer(agent.id, now)
+    report('steered', toolCalls)
   })
+  const disposeAgent = wire.onDisposed?.((agentId) => { gate.forget(agentId); options.diagnostics?.setAgents(gate.size) })
+  return () => { dispose(); disposeAgent?.(); gate.clear(); options.diagnostics?.setAgents(0) }
 }
