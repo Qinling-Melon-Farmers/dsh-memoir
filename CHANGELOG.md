@@ -6,11 +6,11 @@
 
 ### 中文
 
-- 暂无。
+- 发布工作流将 npm 可见性轮询延长为 60 次，并使用在线查询，适应 npm 接受发布后的后台处理延迟。
 
 ### English
 
-- None.
+- The publish workflow polls npm visibility up to 60 times with online queries to accommodate background processing after publication is accepted.
 
 ## [0.6.2] - 2026-09-08
 
