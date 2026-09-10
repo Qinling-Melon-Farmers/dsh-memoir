@@ -6,11 +6,29 @@
 
 ### 中文
 
-- 发布工作流将 npm 可见性轮询延长为 60 次，并使用在线查询，适应 npm 接受发布后的后台处理延迟。
+- 暂无。
 
 ### English
 
-- The publish workflow polls npm visibility up to 60 times with online queries to accommodate background processing after publication is accepted.
+- None.
+
+## [0.7.0] - 2026-09-10
+
+### 中文
+
+- 紧急兼容性发布：开发 SDK 全部锁定 DSH `0.1.5-rc.1`（当前 npm latest；尚无不带后缀的 0.1.5），更新宿主与 peer 版本约束为 `>=0.1.5-rc.1 <0.1.6-0`。旧 DSH 0.1.2 固定使用 Memoir 0.6.2。
+- 核验并沿用现有原生会话/设置 slots、Session `snapshotEvents()`、turn-stopping/disposed 事件及工具/系统提示词接口；无需改动既有记忆业务逻辑。
+- 新增官方 Session V3 对象的工具来源、蒸馏、持久化和冻结注入回归；同步中英 README、兼容矩阵与 DSH 0.1.5 界面截图。
+- 本版不包含原路线图的新功能，不改变 store v4 / settings v3、BM25、自动蒸馏策略或冻结 Hot Memory。DSH 自身会话日志 V3 迁移不等于 Memoir 记忆格式升级；升级 DSH 前应备份 DSH_HOME，迁移后的会话不保证可降级读取。
+- 同步纳入 npm 发布后台处理延迟的轮询修复。
+
+### English
+
+- Urgent compatibility-only release: pin development SDKs to DSH `0.1.5-rc.1` (current npm latest; no unsuffixed 0.1.5 yet), with host and peer requirements `>=0.1.5-rc.1 <0.1.6-0`. Keep Memoir 0.6.2 on DSH 0.1.2.
+- Validate and retain native Conversation/Settings slots, Session `snapshotEvents()`, turn-stopping/disposed events, and tool/system-prompt interfaces without changing existing memory business logic.
+- Add an official Session V3 object regression for tool provenance, distillation, persistence, and frozen injection; update both READMEs, compatibility tables, and the DSH 0.1.5 UI screenshot.
+- No planned new features, changes to store v4 / settings v3, BM25, distillation policy, or frozen Hot Memory. DSH Session log V3 migration is separate from Memoir storage. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts.
+- Include the npm background-publication visibility polling fix.
 
 ## [0.6.2] - 2026-09-08
 
@@ -485,7 +503,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.0
 [0.6.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2
 [0.6.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0
