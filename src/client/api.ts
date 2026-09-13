@@ -77,6 +77,11 @@ export interface WireProject {
 
 /** The host /diagnostics payload (v0.4 observability, v0.4.2 extended). */
 export interface WireDiagnostics {
+  snapshotPersistence?: {
+    restored: number; created: number; failures: number
+    lastStatus: 'idle' | 'restored' | 'created' | 'volatile'
+    lastError: 'invalid-record' | 'record-too-large' | 'unavailable' | null
+  }
   autoDistill?: {
     counts: Partial<Record<string, number>>
     workedTurns: number

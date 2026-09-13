@@ -1,7 +1,9 @@
 /**
  * Session memory snapshot manager (roadmap §2.2) — freezes the project
  * memory injected into a session's system prompt so that the prompt prefix
- * stays stable for the whole session. The current session does NOT re-consume
+ * stays stable while its snapshot is available. The host injects durable
+ * persistence so restarts and RAM eviction reuse the original text; storage
+ * failures fall back to a diagnosed process-local snapshot. The session does NOT re-consume
  * memory it just wrote: later assemblies reuse the first snapshot; a NEW
  * session builds a fresh one and sees the new memory.
  *
@@ -27,26 +29,34 @@ export interface SessionSnapshot {
   createdAt: number
 }
 
+/** Host-owned durable storage; memory eviction never removes durable records. */
+export interface SnapshotPersistence {
+  scope(): string
+  getOrCreate(sessionKey: string, builder: () => SessionSnapshot): SessionSnapshot
+}
+
 /** Hash a text for prompt-stability comparison (truncated SHA-256). */
 export function snapshotHash(text: string): string {
   return createHash('sha256').update(text).digest('hex').slice(0, 16)
 }
 
 /**
- * Freezes one session's injected memory; bounded by a simple LRU (oldest
- * snapshot evicted past the cap), so long-running processes never accumulate
- * dead session entries.
+ * Bounded resident LRU over optional durable snapshots. RAM eviction never
+ * deletes persistent records; callers without persistence retain legacy behavior.
  */
 export class MemorySnapshotManager {
   /** Live session snapshots in LRU order (most recent last). */
   private readonly snapshots = new Map<string, SessionSnapshot>()
   private max: number
+  private readonly persistence?: SnapshotPersistence
+  private scope: string | undefined
 
   /**
    * @param options.max - LRU cap (default 128; config sessionSnapshotMax).
    */
-  constructor(options: { max?: number } = {}) {
+  constructor(options: { max?: number; persistence?: SnapshotPersistence } = {}) {
     this.max = options.max ?? 128
+    this.persistence = options.persistence
   }
 
   /** Current snapshot count (diagnostics). */
@@ -79,8 +89,8 @@ export class MemorySnapshotManager {
 
   /**
    * Return the session's frozen snapshot, or build one via builder.
-   * A later call for the same key ALWAYS returns the first snapshot — even
-   * if the store revision moved on (that is the point: stable prompt prefix).
+   * A retained/recoverable key returns its original snapshot despite store
+   * revisions. Missing durable records establish a new baseline once.
    *
    * @param sessionKey - stable session identity (id + workspace).
    * @param builder - builds { storeRevision, text } when no snapshot exists.
@@ -89,6 +99,11 @@ export class MemorySnapshotManager {
     sessionKey: string,
     builder: () => { storeRevision: number; text: string },
   ): SessionSnapshot {
+    const scope = this.persistence?.scope()
+    if (scope !== this.scope) {
+      this.snapshots.clear()
+      this.scope = scope
+    }
     const existing = this.snapshots.get(sessionKey)
     if (existing !== undefined) {
       // Refresh LRU recency.
@@ -96,14 +111,17 @@ export class MemorySnapshotManager {
       this.snapshots.set(sessionKey, existing)
       return existing
     }
-    const built = builder()
-    const snapshot: SessionSnapshot = {
-      sessionKey,
-      storeRevision: built.storeRevision,
-      text: built.text,
-      hash: snapshotHash(built.text),
-      createdAt: Date.now(),
+    const create = (): SessionSnapshot => {
+      const built = builder()
+      return Object.freeze({
+        sessionKey,
+        storeRevision: built.storeRevision,
+        text: built.text,
+        hash: snapshotHash(built.text),
+        createdAt: Date.now(),
+      })
     }
+    const snapshot = this.persistence?.getOrCreate(sessionKey, create) ?? create()
     this.snapshots.set(sessionKey, snapshot)
     // Evict the oldest entry when past the cap.
     this.evictPastCap()
@@ -122,12 +140,12 @@ export class MemorySnapshotManager {
     return latest
   }
 
-  /** Drop one session's snapshot (disposal hygiene). */
+  /** Drop one resident snapshot; durable storage remains available on next access. */
   forget(sessionKey: string): void {
     this.snapshots.delete(sessionKey)
   }
 
-  /** Invalidate every snapshot after an explicit prompt-language change. */
+  /** Clear resident snapshots; the durable language namespace remains intact. */
   clear(): void {
     this.snapshots.clear()
   }

@@ -53,7 +53,7 @@ export interface Config {
     readDefaultLimit?: number;
     /** memoir_read maximum result count (default 30). */
     readMaxLimit?: number;
-    /** Per-session snapshot LRU cap (default 128). */
+    /** Resident snapshot LRU cap (default 128); durable records are not evicted. */
     sessionSnapshotMax?: number;
     /** memoir_read ranked-query LRU cache size (default 128). */
     queryCacheSize?: number;

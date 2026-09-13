@@ -11,7 +11,7 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
 
 > [!IMPORTANT]
-> `dsh-memoir@0.7.0` 是 DSH **0.1.5-rc.1** 的兼容性发布，不增加新功能。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先升级 DSH。旧 DSH 0.1.2 用户固定使用 `dsh-memoir@0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`。
+> `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
 npm install --global @deepseek-ai/dsh@0.1.5-rc.1
@@ -56,7 +56,16 @@ memoir_record / memoir_update
 
 - **Full Memory** 保留全部记录，用于 GUI、人工审阅、Markdown 投影和排序检索。
 - **Hot Memory** 只选择预算内的 actions、lessons 与 recent state；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
-- **Session Snapshot** 在会话内冻结注入文本。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新。
+- **Session Snapshot** 按会话持久化冻结注入文本，重启恢复与内存淘汰后仍复用原文。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新；恢复失败会显式报告降级。
+
+### 快照恢复与清理（0.7.1）
+
+- 默认目录：`$DSH_HOME/dsh-memoir.json.snapshots/`；自定义 storePath 时为 `<storePath>.snapshots/`。记录按数据源/设置文件的哈希、语言和会话哈希分开保存；按需读取，不在启动时加载全部文件。
+- `sessionSnapshotMax` 只限制内存 LRU。磁盘记录无自动 TTL，不随缩容、卸载或清理内存删除；备份记忆时请一起备份该目录。需要回收磁盘时先停止相关 DSH 进程并备份，再人工删除确定不再恢复的记录。删除后再次访问会建立新基线。
+- 语言切换使用独立快照空间；切回原语言会复用其旧基线。预算修改仅影响新基线；fork/新 session id 不借用父会话快照。
+- 升级前已丢失快照的旧会话，首次使用新版只能按当前记忆建立一次新基线；不从历史 system prompt 猜测截取原文。读取损坏、权限或锁失败时保留原文件，回退到进程内冻结；诊断页和日志会提示重启稳定性降级。
+- 单条文本上限 256 KiB，记录上限 2 MiB；超限走同样的可诊断降级。POSIX 新目录/记录使用 0700/0600，Windows 权限仍由目录 ACL 管理。记录含记忆文本，应视为用户数据。
+- 本修复消除可恢复快照的重复重建，不能保证提供商仍保留 KV cache 或保证命中率。
 
 ## Agent 工具与记忆生命周期
 
@@ -78,7 +87,7 @@ memoir_record / memoir_update
 
 v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已经调用 `memoir_record` 或 `memoir_update` 的回合不再提醒；提交提醒不代表写入已完成。Agent 销毁会清理门控状态，最多保留 1024 个最近活动 Agent（淘汰后不再保留其回合水位和冷却）。关闭自动蒸馏后仍可手动记录。
 
-当前验证基线为 DSH `0.1.5-rc.1`（npm 尚无不带后缀的 0.1.5）。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
+当前支持 DSH `0.1.5-rc.1` 与最新 rc.2（发布前核验：npm `next` 为 rc.2、`latest` 仍为 rc.1）。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
 
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
@@ -116,6 +125,8 @@ v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已�
 <details>
 <summary>查看更多 GUI 截图</summary>
 
+![v0.7.1 在 DSH rc.2 中的快照持久化诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png)
+
 ![v0.7.0 在 DSH 0.1.5-rc.1 中的原生记忆设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png)
 
 ![v0.6.2 自动蒸馏生命周期诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
@@ -138,12 +149,12 @@ v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已�
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.7.0`） | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@latest` | 当前兼容性发布；验证基线 0.1.5-rc.1 |
+| npm `latest`（`0.7.1`） | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@latest` | 快照恢复修复；已验证 rc.1 / rc.2 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| GitHub `main`（`0.7.0`） | `>=0.1.5-rc.1 <0.1.6-0` | 源码 clone + `link:` | 开发和调试使用 |
+| GitHub `main`（`0.7.1`） | `>=0.1.5-rc.1 <0.1.6-0` | 源码 clone + `link:` | 开发和调试使用 |
 
-需要 Node.js `^22.19.0 || >=24.0.0`。0.7.0 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
+需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
 <details>
 <summary>从源码安装</summary>
@@ -195,7 +206,7 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 | `hotMemoryMaxTokens` | `1200` | 任何会话都不能超过的硬上限 |
 | `readDefaultLimit` | `8` | `memoir_read` 默认结果数 |
 | `readMaxLimit` | `30` | 单次召回实时上限 |
-| `sessionSnapshotMax` | `128` | 会话冻结快照 LRU 容量 |
+| `sessionSnapshotMax` | `128` | 内存快照 LRU 容量，不删除磁盘快照 |
 | `queryCacheSize` | `128` | BM25 查询 LRU 容量 |
 
 缩小缓存容量会立即淘汰最旧项；已冻结会话不会因预算修改而重写，以维持 prompt 前缀稳定。“恢复启动配置”会删除 Web 覆盖并回到 profile 的启动值。
@@ -212,7 +223,7 @@ v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`
 
 基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
 
-0.7.0 的 193 项测试与类型检查通过，保留全部既有回归，并新增使用官方 DSH Session V3 对象的来源、蒸馏、工具写入与冻结注入测试。隔离 DSH 0.1.5-rc.1 的 Web 设置、双语诊断与 API 回归通过。旧版 alpha/rc 的历史验证见各版本更新日志；不据此宣称 0.7.0 可安装在旧宿主。
+0.7.1 含 202 项测试：Windows 201 项通过、1 项 POSIX 权限测试跳过；Linux 全部通过。覆盖实际跨进程快照恢复、同会话并发写入、LRU、空基线、fork、语言隔离、损坏与权限失败，以及原有 BM25/Hot Memory/工具回归。已核验 DSH rc.1 和最新 rc.2；没有把测试前缀一致性等同于实际账单节省保证。
 
 ## 常见问题
 
@@ -241,6 +252,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.7.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.0)，`main` 与该版本同步。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.7.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.1)，`main` 与该版本同步。
 
 Apache-2.0

@@ -12,6 +12,26 @@
 
 - None.
 
+## [0.7.1] - 2026-09-13
+
+### 中文
+
+- 修复 #10：宿主默认按会话持久化完整 Memoir 注入段及 hash；重启恢复、LRU 淘汰和缩容后复用原始文本，新会话仍读取最新记忆。
+- 采用每条记录独立文件、同 key 锁内二次检查及原子写入，避免多进程整表覆盖；按记忆数据源、设置文件和语言隔离。磁盘快照无 TTL，内存清理不删除磁盘记录。切回原语言会恢复该语言的原始基线。
+- 校验版本、身份、数值、文本 hash 和大小；损坏/未知版本文件保持原样。存储不可用时保留当前进程快照，并通过双语诊断和限次日志明确降级。
+- 兼容边界：旧会话没有持久快照时首次建立新基线，不能还原升级前已丢失的文本；存储失败、显式语言变化或手动删文件仍可能改变前缀。文本稳定不保证服务端缓存保留。
+- 保持 DSH `>=0.1.5-rc.1 <0.1.6-0`、store v4 / settings v3、工具语义与零普通运行时依赖；补充真实跨进程、并发、淘汰、空基线、fork、损坏、权限和大小边界回归。
+- 发布前确认最新 rc 为 `0.1.5-rc.2`（npm next；latest 仍为 rc.1），开发依赖更新到 rc.2，rc.1/rc.2 均完成 Windows/Linux 编译与全量回归。
+
+### English
+
+- Fix #10: the host persists each session's complete Memoir prompt section and hash. Resume after restart, RAM eviction, and shrinking reuse the original text; new sessions still see current memory.
+- Use separate immutable records, per-key locking with a second read, and atomic writes instead of rewriting a private Map over shared data. Partition by memory source, settings file, and language. Disk records have no TTL; RAM cleanup never deletes them. Switching back restores that language's original baseline.
+- Validate format, identity, numbers, text hash, and size; preserve malformed or unknown-version records unchanged. Storage failures retain a process-local snapshot and expose degradation in bilingual diagnostics and rate-limited logs.
+- Existing sessions without a durable record establish a new baseline once; lost pre-upgrade text cannot be reconstructed. Storage failure, explicit language changes, or manual file removal can still alter the prefix. Stable text does not guarantee server-side cache retention.
+- Keep the DSH `>=0.1.5-rc.1 <0.1.6-0` range, store v4 / settings v3, tool semantics, and zero regular runtime dependencies. Add real process restart, concurrency, eviction, empty-baseline, fork, corruption, permissions, and size-boundary regressions.
+- Verify the newest rc is `0.1.5-rc.2` on npm next (latest remains rc.1), pin development SDKs to rc.2, and validate both rc.1/rc.2 with Windows/Linux compilation and the full regression suite.
+
 ## [0.7.0] - 2026-09-10
 
 ### 中文
@@ -503,7 +523,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.0
 [0.6.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2
 [0.6.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1

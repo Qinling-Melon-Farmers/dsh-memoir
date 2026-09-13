@@ -34,10 +34,11 @@ import { makeRoutes } from './routes.js'
 import { installAutoDistill, DistillDiagnostics } from './autodistill.js'
 import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
 import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
+import { MemorySnapshotStore } from './snapshot-store.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
 import { RetrievalEngine } from './retrieval.js'
-import { MemoirSettingsStore } from './settings.js'
+import { MemoirSettingsStore, defaultSettingsPath } from './settings.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, resolveMemoirLanguage } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
 
@@ -75,7 +76,7 @@ export interface Config {
   readDefaultLimit?: number
   /** memoir_read maximum result count (default 30). */
   readMaxLimit?: number
-  /** Per-session snapshot LRU cap (default 128). */
+  /** Resident snapshot LRU cap (default 128); durable records are not evicted. */
   sessionSnapshotMax?: number
   // v0.4.1 — ranked recall
   /** memoir_read ranked-query LRU cache size (default 128). */
@@ -232,7 +233,13 @@ export function apply(ctx: Context, config?: Config): void {
     language: () => liveSettings.get().settings.language,
   })
   const initialLive = liveSettings.get().settings
-  const snapshotManager = new MemorySnapshotManager({ max: initialLive.sessionSnapshotMax })
+  const snapshotStore = new MemorySnapshotStore({
+    storePath: store.path,
+    settingsPath: config?.settingsPath ?? defaultSettingsPath(),
+    language: () => liveSettings.get().settings.language,
+    warning: (code) => console.warn(`dsh-memoir: 快照仅保留进程内 / snapshot persistence degraded (${code}); see Memory Diagnostics`),
+  })
+  const snapshotManager = new MemorySnapshotManager({ max: initialLive.sessionSnapshotMax, persistence: snapshotStore })
   const retrieval = new RetrievalEngine(store, { cacheSize: initialLive.queryCacheSize })
 
   // Workspaces seen through system-prompt assemblies / panel requests: the
@@ -285,6 +292,7 @@ export function apply(ctx: Context, config?: Config): void {
         snapshotEpoch: stats.epoch,
         cache: stats,
         snapshotCount: snapshotManager.size,
+        snapshotPersistence: snapshotStore.diagnostics(),
         snapshotMax: snapshotManager.cap,
         hotMemory: hot === null ? null : {
           selected: hot.selected.length,

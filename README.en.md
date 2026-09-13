@@ -12,7 +12,7 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
 
 > [!IMPORTANT]
-> `dsh-memoir@0.7.0` is a compatibility-only release for DSH **0.1.5-rc.1**, with no new features. It requires `>=0.1.5-rc.1 <0.1.6-0`; upgrade DSH first. Keep `dsh-memoir@0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2.
+> `dsh-memoir@0.7.1` fixes lost session snapshots after restart or RAM eviction (#10), supporting DSH **0.1.5-rc.1 / rc.2**. It requires `>=0.1.5-rc.1 <0.1.6-0`; check your host first. Keep `0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2; those older lines do not include this fix.
 
 ```bash
 npm install --global @deepseek-ai/dsh@0.1.5-rc.1
@@ -57,7 +57,16 @@ Complete history and Hot Memory are separate layers:
 
 - **Full Memory** retains every record for the GUI, human review, Markdown projection, and ranked retrieval.
 - **Hot Memory** selects only budgeted actions, lessons, and recent state; the full `PROJECT_MEMORY.md` is never injected.
-- **Session Snapshot** freezes injected text within a session. New writes are immediately readable by tools and the GUI, while automatic injection refreshes in the next new session.
+- **Session Snapshot** durably freezes injected text per session and restores it after restart or RAM eviction. New writes remain immediately readable by tools and the GUI; automatic injection refreshes in the next new session. Recovery failures explicitly report degraded persistence.
+
+### Snapshot recovery and cleanup (0.7.1)
+
+- Default directory: `$DSH_HOME/dsh-memoir.json.snapshots/`, or `<storePath>.snapshots/` with a custom store. Records are partitioned by data-source/settings hash, language, and session hash. They load on demand without scanning the whole directory at startup.
+- `sessionSnapshotMax` bounds RAM only. Disk records have no automatic TTL and survive shrinking, uninstalling, or clearing RAM. Include them in backups. To reclaim disk, stop the relevant DSH processes, back up first, and manually remove records you no longer need to resume. Access after removal establishes a new baseline.
+- Languages use separate namespaces; switching back restores the original baseline for that language. Budget changes affect new baselines only. Forks/new session IDs do not inherit the parent's frozen record.
+- Old sessions whose snapshots were lost before upgrading establish a baseline from current memory once. Memoir does not guess or slice original text out of historical system prompts. Corrupt, inaccessible, or locked records remain unchanged; fallback freezes only in the current process, with diagnostics and a log warning.
+- Text is capped at 256 KiB and each record at 2 MiB; exceeding either reports the same degradation. New POSIX directories/files use 0700/0600; Windows access remains governed by directory ACLs. Snapshot files contain memory text and are user data.
+- This fix prevents rebuilding recoverable snapshots; it cannot guarantee provider KV-cache retention or hit rates.
 
 ## Agent tools and memory lifecycle
 
@@ -79,7 +88,7 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 
 v0.6.2 diagnostics show the latest decision and process-local counters. Turns calling `memoir_record` or `memoir_update` skip reminders; submitting a reminder does not confirm persistence. Agent disposal clears gate state, with a fallback cap of 1024 recently active agents (eviction also forgets their turn watermark and cooldown). Manual recording remains available when automatic distillation is disabled.
 
-The validated baseline is DSH `0.1.5-rc.1` (npm has not published an unsuffixed 0.1.5). BM25 is lexical retrieval and does not guarantee cross-language semantic matches without shared terms. Distillation guidance does not replace fact checking.
+DSH `0.1.5-rc.1` and the newest rc.2 are supported (pre-release verification: npm `next` is rc.2, while `latest` remains rc.1). BM25 is lexical retrieval and does not guarantee cross-language semantic matches without shared terms. Distillation guidance does not replace fact checking.
 
 Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
 
@@ -117,6 +126,8 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 <details>
 <summary>More GUI screenshots</summary>
 
+![v0.7.1 durable snapshot diagnostics on DSH rc.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png)
+
 ![v0.7.0 native memory settings on DSH 0.1.5-rc.1](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png)
 
 ![v0.6.2 automatic distillation lifecycle diagnostics](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
@@ -139,12 +150,12 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.7.0`) | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@latest` | Compatibility release validated on 0.1.5-rc.1 |
+| npm `latest` (`0.7.1`) | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@latest` | Snapshot recovery fix; rc.1 / rc.2 validated |
 | pinned npm `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | Legacy 0.1.2 line |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| GitHub `main` (`0.7.0`) | `>=0.1.5-rc.1 <0.1.6-0` | source clone + `link:` | Development and debugging |
+| GitHub `main` (`0.7.1`) | `>=0.1.5-rc.1 <0.1.6-0` | source clone + `link:` | Development and debugging |
 
-Node.js `^22.19.0 || >=24.0.0` is required. 0.7.0 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
+Node.js `^22.19.0 || >=24.0.0` is required. 0.7.1 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
 
 <details>
 <summary>Install from source</summary>
@@ -196,7 +207,7 @@ Every field below can be set in the memoir `config` row in `cordis.patch.yml`. E
 | `hotMemoryMaxTokens` | `1200` | hard ceiling that no session exceeds |
 | `readDefaultLimit` | `8` | default `memoir_read` result count |
 | `readMaxLimit` | `30` | live upper bound per recall |
-| `sessionSnapshotMax` | `128` | frozen session-snapshot LRU capacity |
+| `sessionSnapshotMax` | `128` | resident LRU capacity; durable records are not deleted |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |
 
 Shrinking a cache evicts the oldest entries immediately. Existing frozen sessions are not rewritten after budget changes, preserving prompt-prefix stability. “Restore startup configuration” removes Web overrides and returns to profile startup values.
@@ -213,7 +224,7 @@ v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report
 
 Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
 
-0.7.0 passes 193 tests and type checking, retaining all existing regressions and adding an official DSH Session V3 object test for provenance, distillation, tool writes, and frozen injection. An isolated DSH 0.1.5-rc.1 profile passes Web Settings, bilingual diagnostics, and API checks. Historical alpha/rc validation is recorded in the changelog and does not imply 0.7.0 can be installed on older hosts.
+0.7.1 has 202 tests: 201 pass on Windows with one POSIX permission test skipped; all pass on Linux. Coverage includes actual process restart, same-session concurrent creation, LRU, empty baselines, forks, language isolation, corruption and permission errors, plus existing BM25/Hot Memory/tool regressions. DSH rc.1 and the newest rc.2 are validated. Prefix equality in tests is not a guarantee of actual billing savings.
 
 ## FAQ
 
@@ -242,6 +253,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.7.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.0), and `main` is synchronized with it.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.7.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.1), and `main` is synchronized with it.
 
 Apache-2.0

@@ -1,7 +1,9 @@
 /**
  * Session memory snapshot manager (roadmap §2.2) — freezes the project
  * memory injected into a session's system prompt so that the prompt prefix
- * stays stable for the whole session. The current session does NOT re-consume
+ * stays stable while its snapshot is available. The host injects durable
+ * persistence so restarts and RAM eviction reuse the original text; storage
+ * failures fall back to a diagnosed process-local snapshot. The session does NOT re-consume
  * memory it just wrote: later assemblies reuse the first snapshot; a NEW
  * session builds a fresh one and sees the new memory.
  *
@@ -23,22 +25,29 @@ export interface SessionSnapshot {
     /** When the snapshot was created. */
     createdAt: number;
 }
+/** Host-owned durable storage; memory eviction never removes durable records. */
+export interface SnapshotPersistence {
+    scope(): string;
+    getOrCreate(sessionKey: string, builder: () => SessionSnapshot): SessionSnapshot;
+}
 /** Hash a text for prompt-stability comparison (truncated SHA-256). */
 export declare function snapshotHash(text: string): string;
 /**
- * Freezes one session's injected memory; bounded by a simple LRU (oldest
- * snapshot evicted past the cap), so long-running processes never accumulate
- * dead session entries.
+ * Bounded resident LRU over optional durable snapshots. RAM eviction never
+ * deletes persistent records; callers without persistence retain legacy behavior.
  */
 export declare class MemorySnapshotManager {
     /** Live session snapshots in LRU order (most recent last). */
     private readonly snapshots;
     private max;
+    private readonly persistence?;
+    private scope;
     /**
      * @param options.max - LRU cap (default 128; config sessionSnapshotMax).
      */
     constructor(options?: {
         max?: number;
+        persistence?: SnapshotPersistence;
     });
     /** Current snapshot count (diagnostics). */
     get size(): number;
@@ -53,8 +62,8 @@ export declare class MemorySnapshotManager {
     private evictPastCap;
     /**
      * Return the session's frozen snapshot, or build one via builder.
-     * A later call for the same key ALWAYS returns the first snapshot — even
-     * if the store revision moved on (that is the point: stable prompt prefix).
+     * A retained/recoverable key returns its original snapshot despite store
+     * revisions. Missing durable records establish a new baseline once.
      *
      * @param sessionKey - stable session identity (id + workspace).
      * @param builder - builds { storeRevision, text } when no snapshot exists.
@@ -67,9 +76,9 @@ export declare class MemorySnapshotManager {
     peek(sessionKey: string): SessionSnapshot | undefined;
     /** The most recently created snapshot (diagnostics / inspector). */
     latest(): SessionSnapshot | undefined;
-    /** Drop one session's snapshot (disposal hygiene). */
+    /** Drop one resident snapshot; durable storage remains available on next access. */
     forget(sessionKey: string): void;
-    /** Invalidate every snapshot after an explicit prompt-language change. */
+    /** Clear resident snapshots; the durable language namespace remains intact. */
     clear(): void;
 }
 /**

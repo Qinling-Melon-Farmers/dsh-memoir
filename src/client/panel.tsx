@@ -1025,6 +1025,13 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
                       {diag.autoDistill.last ? <div>{t('distill.last')}: {t(`distill.${diag.autoDistill.last.outcome}`)} · {new Date(diag.autoDistill.last.at).toLocaleString()} · turn {diag.autoDistill.last.turn}</div> : null}
                     </div> : null}
                     <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>
+                    {diag.snapshotPersistence ? <div data-dsh-part="snapshot-persistence">
+                      <h4>{t('snapshot.disk')}</h4>
+                      <div>{t('snapshot.restored')}: {diag.snapshotPersistence.restored} · {t('snapshot.created')}: {diag.snapshotPersistence.created} · {t('snapshot.failures')}: {diag.snapshotPersistence.failures}</div>
+                      <div>{t('snapshot.last')}: {t(`snapshot.${diag.snapshotPersistence.lastStatus}`)}</div>
+                      {diag.snapshotPersistence.lastError ? <div role="status">{t('snapshot.degraded')} ({t(`snapshot.${diag.snapshotPersistence.lastError}`)})</div> : null}
+                      <div>{t('snapshot.retention')}</div>
+                    </div> : null}
                     <div>{t('diag.cache')}: {diag.cache.hits}/{diag.cache.loads} {t('diag.hits')} ({Math.round(diag.cache.hitRate * 100)}%) · {t('diag.render')}: {Math.round(diag.cache.renderHitRate * 100)}%</div>
                     {diag.hotMemory !== null ? <div>{t('diag.hot')}: {diag.hotMemory.selected}/{diag.hotMemory.total} {t('diag.items')} · ~{diag.hotMemory.estimatedTokens} tokens · {t('diag.budget')} {diag.config.hotMemoryTokens}/{diag.config.hotMemoryMaxTokens}</div> : null}
                     <div>{t('diag.retrieval')}: {diag.retrieval.index === null ? '—' : `${diag.retrieval.index.docs} ${t('diag.documents')} · ${diag.retrieval.index.terms} ${t('diag.terms')} · ${t('diag.epoch')} ${diag.retrieval.index.epoch}`}</div>
