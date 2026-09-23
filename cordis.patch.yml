@@ -1,8 +1,7 @@
 # dsh-memoir bundle patch: inserts the host-half plugin row into the web
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
-# manifest field) over dsh-base. dsh-memoir v0.7.0 targets the published DSH
-# line >=0.1.5-rc.1 <0.1.6-0 and installs from npm with
-#   dsh plugin --profile web add dsh-memoir@latest
+# manifest field) over dsh-base. dsh-memoir v0.8.0 targets the DSH
+# line >=0.1.7-rc.1 <0.1.8-0. Keep Memoir 0.7.1 on older DSH 0.1.5.
 #
 # The row is a bare plugin by package name: the node half (exports ".")
 # registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel

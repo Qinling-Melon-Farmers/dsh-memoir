@@ -15,6 +15,14 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
 
+// Session V4 requires each producer to own a source kind; the generic
+// `plugin` kind was removed. This is the SDK's public extension seam.
+declare module '@deepseek-ai/dsh-llm/message' {
+  interface MessageSourceMap {
+    'dsh-memoir': { kind: 'dsh-memoir' }
+  }
+}
+
 /** The steering prompt injected at the end of an active turn. */
 export function distillPrompt(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): string {
   return hostCopy(language).distillPrompt
@@ -225,7 +233,7 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     try { agent.steer(
       createUserMessage({
         content: [{ type: 'text', text: distillPrompt(options.language?.()) }],
-        source: { kind: 'plugin', plugin: AUTO_DISTILL_PLUGIN },
+        source: { kind: AUTO_DISTILL_PLUGIN },
       }),
     ) } catch (error) {
       report('failed', toolCalls)

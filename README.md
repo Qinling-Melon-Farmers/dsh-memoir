@@ -11,11 +11,13 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
 
 > [!IMPORTANT]
+> **0.8.0 要求 DSH `>=0.1.7-rc.1 <0.1.8-0`**，已针对 `0.1.7-rc.1` 完成 Windows/WSL 自动化回归与 Windows 隔离宿主验证。旧 DSH 0.1.5 请固定安装 `dsh-memoir@0.7.1`，不要直接升级 latest。真实浏览器交互与付费模型端到端验证尚未完成。
+>
 > `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
-npm install --global @deepseek-ai/dsh@0.1.5-rc.1
-dsh plugin --profile web add dsh-memoir@latest
+npm install --global @deepseek-ai/dsh@0.1.7-rc.1
+dsh plugin --profile web add dsh-memoir@0.8.0
 ```
 
 重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
@@ -87,7 +89,7 @@ memoir_record / memoir_update
 
 v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已经调用 `memoir_record` 或 `memoir_update` 的回合不再提醒；提交提醒不代表写入已完成。Agent 销毁会清理门控状态，最多保留 1024 个最近活动 Agent（淘汰后不再保留其回合水位和冷却）。关闭自动蒸馏后仍可手动记录。
 
-当前支持 DSH `0.1.5-rc.1` 与最新 rc.2（发布前核验：npm `next` 为 rc.2、`latest` 仍为 rc.1）。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
+0.8.0面向 DSH `0.1.7-rc.1`；0.7.1 的历史验证范围为 `0.1.5-rc.1 / rc.2`。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
 
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
@@ -149,20 +151,21 @@ v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已�
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.7.1`） | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@latest` | 快照恢复修复；已验证 rc.1 / rc.2 |
+| npm `latest`（`0.8.0`） | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.0` | 0.1.7 兼容线 |
+| npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| GitHub `main`（`0.7.1`） | `>=0.1.5-rc.1 <0.1.6-0` | 源码 clone + `link:` | 开发和调试使用 |
+| 源码 `v0.8.0` | `>=0.1.7-rc.1 <0.1.8-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.5 / 0.1.6 |
 
 需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
 <details>
 <summary>从源码安装</summary>
 
-0.7.x 源码：
+已发布 0.7.1 源码（旧 DSH 0.1.5）：
 
 ```bash
-git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+git clone --branch v0.7.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
@@ -171,6 +174,8 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
 </details>
+
+0.8.0使用原生 `uiWorkspace` 导航、`conversation.view` / `settings.section` 和 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不再通过全局 DOM 自动滚到回合，避免多会话串扰。`snapshotEvents()` 仍在使用（宿主已标记弃用但尚未移除），公开异步 projection 迁移列入后续版本。Memoir 数据格式不变；升级 DSH 前备份 DSH_HOME，其 Session V4 迁移与插件记忆迁移是两回事。
 
 ## 存储、隐私与安全边界
 
@@ -223,7 +228,9 @@ v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`
 
 基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
 
-0.7.1 含 202 项测试：Windows 201 项通过、1 项 POSIX 权限测试跳过；Linux 全部通过。覆盖实际跨进程快照恢复、同会话并发写入、LRU、空基线、fork、语言隔离、损坏与权限失败，以及原有 BM25/Hot Memory/工具回归。已核验 DSH rc.1 和最新 rc.2；没有把测试前缀一致性等同于实际账单节省保证。
+0.8.0：Windows 207 项测试中 206 通过、1 项跳过，WSL 207 项全部通过；双端类型检查/构建通过。三轮 Cordis 生命周期与客户端 slots/样式/语言 observer 清理测试通过，Windows 隔离宿主页、官方客户端组合资源及 Memoir API 通过。未完成真实浏览器交互和付费模型端到端验收；历史截图不是本版实机证据。
+
+历史 0.7.1 含 202 项测试：Windows 201 项通过、1 项 POSIX 权限测试跳过；Linux 全部通过。覆盖实际跨进程快照恢复、同会话并发写入、LRU、空基线、fork、语言隔离、损坏与权限失败，以及原有 BM25/Hot Memory/工具回归。已核验 DSH rc.1 和最新 rc.2；没有把测试前缀一致性等同于实际账单节省保证。
 
 ## 常见问题
 
@@ -252,6 +259,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.7.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.1)，`main` 与该版本同步。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.8.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.0)，面向 DSH 0.1.7；旧 0.1.5 保留 0.7.1。
 
 Apache-2.0

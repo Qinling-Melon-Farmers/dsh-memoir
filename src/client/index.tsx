@@ -1,5 +1,5 @@
 /**
- * Browser-half entry for the DSH 0.1.2 alpha client architecture.
+ * Browser-half entry for the DSH 0.1.7 client architecture.
  *
  * The alpha shell removed dsh-client-runtime and exposes additive UI through
  * domain-owned slots. Memoir therefore registers as a native Conversation
@@ -18,27 +18,19 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { useEffect } from 'react'
 import { MemoirApi } from './api.js'
 import { makeT } from './i18n.js'
 import { MemoirPanel } from './panel.jsx'
 import { mountPanelStyles } from './styles.js'
+import { mainWorkspaceCwd } from './native-navigation.js'
 
 type NativeGlobalProps = { useSessions: UseSessions }
 type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
 
 /** Required alpha services; package.json injects the packages that provide them. */
-export const inject = ['sessions', 'slots']
-
-/** Reveal a source turn after the Session Controller has opened its session. */
-function revealSourceTurn(turnId: number | undefined): void {
-  if (turnId === undefined) return
-  const reveal = () => document
-    .querySelector<HTMLElement>(`[data-turn-tail="${turnId}"]`)
-    ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  setTimeout(reveal, 0)
-  setTimeout(reveal, 250)
-}
+export const inject = ['uiWorkspace', 'slots']
 
 /** Native per-session Conversation view. */
 function ConversationMemoirView({
@@ -49,6 +41,7 @@ function ConversationMemoirView({
   useSessions,
   viewRequest,
   completeViewRequest,
+  openView,
 }: ConvViewProps & NativeGlobalProps & {
   api: MemoirApi
   ctx: Context
@@ -74,9 +67,9 @@ function ConversationMemoirView({
         api={api}
         cwd={cwd}
         t={t}
-        openSource={(sourceSessionId, turnId) => {
-          ctx.sessions.open(sourceSessionId as SessionId)
-          revealSourceTurn(turnId)
+        openSource={(sourceSessionId) => {
+          if (sourceSessionId === sessionId) openView('chat', '')
+          ctx.uiWorkspace.openSession(sourceSessionId as SessionId)
         }}
       />
     </div>
@@ -95,10 +88,7 @@ function SettingsMemoirSection({
   ctx: Context
   t: (key: string) => string
 }) {
-  const cwd = useSessions((snapshot: SessionListState) => {
-    const current = snapshot.current
-    return current === undefined ? '' : snapshot.byId[current]?.cwd ?? ''
-  })
+  const cwd = useSessions(mainWorkspaceCwd)
   return (
     <div className="memoir-settings-section" data-dsh-plugin="memoir" data-dsh-part="settings-section">
       <MemoirPanel
@@ -106,10 +96,9 @@ function SettingsMemoirSection({
         cwd={cwd}
         t={t}
         onClose={close}
-        openSource={(sourceSessionId, turnId) => {
+        openSource={(sourceSessionId) => {
           close()
-          ctx.sessions.open(sourceSessionId as SessionId)
-          revealSourceTurn(turnId)
+          ctx.uiWorkspace.openSession(sourceSessionId as SessionId)
         }}
       />
     </div>

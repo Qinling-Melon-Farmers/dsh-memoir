@@ -11,14 +11,14 @@ import { MemorySnapshotManager } from '../lib/snapshot.js'
 import { makeExec, makeTempWorkspace } from './helpers.ts'
 import { join } from 'node:path'
 
-test('DSH 0.1.5 Session V3 retains tool provenance, distillation and frozen memory injection', async () => {
+test('DSH 0.1.7 Session V4 retains tool provenance, distillation and frozen memory injection', async () => {
   const ws = makeTempWorkspace()
   try {
-    const session = Session.create(SessionId('memoir-015'), [], {
-      id: SessionId('memoir-015'), version: SESSION_FORMAT_VERSION,
+    const session = Session.create(SessionId('memoir-017'), [], {
+      id: SessionId('memoir-017'), version: SESSION_FORMAT_VERSION,
       createdAt: 1, isSeeded: false, cwd: ws.cwd,
     })
-    assert.equal(session.header.version, 3)
+    assert.equal(session.header.version, 4)
     session.append('tool/call', { turn: 1, step: 1, callId: ToolCallId('call-test-1'), name: 'read', arguments: '{}' })
     assert.deepEqual(turnActivity(sessionEventSnapshot(session), 1), { worked: true, recorded: false, toolCalls: 1 })
     const exec = makeExec(ws.cwd, session.id, 1)
@@ -37,10 +37,10 @@ test('DSH 0.1.5 Session V3 retains tool provenance, distillation and frozen memo
     session.append('tool/call', { turn: 2, step: 1, callId: ToolCallId('call-test-2'), name: 'memoir_record', arguments: '{}' })
     const recordExec = makeExec(ws.cwd, session.id, 2)
     Object.assign(recordExec.agent!, { session })
-    await memoirRecordTool(store, new RetrievalEngine(store)).execute({ section: 'lessons', content: 'V3 compatibility verified' }, recordExec)
+    await memoirRecordTool(store, new RetrievalEngine(store)).execute({ section: 'lessons', content: 'V4 compatibility verified' }, recordExec)
     assert.equal(store.entries(ws.cwd)[0]?.source?.turnId, 2)
     assert.equal(turnActivity(sessionEventSnapshot(session), 2).recorded, true)
     assert.equal(memoirSectionText(store, exec, snapshots), before)
-    assert.match(memoirSectionText(store, { agent: { id: 'next-session', session: { header: { cwd: ws.cwd } } } }, snapshots), /V3 compatibility verified/)
+    assert.match(memoirSectionText(store, { agent: { id: 'next-session', session: { header: { cwd: ws.cwd } } } }, snapshots), /V4 compatibility verified/)
   } finally { ws.cleanup() }
 })

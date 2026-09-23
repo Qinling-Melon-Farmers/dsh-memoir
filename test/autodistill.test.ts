@@ -182,8 +182,7 @@ test('installAutoDistill steers once per worked turn with the plugin source', ()
   assert.equal(steered.length, 1)
   const message = steered[0]!
   assert.ok(String((message.content[0] as { text?: string }).text).includes('memoir_record'))
-  assert.equal((message.source as { kind: string; plugin?: string }).kind, 'plugin')
-  assert.equal((message.source as { plugin?: string }).plugin, 'dsh-memoir')
+  assert.deepEqual(message.source, { kind: 'dsh-memoir' })
   assert.ok(DISTILL_PROMPT.includes('memoir_record'))
 
   harness.dispatch({ agent, turn: 3, signal: liveSignal })

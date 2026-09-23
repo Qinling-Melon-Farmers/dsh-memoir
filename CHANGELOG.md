@@ -12,6 +12,22 @@
 
 - None.
 
+## [0.8.0] - 2026-09-23
+
+### 中文
+
+- 适配 DSH `0.1.7-rc.1`，SDK 与宿主/peer 约束更新为 `>=0.1.7-rc.1 <0.1.8-0`；旧 DSH 0.1.5 继续使用 0.7.1。
+- 来源会话导航改用公开 `uiWorkspace.openSession`；设置页按主视图保留状态确定项目，不误用侧栏会话。移除多会话下可能滚错位置的全局 DOM 回合定位，保留来源会话打开与回合编号复制。
+- 自动蒸馏使用 Session V4 专属消息来源 `dsh-memoir`；补充官方 V4 Session 与多会话项目选择回归。store v4、settings v3、持久快照与零普通运行时依赖保持不变。
+- Windows 206/207 通过（1 项 POSIX 跳过），WSL 207/207 通过；双端 typecheck/build、三轮 Cordis/client 资源清理及 Windows 隔离宿主 HTTP/客户端资源通过。未完成真实浏览器交互或付费模型端到端验收；`snapshotEvents()` 弃用依赖仍在，后续迁移。
+
+### English
+
+- Target DSH `0.1.7-rc.1`, updating SDKs and host/peer requirements to `>=0.1.7-rc.1 <0.1.8-0`. Keep 0.7.1 on DSH 0.1.5.
+- Navigate through public `uiWorkspace.openSession`; derive the settings project from main-view retention rather than a sidebar session. Remove global DOM turn scrolling that could target another conversation; retain source-session navigation and copyable turn IDs.
+- Use the producer-owned `dsh-memoir` message source for Session V4 distillation; cover real V4 Sessions and multi-session project selection. Preserve store v4, settings v3, durable snapshots, and zero regular runtime dependencies.
+- Windows passes 206/207 (one POSIX skip), WSL 207/207. Both pass typecheck/build; three Cordis/client cleanup cycles and isolated Windows host HTTP/client resources pass. Real-browser interaction and paid-model end-to-end validation remain unverified. Deprecated `snapshotEvents()` remains pending migration.
+
 ## [0.7.1] - 2026-09-13
 
 ### 中文

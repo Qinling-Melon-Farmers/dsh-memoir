@@ -11,6 +11,13 @@
  */
 import type { UserMessage } from '@deepseek-ai/dsh-llm';
 import type { MemoirLanguage } from './i18n.js';
+declare module '@deepseek-ai/dsh-llm/message' {
+    interface MessageSourceMap {
+        'dsh-memoir': {
+            kind: 'dsh-memoir';
+        };
+    }
+}
 /** The steering prompt injected at the end of an active turn. */
 export declare function distillPrompt(language?: MemoirLanguage): string;
 /** Backwards-compatible Chinese prompt constant. */
