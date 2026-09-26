@@ -3,6 +3,29 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { mountPanelStyles, PANEL_STYLE_SELECTOR } from '../src/client/styles.ts'
 
+test('native settings inherits host background and keeps padded readable cards', () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>
+    <div class="memoir-settings-section"><div class="memoir-panel">
+      <div class="memoir-subtitle">project</div><div class="memoir-entry">
+        <div class="memoir-entry-actions"></div><div class="memoir-entry-meta"></div>
+        <div class="memoir-entry-content">Long memory</div>
+      </div></div></div><div class="memoir-native-view"><div class="memoir-panel"></div></div>
+  </body></html>`)
+  try {
+    mountPanelStyles(dom.window.document)
+    const style = (selector: string) => dom.window.getComputedStyle(dom.window.document.querySelector(selector)!)
+    assert.equal(style('.memoir-settings-section').backgroundColor, 'rgba(0, 0, 0, 0)')
+    assert.equal(style('.memoir-settings-section .memoir-panel').backgroundColor, 'rgba(0, 0, 0, 0)')
+    assert.equal(style('.memoir-settings-section .memoir-panel').padding, '12px 16px 16px')
+    assert.equal(style('.memoir-entry').padding, '14px 16px')
+    assert.equal(style('.memoir-entry').borderRadius, '12px')
+    assert.equal(style('.memoir-entry-content').lineHeight, '1.7')
+    assert.equal(style('.memoir-entry-actions').marginBottom, '12px')
+    assert.equal(style('.memoir-subtitle').fontWeight, '400')
+    assert.equal(style('.memoir-native-view .memoir-panel').padding, '14px 16px 16px')
+  } finally { dom.window.close() }
+})
+
 test('memoir stylesheet uses its own marker instead of colliding with generic plugin styles', () => {
   const dom = new JSDOM('<!doctype html><html><head><style data-plugin="dsh-memoir">.foreign { color: red }</style></head><body></body></html>')
   try {

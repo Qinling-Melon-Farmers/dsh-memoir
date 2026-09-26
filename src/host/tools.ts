@@ -21,7 +21,21 @@ import { governedRecord, type RecordResolution } from './governance.js'
 import type { SimilarityCandidate } from './similarity.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
-import { sessionEventSnapshot } from './autodistill.js'
+import type { MemoirActivity } from './activity.js'
+
+/** Host-owned projection and persistence receipt hooks; no log scans in tools. */
+export interface MemoryToolHooks {
+  activity(exec: ToolRunContext): MemoirActivity | undefined
+  written?(exec: ToolRunContext): void
+}
+
+/** JSON is authoritative even when regenerating PROJECT_MEMORY.md then fails. */
+function trackWrite<T>(store: MemoirStore, exec: ToolRunContext, hooks: MemoryToolHooks | undefined, mutate: () => T): T {
+  const before = store.currentRevision()
+  try { return mutate() } finally {
+    if (store.currentRevision() !== before) hooks?.written?.(exec)
+  }
+}
 
 /** One text content block (the only render shape these tools emit). */
 export function text(value: string): ContentBlock[] {
@@ -46,25 +60,18 @@ export interface ReadToolOptions {
 
 /**
  * Resolve trusted source metadata from the executing agent. The tool runtime
- * does not expose a turn field directly, but it appends the matching
- * tool/call event before dispatch; rootCallId also covers code-mode nested
- * dispatches. Missing turn data degrades to session-only provenance.
+ * does not expose a turn field directly: the public projection tracks the
+ * matching tool/call before dispatch. rootCallId also covers code-mode nested
+ * dispatches. Missing/evicted turn data degrades to session-only provenance.
  */
-export function resolveMemorySource(exec: ToolRunContext | undefined): MemoirSource | undefined {
+export function resolveMemorySource(exec: ToolRunContext | undefined, hooks?: MemoryToolHooks): MemoirSource | undefined {
   const sessionId = exec?.agent?.id === undefined ? undefined : String(exec.agent.id)
   let turnId: number | undefined
   const callIds = new Set<string>()
   if (exec?.callId !== undefined) callIds.add(String(exec.callId))
   if (exec?.rootCallId !== undefined) callIds.add(String(exec.rootCallId))
-  const events = sessionEventSnapshot(exec?.agent?.session)
-  if (callIds.size > 0) {
-    for (let index = events.length - 1; index >= 0; index--) {
-      const event = events[index] as { type?: unknown; data?: Record<string, unknown> }
-      if (event.type !== 'tool/call' || event.data === undefined || !callIds.has(String(event.data.callId ?? ''))) continue
-      if (Number.isSafeInteger(event.data.turn) && (event.data.turn as number) >= 1) turnId = event.data.turn as number
-      break
-    }
-  }
+  const activity = exec === undefined ? undefined : hooks?.activity(exec)
+  if (activity !== undefined && activity.turn >= 1 && activity.calls.some(id => callIds.has(id))) turnId = activity.turn
   if (sessionId === undefined && turnId === undefined) return undefined
   return {
     ...(sessionId !== undefined ? { sessionId } : {}),
@@ -173,7 +180,7 @@ function candidateValue(candidate: SimilarityCandidate) {
 }
 
 /** The record tool: persist one memory entry with pre-write governance. */
-export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine, languageSource: MemoirLanguageSource = DEFAULT_MEMOIR_LANGUAGE) {
+export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine, languageSource: MemoirLanguageSource = DEFAULT_MEMOIR_LANGUAGE, hooks?: MemoryToolHooks) {
   const currentLanguage = (): MemoirLanguage => languageFrom(languageSource)
   const initial = hostCopy(currentLanguage()).record
   return defineTool({
@@ -271,12 +278,13 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
       },
     },
     async execute(args, exec) {
+      exec?.signal?.throwIfAborted()
       const language = currentLanguage()
       const cwd = resolveWorkspace(exec)
       if (cwd === undefined) {
         throw new Error(hostCopy(language).record.noWorkspace)
       }
-      const result = governedRecord(store, retrieval, cwd, {
+      const result = trackWrite(store, exec, hooks, () => governedRecord(store, retrieval, cwd, {
         section: args.section,
         ...(args.title !== undefined ? { title: args.title } : {}),
         content: args.content,
@@ -285,11 +293,11 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
         ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
         ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
       }, {
-        source: resolveMemorySource(exec),
+        source: resolveMemorySource(exec, hooks),
         language,
         ...(args.resolution !== undefined ? { resolution: args.resolution as RecordResolution } : {}),
         ...(args.targetId !== undefined ? { targetId: args.targetId } : {}),
-      })
+      }))
       const candidates = result.candidates.map(candidateValue)
       if (result.entry === undefined) {
         return { section: args.section, action: result.action, recorded: result.recorded, candidates }
@@ -312,7 +320,7 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
 }
 
 /** Update one existing entry while preserving its id and creation time. */
-export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLanguageSource = DEFAULT_MEMOIR_LANGUAGE) {
+export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLanguageSource = DEFAULT_MEMOIR_LANGUAGE, hooks?: MemoryToolHooks) {
   const currentLanguage = (): MemoirLanguage => languageFrom(languageSource)
   const initial = hostCopy(currentLanguage()).update
   return defineTool({
@@ -373,6 +381,7 @@ export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLangu
       render: (_args, value) => text(hostCopy(currentLanguage()).update.rendered + ' [' + value.section + '] (id: ' + value.id + ', status: ' + value.status + ')'),
     },
     async execute(args, exec) {
+      exec?.signal?.throwIfAborted()
       const language = currentLanguage()
       const copy = hostCopy(language).update
       const cwd = resolveWorkspace(exec)
@@ -391,7 +400,7 @@ export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLangu
       }
       const validation = validateEntryUpdate(patch, language)
       if (validation !== undefined) throw new Error(validation)
-      const entry = store.update(cwd, args.id, patch)
+      const entry = trackWrite(store, exec, hooks, () => store.update(cwd, args.id, patch))
       if (entry === undefined) throw new Error(copy.notFound(args.id))
       return { id: entry.id, section: entry.section, status: entry.status ?? 'active', updated: true }
     },

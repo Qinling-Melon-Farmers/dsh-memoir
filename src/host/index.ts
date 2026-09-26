@@ -28,6 +28,11 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { MemoryToolHooks } from './tools.js'
+import { resolveMemorySource } from './tools.js'
+import { activityProjection, ACTIVITY_KEY } from './activity.js'
 import { MemoirStore, projectKey } from './store.js'
 import { memoirReadTool, memoirRecordTool, memoirUpdateTool } from './tools.js'
 import { makeRoutes } from './routes.js'
@@ -46,7 +51,7 @@ import type { MemoirLanguage } from './i18n.js'
 export const name = 'memoir'
 
 /** Services required before the memory surfaces can mount. */
-export const inject = ['tools', 'systemPrompt', 'webServer']
+export const inject = ['tools', 'systemPrompt', 'webServer', 'sessionProjections']
 
 /** Order of the announcement section within the tool-guidance band. */
 const SECTION_ORDER = 150
@@ -214,6 +219,38 @@ export function apply(ctx: Context, config?: Config): void {
   const value = resolveConfig(config)
   if (!value.enabled) return
   const distillDiagnostics = new DistillDiagnostics()
+  ctx.effect(() => ctx.sessionProjections.register(activityProjection), 'dsh-memoir: activity projection')
+  const memoryHooks: MemoryToolHooks = {
+    activity: (exec) => exec.agent === undefined ? undefined : ctx.sessionProjections.stateOf(exec.agent.session, ACTIVITY_KEY),
+    written: (exec) => {
+      distillDiagnostics.write('persisted')
+      // A store commit must never be turned into a retryable tool failure if
+      // diagnostics/session receipt persistence subsequently fails.
+      try {
+        const state = memoryHooks.activity(exec)
+        if (state?.reminded) distillDiagnostics.write('afterReminder')
+        const turn = resolveMemorySource(exec, memoryHooks)?.turnId
+        if (turn === undefined || exec.agent === undefined) { distillDiagnostics.write('receiptFailed'); return }
+        exec.agent.session.append('dsh-memoir/written', { turn, callId: String(exec.callId) })
+      } catch { distillDiagnostics.write('receiptFailed') }
+    },
+  }
+  ctx.effect(() => {
+    const seen = new Set<symbol>()
+    const dispose = ctx.on('tools/result', (exec, result) => {
+      if (exec.name !== 'memoir_record' && exec.name !== 'memoir_update') return
+      if (seen.has(exec.token)) return
+      seen.add(exec.token)
+      if (seen.size > 4096) seen.delete(seen.values().next().value!)
+      if (result.isError) {
+        const code = result.error.info?.code
+        distillDiagnostics.write(code === 'ABORTED' || code === 'ABORTED_BEFORE_DISPATCH' ? 'canceled' : 'failed')
+      } else if (typeof result.value === 'object' && result.value !== null && !Array.isArray(result.value) && result.value.action === 'needs-resolution') {
+        distillDiagnostics.write('needsResolution')
+      }
+    })
+    return () => { dispose(); seen.clear() }
+  }, 'dsh-memoir: final write outcomes')
 
   const liveSettings = new MemoirSettingsStore({
     language: value.language,
@@ -257,8 +294,8 @@ export function apply(ctx: Context, config?: Config): void {
       for (const dispose of disposers) dispose()
       const languageSource = () => liveSettings.get().settings.language
       const tools = [
-        memoirRecordTool(store, retrieval, languageSource),
-        memoirUpdateTool(store, languageSource),
+        memoirRecordTool(store, retrieval, languageSource, memoryHooks),
+        memoirUpdateTool(store, languageSource, memoryHooks),
         memoirReadTool(store, () => {
         const current = liveSettings.get().settings
         return { defaultLimit: current.readDefaultLimit, maxLimit: current.readMaxLimit }
@@ -348,6 +385,8 @@ export function apply(ctx: Context, config?: Config): void {
   ctx.effect(
     () => installAutoDistill(autoDistillWire(ctx), {
       diagnostics: distillDiagnostics,
+      // The Cordis event contract supplies a real Session, not a history array.
+      activity: (agent) => ctx.sessionProjections.stateOf(agent.session as Session, ACTIVITY_KEY),
       enabled: () => liveSettings.get().settings.autoDistill,
       policy: () => {
         const current = liveSettings.get().settings

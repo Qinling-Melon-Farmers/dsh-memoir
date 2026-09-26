@@ -1,7 +1,7 @@
 /**
  * Automatic turn-end distillation: when the plugin is enabled, each turn of a
  * top-level agent that did real work (made tool calls) and did not already
- * record memory is followed by one steering step asking the agent to distill
+ * persist memory is followed by one steering step asking the agent to distill
  * the turn into memoir_record entries. Turns without tool activity are left
  * alone (no extra model cost), subagent sessions are never steered, and each
  * turn is steered at most once — the steering step runs inside the same turn,
@@ -11,6 +11,7 @@
  */
 import type { UserMessage } from '@deepseek-ai/dsh-llm';
 import type { MemoirLanguage } from './i18n.js';
+import type { MemoirActivity } from './activity.js';
 declare module '@deepseek-ai/dsh-llm/message' {
     interface MessageSourceMap {
         'dsh-memoir': {
@@ -34,17 +35,7 @@ export interface TurnActivity {
     recorded: boolean;
     toolCalls: number;
 }
-/**
- * Session-log compatibility surface. DSH <= alpha.3 exposed `events` while
- * alpha.4+ keeps the log private and exposes an immutable snapshot method.
- */
-export interface SessionEventSource {
-    readonly events?: readonly TurnEventLike[];
-    snapshotEvents?: () => readonly TurnEventLike[];
-}
-/** Read a stable session event snapshot across the old and new DSH APIs. */
-export declare function sessionEventSnapshot(session: SessionEventSource | undefined): readonly TurnEventLike[];
-/** Scan the tail of a session log for one turn's tool activity. */
+/** Pure event-fixture fold. Runtime activity comes from the host projection. */
 export declare function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity;
 /** The agent surface the turn-stopping listener needs. */
 export interface AutoDistillAgentLike {
@@ -83,16 +74,19 @@ export declare class AutoDistillGate {
     /** Drop all state for one agent (disposal hygiene). */
     forget(agentId: string): void;
 }
-export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed';
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed' | 'unavailable';
 /** Process-local counters only; never retains message content or credentials. */
 export declare class DistillDiagnostics {
     private counts;
     private last;
     private workedTurns;
     private agents;
+    private writes;
+    write(outcome: keyof DistillDiagnostics['writes']): void;
     record(outcome: DistillOutcome, at: number, turn: number, toolCalls: number, agents: number): void;
     snapshot(): {
         counts: {
+            recorded?: number | undefined;
             subagent?: number | undefined;
             duplicate?: number | undefined;
             interval?: number | undefined;
@@ -101,9 +95,17 @@ export declare class DistillDiagnostics {
             disabled?: number | undefined;
             aborted?: number | undefined;
             idle?: number | undefined;
-            recorded?: number | undefined;
             steered?: number | undefined;
             failed?: number | undefined;
+            unavailable?: number | undefined;
+        };
+        writes: {
+            persisted: number;
+            afterReminder: number;
+            failed: number;
+            canceled: number;
+            needsResolution: number;
+            receiptFailed: number;
         };
         workedTurns: number;
         agents: number;
@@ -146,4 +148,6 @@ export declare function installAutoDistill(wire: AutoDistillWire, options: {
     language?: () => MemoirLanguage;
     now?: () => number;
     diagnostics?: DistillDiagnostics;
+    /** Public host projection at the exact Session cursor; absent means skip safely. */
+    activity?: (agent: AutoDistillAgentLike) => MemoirActivity | undefined;
 }): () => void;

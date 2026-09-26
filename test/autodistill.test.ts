@@ -8,10 +8,20 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import {
-  turnActivity, sessionEventSnapshot, isSubagentSession, AutoDistillGate,
-  installAutoDistill, DISTILL_PROMPT, DistillDiagnostics,
+  turnActivity, isSubagentSession, AutoDistillGate,
+  installAutoDistill as install, DISTILL_PROMPT, DistillDiagnostics,
 } from '../lib/autodistill.js'
 import type { AutoDistillAgentLike, TurnEventLike, TurnStoppingPayload } from '../lib/autodistill.js'
+import { emptyActivity } from '../lib/activity.js'
+
+// Fixture adapter only; production reads the replayable host projection.
+function installAutoDistill(wire: Parameters<typeof install>[0], options: Parameters<typeof install>[1]) {
+  return install(wire, { ...options, activity: (agent) => {
+    const turn = currentTestTurn
+    return { ...emptyActivity(), turn, ...turnActivity(agent.session.events ?? [], turn) }
+  } })
+}
+let currentTestTurn = 0
 
 function toolCallEvent(turn: number, name = 'read'): TurnEventLike {
   return { type: 'tool/call', data: { turn, name } }
@@ -24,6 +34,7 @@ test('turnActivity detects work and prior memoir_record calls in the turn', () =
     { type: 'turn/start', data: { turn: 2 } },
     toolCallEvent(2, 'read'),
     toolCallEvent(2, 'memoir_record'),
+    { type: 'dsh-memoir/written', data: { turn: 2 } },
     { type: 'todo/write' }, // no turn — skipped
   ]
   assert.deepEqual(turnActivity([], 2), { worked: false, recorded: false, toolCalls: 0 })
@@ -41,11 +52,9 @@ test('turnActivity stops scanning at lower turns (monotonic log)', () => {
   assert.deepEqual(turnActivity(events, 3), { worked: false, recorded: false, toolCalls: 0 })
 })
 
-test('sessionEventSnapshot supports legacy events and alpha.4 snapshotEvents', () => {
-  const events = [toolCallEvent(2, 'read')]
-  assert.equal(sessionEventSnapshot({ events }), events)
-  assert.equal(sessionEventSnapshot({ events: [], snapshotEvents: () => events }), events)
-  assert.deepEqual(sessionEventSnapshot(undefined), [])
+test('a call alone, including a failed or unresolved write, is not persistence', () => {
+  assert.equal(turnActivity([toolCallEvent(2, 'memoir_record')], 2).recorded, false)
+  assert.equal(turnActivity([toolCallEvent(2, 'memoir_update')], 2).recorded, false)
 })
 
 test('isSubagentSession excludes subagents and nested delegations', () => {
@@ -109,7 +118,7 @@ function makeWire(): WireHarness {
         return () => { listener = undefined }
       },
     },
-    dispatch: (payload) => listener?.(payload),
+    dispatch: (payload) => { currentTestTurn = payload.turn; listener?.(payload) },
     dispose: () => { listener = undefined },
   }
 }
@@ -132,7 +141,7 @@ test('diagnostics distinguish interval, duplicate, submission and prior update',
   const harness = makeWire()
   const diagnostics = new DistillDiagnostics()
   installAutoDistill(harness.wire, { enabled: () => true, every: 2, diagnostics, now: () => 100 })
-  const { agent, steered } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2), toolCallEvent(3, 'memoir_update')] })
+  const { agent, steered } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2), toolCallEvent(3, 'memoir_update'), { type: 'dsh-memoir/written', data: { turn: 3 } }] })
   for (const turn of [1, 1, 2, 3]) harness.dispatch({ agent, turn, signal: liveSignal })
   assert.equal(steered.length, 1)
   const snapshot = diagnostics.snapshot()
@@ -221,7 +230,7 @@ test('installAutoDistill skips aborted turns, subagents, idle turns, and already
   harness.dispatch({ agent: idle.agent, turn: 5, signal: liveSignal })
   assert.equal(idle.steered.length, 0, 'turns without tool calls are left alone')
 
-  const recorded = makeAgent({ events: [toolCallEvent(9, 'memoir_record')] })
+  const recorded = makeAgent({ events: [toolCallEvent(9, 'memoir_record'), { type: 'dsh-memoir/written', data: { turn: 9 } }] })
   harness.dispatch({ agent: recorded.agent, turn: 9, signal: liveSignal })
   assert.equal(recorded.steered.length, 0, 'turns that already recorded are left alone')
 })

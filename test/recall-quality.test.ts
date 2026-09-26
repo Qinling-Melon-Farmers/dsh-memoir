@@ -9,6 +9,10 @@ import assert from 'node:assert/strict'
 import { MemoirStore } from '../lib/store.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
+import { memoirSectionText } from '../lib/index.js'
+import { MemorySnapshotManager } from '../lib/snapshot.js'
+import { selectHotMemory } from '../lib/selector.js'
+import { join } from 'node:path'
 
 /** [section, title, content] fixture — each row is one recall target. */
 const FIXTURE: Array<[string, string, string]> = [
@@ -98,7 +102,7 @@ const QUERIES: Array<[string, number]> = [
   ['npm-global credential', 38],
 ]
 
-test('recall quality: Top-5 hit rate ≥ 90% over curated queries', () => {
+test('recall quality: Top-5 hit rate ≥ 90% over curated queries', (t) => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
@@ -119,10 +123,40 @@ test('recall quality: Top-5 hit rate ≥ 90% over curated queries', () => {
       }
     }
     const rate = hits / QUERIES.length
+    t.diagnostic(`Curated lexical Top-5 recall: ${hits}/${QUERIES.length}; not a semantic-correctness score.`)
     if (misses.length > 0) console.log('recall misses:\n' + misses.join('\n'))
     assert.ok(rate >= 0.9, 'Top-5 hit rate ' + (rate * 100).toFixed(1) + '% ≥ 90%')
   } finally {
     ws.cleanup()
   }
+})
+
+test('quality boundaries: corrected facts, negation, project isolation, tokens and frozen-prefix stability', (t) => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(join(ws.cwd, 'quality.json'))
+    const other = join(ws.cwd, 'other')
+    const old = store.record(ws.cwd, { section: 'actions', title: 'Stale deploy policy', content: 'Deploy directly from staging.' })
+    store.record(ws.cwd, { section: 'actions', title: 'Production deploy policy', content: '禁止从 staging 发布生产。Do not deploy production from staging.', supersedes: [old.id], importance: 5 })
+    store.record(other, { section: 'actions', title: 'Other project', content: 'SECRET_OTHER_PROJECT policy', importance: 5 })
+    const engine = new RetrievalEngine(store)
+    const results = engine.cachedSearch('staging deploy', { cwd: ws.cwd, limit: 5 })
+    assert.ok(results.length > 0)
+    assert.ok(results.every(row => row.projectPath === ws.cwd && row.entry.id !== old.id))
+    assert.match(results[0]!.entry.content, /Do not deploy/)
+    engine.cachedSearch('staging deploy', { cwd: ws.cwd, limit: 5 })
+    assert.equal(engine.diagnostics().cache.hits, 1)
+    const manager = new MemorySnapshotManager()
+    const context = { agent: { id: 'existing', session: { header: { cwd: ws.cwd } } } }
+    const frozen = memoirSectionText(store, context, manager)
+    assert.doesNotMatch(frozen, /SECRET_OTHER_PROJECT|Deploy directly from staging/)
+    assert.match(frozen, /Do not deploy/)
+    const hot = selectHotMemory(store.entries(ws.cwd), { targetTokens: 100, hardMaxTokens: 120 })
+    assert.ok(hot.estimatedTokens <= 120)
+    store.record(ws.cwd, { section: 'lessons', content: 'NEW_CONFIRMED_FACT for the next session.' })
+    assert.equal(memoirSectionText(store, context, manager), frozen)
+    assert.match(memoirSectionText(store, { agent: { id: 'new', session: context.agent.session } }, manager), /NEW_CONFIRMED_FACT/)
+    t.diagnostic(`Fixture: stale/foreign injections=0; hot tokens=${hot.estimatedTokens}/120; query cache hit=1; same-session prefix unchanged. No LLM semantic validation claimed.`)
+  } finally { ws.cleanup() }
 })
 

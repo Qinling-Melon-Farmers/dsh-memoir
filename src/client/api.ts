@@ -84,6 +84,7 @@ export interface WireDiagnostics {
   }
   autoDistill?: {
     counts: Partial<Record<string, number>>
+    writes?: Record<'persisted' | 'afterReminder' | 'failed' | 'canceled' | 'needsResolution' | 'receiptFailed', number>
     workedTurns: number
     agents: number
     last: { outcome: string; at: number; turn: number; toolCalls: number } | null

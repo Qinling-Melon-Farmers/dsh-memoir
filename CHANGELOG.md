@@ -12,6 +12,24 @@
 
 - None.
 
+## [0.8.1] - 2026-09-26
+
+### 中文
+
+- 调整桌面/Web 无皮肤设置页：继承宿主背景，补齐留白、卡片层级与正文行距；路径不再继承粗体，标签使用中性色，设置网格按可用宽度布局。保留皮肤变量与独立滚动。
+- 自动蒸馏依据实际保存而非工具调用判断；新增保存、提醒后保存、失败/取消、相似记忆待确认和回执降级诊断。计数不代表语义正确率。
+- 使用公开 Session projection 维护有界当前回合活动和可信来源，移除弃用的同步全历史读取。支持延迟挂载、checkpoint 恢复与重挂载；回执不含记忆正文，旧调用没有回执时不推断已写入。
+- 开发 SDK 更新为 DSH `0.1.7-rc.2`，支持下限保留 rc.1。store v4 / settings v3 / snapshot v1 与零普通运行时依赖不变；声明宿主已有的 Zod 4 peer 用于投影验证。
+- 补充保存回执、取消与部分写入失败、会话投影恢复、纠错、否定和跨项目隔离的自动化回归测试。
+
+### English
+
+- Refine unskinned Desktop/Web settings: inherit the host background, restore padding, layered cards and readable line height; use regular-weight paths, neutral tags and width-responsive settings fields. Preserve skin tokens and independent scrolling.
+- Base distillation suppression on persisted writes, not invoked tools. Expose saved, saved-after-reminder, failed/canceled, unresolved-similarity and unavailable-receipt counters; these are not semantic-accuracy metrics.
+- Replace deprecated synchronous full-history reads with a bounded public Session projection for turn activity and trusted provenance. Support late mounting, checkpoint recovery and remounting. Receipts contain no memory content; legacy calls without receipts are not assumed persisted.
+- Pin SDKs to DSH `0.1.7-rc.2`, retaining the rc.1 floor. Preserve store v4 / settings v3 / snapshot v1 and zero regular runtime dependencies; declare the host's Zod 4 peer for projection validation.
+- Add automated regressions for save receipts, cancellation and partial write failures, session projection recovery, corrections, negation and project isolation.
+
 ## [0.8.0] - 2026-09-23
 
 ### 中文

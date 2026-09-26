@@ -8,16 +8,16 @@
 
 **DeepSeek Harness（DSH）的本地优先、跨会话项目记忆插件。** 它把 Agent 已确认的工作结论、经验教训和后续行动持久化，在新会话中注入有界且缓存友好的 Hot Memory，并通过本地 BM25 排序召回长尾历史。
 
-无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
+无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主环境提供；Zod 用于验证宿主会话投影，不捆绑进插件。
 
 > [!IMPORTANT]
-> **0.8.0 要求 DSH `>=0.1.7-rc.1 <0.1.8-0`**，已针对 `0.1.7-rc.1` 完成 Windows/WSL 自动化回归与 Windows 隔离宿主验证。旧 DSH 0.1.5 请固定安装 `dsh-memoir@0.7.1`，不要直接升级 latest。真实浏览器交互与付费模型端到端验证尚未完成。
+> **0.8.1 要求 DSH `>=0.1.7-rc.1 <0.1.8-0`**，开发 SDK 为 `0.1.7-rc.2`。优化桌面端无皮肤设置页的底色、留白及卡片排版；增加实际保存诊断，并迁移到公开 Session projection。旧 DSH 0.1.5 请固定安装 `dsh-memoir@0.7.1`。
 >
 > `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
-npm install --global @deepseek-ai/dsh@0.1.7-rc.1
-dsh plugin --profile web add dsh-memoir@0.8.0
+npm install --global @deepseek-ai/dsh@0.1.7-rc.2
+dsh plugin --profile web add dsh-memoir@0.8.1
 ```
 
 重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
@@ -87,9 +87,9 @@ memoir_record / memoir_update
 
 ## 自动蒸馏
 
-v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已经调用 `memoir_record` 或 `memoir_update` 的回合不再提醒；提交提醒不代表写入已完成。Agent 销毁会清理门控状态，最多保留 1024 个最近活动 Agent（淘汰后不再保留其回合水位和冷却）。关闭自动蒸馏后仍可手动记录。
+0.8.1 诊断页区分提醒提交、实际保存、失败、取消、相似记忆待确认和回执降级。只有成功保存的 `memoir_record` / `memoir_update` 才抑制本回合提醒；失败或相似候选待确认不算写入。保存后宿主仍可能取消最终工具结果，因此计数可以重叠。提醒与后续保存的关联不证明因果或内容正确。GUI 手工写入不计入 Agent 工具计数。
 
-0.8.0面向 DSH `0.1.7-rc.1`；0.7.1 的历史验证范围为 `0.1.5-rc.1 / rc.2`。BM25 是词项召回，不能保证无共同词项的跨语言语义匹配；提炼质量提示也不能替代事实核验。
+0.8.1 使用公开 `sessionProjections` 从日志和 checkpoint 重建当前回合，不再读取弃用的 `snapshotEvents()`。每会话只保留当前回合最多 4096 个调用 ID，不保存参数或正文；超出保留范围时来源降级为 session-only。门控最多保留 1024 个 Agent，销毁时清理；旧版写入没有保存回执，不能仅从历史调用推断成功。BM25 是词项召回，不承诺跨语言语义匹配。
 
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
@@ -151,11 +151,11 @@ v0.6.2 的诊断页显示最近触发或跳过原因及本次进程计数。已�
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.8.0`） | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.0` | 0.1.7 兼容线 |
+| npm `latest`（`0.8.1`） | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.1` | 0.1.7 兼容线 |
 | npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| 源码 `v0.8.0` | `>=0.1.7-rc.1 <0.1.8-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.5 / 0.1.6 |
+| 源码 `v0.8.1` | `>=0.1.7-rc.1 <0.1.8-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.5 / 0.1.6 |
 
 需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
@@ -175,7 +175,7 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 </details>
 
-0.8.0使用原生 `uiWorkspace` 导航、`conversation.view` / `settings.section` 和 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不再通过全局 DOM 自动滚到回合，避免多会话串扰。`snapshotEvents()` 仍在使用（宿主已标记弃用但尚未移除），公开异步 projection 迁移列入后续版本。Memoir 数据格式不变；升级 DSH 前备份 DSH_HOME，其 Session V4 迁移与插件记忆迁移是两回事。
+0.8.1 使用原生 `uiWorkspace`、`conversation.view` / `settings.section` 与 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不通过全局 DOM 自动滚到回合。设置页继承宿主背景、卡片使用主题层级色，保留皮肤覆盖与独立滚动。store v4 / settings v3 / snapshot v1 不变。升级 DSH 前备份 DSH_HOME，其会话迁移与插件记忆是两回事。
 
 ## 存储、隐私与安全边界
 
@@ -228,9 +228,7 @@ v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`
 
 基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
 
-0.8.0：Windows 207 项测试中 206 通过、1 项跳过，WSL 207 项全部通过；双端类型检查/构建通过。三轮 Cordis 生命周期与客户端 slots/样式/语言 observer 清理测试通过，Windows 隔离宿主页、官方客户端组合资源及 Memoir API 通过。未完成真实浏览器交互和付费模型端到端验收；历史截图不是本版实机证据。
-
-历史 0.7.1 含 202 项测试：Windows 201 项通过、1 项 POSIX 权限测试跳过；Linux 全部通过。覆盖实际跨进程快照恢复、同会话并发写入、LRU、空基线、fork、语言隔离、损坏与权限失败，以及原有 BM25/Hot Memory/工具回归。已核验 DSH rc.1 和最新 rc.2；没有把测试前缀一致性等同于实际账单节省保证。
+自动化回归覆盖会话投影恢复、跨进程快照、写入与取消、生命周期清理、BM25 召回、Hot Memory 预算、缓存、纠错与跨项目隔离。固定词项样本的 Top-5 召回为 41/41；样本结果不代表真实模型的语义正确率，前缀一致性也不等同于实际账单节省保证。
 
 ## 常见问题
 
@@ -259,6 +257,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.8.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.0)，面向 DSH 0.1.7；旧 0.1.5 保留 0.7.1。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.8.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.1)，面向 DSH 0.1.7；旧 0.1.5 保留 0.7.1。
 
 Apache-2.0

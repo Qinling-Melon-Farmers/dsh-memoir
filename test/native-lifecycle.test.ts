@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
 import { Context } from '@deepseek-ai/cordis'
+import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { apply } from '../lib/index.js'
 import { makeTempWorkspace } from './helpers.ts'
 import { join } from 'node:path'
@@ -10,6 +11,7 @@ import { join } from 'node:path'
 test('real Cordis lifecycle releases host registrations across three remounts', async () => {
   const ws = makeTempWorkspace()
   const root = new Context()
+  new SessionProjectionRegistry(root)
   const tools = new Set(), routes = new Set(), sections = new Set()
   const register = (set: Set<unknown>) => (value: unknown) => {
     set.add(value)

@@ -1,7 +1,7 @@
 /**
  * Automatic turn-end distillation: when the plugin is enabled, each turn of a
  * top-level agent that did real work (made tool calls) and did not already
- * record memory is followed by one steering step asking the agent to distill
+ * persist memory is followed by one steering step asking the agent to distill
  * the turn into memoir_record entries. Turns without tool activity are left
  * alone (no extra model cost), subagent sessions are never steered, and each
  * turn is steered at most once — the steering step runs inside the same turn,
@@ -14,6 +14,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
+import type { MemoirActivity } from './activity.js'
 
 // Session V4 requires each producer to own a source kind; the generic
 // `plugin` kind was removed. This is the SDK's public extension seam.
@@ -46,22 +47,7 @@ export interface TurnActivity {
   toolCalls: number
 }
 
-/**
- * Session-log compatibility surface. DSH <= alpha.3 exposed `events` while
- * alpha.4+ keeps the log private and exposes an immutable snapshot method.
- */
-export interface SessionEventSource {
-  readonly events?: readonly TurnEventLike[]
-  snapshotEvents?: () => readonly TurnEventLike[]
-}
-
-/** Read a stable session event snapshot across the old and new DSH APIs. */
-export function sessionEventSnapshot(session: SessionEventSource | undefined): readonly TurnEventLike[] {
-  if (typeof session?.snapshotEvents === 'function') return session.snapshotEvents()
-  return session?.events ?? []
-}
-
-/** Scan the tail of a session log for one turn's tool activity. */
+/** Pure event-fixture fold. Runtime activity comes from the host projection. */
 export function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity {
   let recorded = false
   let toolCalls = 0
@@ -73,8 +59,8 @@ export function turnActivity(events: readonly TurnEventLike[], turn: number): Tu
     if (data.turn !== turn) continue
     if (event.type === 'tool/call') {
       toolCalls += 1
-      if (data.name === 'memoir_record' || data.name === 'memoir_update') recorded = true
     }
+    if (event.type === 'dsh-memoir/written') recorded = true
   }
   return { worked: toolCalls > 0, recorded, toolCalls }
 }
@@ -157,7 +143,7 @@ export class AutoDistillGate {
   }
 }
 
-export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed'
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed' | 'unavailable'
 
 /** Process-local counters only; never retains message content or credentials. */
 export class DistillDiagnostics {
@@ -165,6 +151,9 @@ export class DistillDiagnostics {
   private last: { outcome: DistillOutcome; at: number; turn: number; toolCalls: number } | null = null
   private workedTurns = 0
   private agents = 0
+  private writes = { persisted: 0, afterReminder: 0, failed: 0, canceled: 0, needsResolution: 0, receiptFailed: 0 }
+
+  write(outcome: keyof DistillDiagnostics['writes']): void { this.writes[outcome] += 1 }
 
   record(outcome: DistillOutcome, at: number, turn: number, toolCalls: number, agents: number): void {
     this.counts[outcome] = (this.counts[outcome] ?? 0) + 1
@@ -173,7 +162,7 @@ export class DistillDiagnostics {
     this.agents = agents
   }
 
-  snapshot() { return { counts: { ...this.counts }, workedTurns: this.workedTurns, agents: this.agents, last: this.last === null ? null : { ...this.last } } }
+  snapshot() { return { counts: { ...this.counts }, writes: { ...this.writes }, workedTurns: this.workedTurns, agents: this.agents, last: this.last === null ? null : { ...this.last } } }
   setAgents(agents: number): void { this.agents = agents }
 }
 
@@ -205,6 +194,8 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
   language?: () => MemoirLanguage
   now?: () => number
   diagnostics?: DistillDiagnostics
+  /** Public host projection at the exact Session cursor; absent means skip safely. */
+  activity?: (agent: AutoDistillAgentLike) => MemoirActivity | undefined
 }): () => void {
   const gate = new AutoDistillGate()
   const integerAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
@@ -218,8 +209,12 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     if (!options.enabled()) { report('disabled'); return }
     if (isSubagentSession(agent)) { report('subagent'); return }
     if (signal.aborted) { report('aborted'); return }
-    const { worked, recorded, toolCalls } = turnActivity(sessionEventSnapshot(agent.session), turn)
-    if (!worked || recorded) { report(recorded ? 'recorded' : 'idle', toolCalls); return }
+    const activity = options.activity?.(agent)
+    if (activity === undefined) { report('unavailable'); return }
+    if (activity.turn > turn) { report('duplicate'); return }
+    const { recorded, toolCalls, reminded } = activity.turn === turn ? activity : { recorded: false, toolCalls: 0, reminded: false }
+    if (toolCalls === 0 || recorded) { report(recorded ? 'recorded' : 'idle', toolCalls); return }
+    if (reminded) { report('duplicate', toolCalls); return }
     const live = options.policy?.()
     const policy: AutoDistillPolicy = {
       every: integerAtLeast(live?.every ?? options.every, 1, 1),

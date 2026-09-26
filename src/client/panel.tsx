@@ -1022,6 +1022,11 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
                       <div>{t('distill.worked')}: {diag.autoDistill.workedTurns} · {t('distill.agents')}: {diag.autoDistill.agents}/1024</div>
                       <div>{t('distill.note')}</div>
                       {Object.entries(diag.autoDistill.counts).map(([reason, count]) => <div key={reason}>{t(`distill.${reason}`)}: {count}</div>)}
+                      {diag.autoDistill.writes ? <div data-dsh-part="write-outcomes">
+                        <h4>{t('writes.title')}</h4>
+                        {Object.entries(diag.autoDistill.writes).map(([reason, count]) => <div key={reason}>{t(`writes.${reason}`)}: {count}</div>)}
+                        <div>{t('writes.note')}</div>
+                      </div> : null}
                       {diag.autoDistill.last ? <div>{t('distill.last')}: {t(`distill.${diag.autoDistill.last.outcome}`)} · {new Date(diag.autoDistill.last.at).toLocaleString()} · turn {diag.autoDistill.last.turn}</div> : null}
                     </div> : null}
                     <div>{t('diag.revision')}: {diag.storeRevision} · {t('diag.snapshot')}: {diag.snapshotCount}/{diag.snapshotMax}</div>

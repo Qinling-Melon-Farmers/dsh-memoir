@@ -15,6 +15,12 @@ import type { ToolRunContext } from '@deepseek-ai/dsh-tools';
 import type { MemoirEntry, MemoirSource, MemoirStore } from './store.js';
 import type { RetrievalEngine } from './retrieval.js';
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
+import type { MemoirActivity } from './activity.js';
+/** Host-owned projection and persistence receipt hooks; no log scans in tools. */
+export interface MemoryToolHooks {
+    activity(exec: ToolRunContext): MemoirActivity | undefined;
+    written?(exec: ToolRunContext): void;
+}
 /** One text content block (the only render shape these tools emit). */
 export declare function text(value: string): ContentBlock[];
 /** Resolve the caller session's workspace cwd (absolute), or undefined. */
@@ -29,11 +35,11 @@ export interface ReadToolOptions {
 }
 /**
  * Resolve trusted source metadata from the executing agent. The tool runtime
- * does not expose a turn field directly, but it appends the matching
- * tool/call event before dispatch; rootCallId also covers code-mode nested
- * dispatches. Missing turn data degrades to session-only provenance.
+ * does not expose a turn field directly: the public projection tracks the
+ * matching tool/call before dispatch. rootCallId also covers code-mode nested
+ * dispatches. Missing/evicted turn data degrades to session-only provenance.
  */
-export declare function resolveMemorySource(exec: ToolRunContext | undefined): MemoirSource | undefined;
+export declare function resolveMemorySource(exec: ToolRunContext | undefined, hooks?: MemoryToolHooks): MemoirSource | undefined;
 /** Static startup values or a live provider backed by GUI settings. */
 export type ReadToolOptionsSource = ReadToolOptions | (() => ReadToolOptions);
 /** Full-detail entry line (time + label + title + content). */
@@ -41,8 +47,8 @@ export declare function renderEntryFull(entry: MemoirEntry, language?: MemoirLan
 /** Compact one-line entry (id + title + collapsed single-line content). */
 export declare function renderEntryCompact(entry: MemoirEntry, maxContent?: number): string;
 /** The record tool: persist one memory entry with pre-write governance. */
-export declare function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine, languageSource?: MemoirLanguageSource, hooks?: MemoryToolHooks): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** Update one existing entry while preserving its id and creation time. */
-export declare function memoirUpdateTool(store: MemoirStore, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;
+export declare function memoirUpdateTool(store: MemoirStore, languageSource?: MemoirLanguageSource, hooks?: MemoryToolHooks): import("@deepseek-ai/dsh-tools").ToolDefinition;
 /** The read tool: project / global / all memory with optional filters. */
 export declare function memoirReadTool(store: MemoirStore, options?: ReadToolOptionsSource, retrieval?: RetrievalEngine, languageSource?: MemoirLanguageSource): import("@deepseek-ai/dsh-tools").ToolDefinition;

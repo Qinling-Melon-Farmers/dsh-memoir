@@ -14,19 +14,28 @@ import type { Config } from '../lib/index.js'
 import { MemoirStore } from '../lib/store.js'
 import { MemorySnapshotManager, sessionKeyOf } from '../lib/snapshot.js'
 import { callRoute, makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
+import { emptyActivity } from '../lib/activity.js'
+import { turnActivity } from '../lib/autodistill.js'
 
 interface ListenerRecord {
   name: string
-  listener: (payload: unknown) => void
+  listener: (payload: unknown, ...args: unknown[]) => void
 }
 
 /** Build a recording mock cordis context. */
 function makeCtx() {
+  let observedTurn = 0
   const ctx = {
     registeredTools: [] as Array<{ name: string; description: string; execute: (args: any, exec: any) => Promise<any> }>,
     registeredRoutes: [] as Array<{ kind: string; path: string; handler: (req: any, res: any) => Promise<void> | void }>,
     listeners: [] as ListenerRecord[],
     sections: [] as Array<{ name: string; order: number; text: ((context: unknown) => string) | string }>,
+    sessionProjections: {
+      register: () => () => {},
+      stateOf: (session: { events?: Parameters<typeof turnActivity>[0] }) => ({
+        ...emptyActivity(), turn: observedTurn, ...turnActivity(session.events ?? [], observedTurn),
+      }),
+    },
     tools: {
       register: (def: { name: string; description: string }) => {
         ctx.registeredTools.push(def as never)
@@ -45,8 +54,13 @@ function makeCtx() {
         return () => {}
       },
     },
-    on: (name: string, listener: (payload: unknown) => void) => {
-      ctx.listeners.push({ name, listener })
+    on: (name: string, listener: (payload: unknown, ...args: unknown[]) => void) => {
+      ctx.listeners.push({ name, listener: name === 'agent/turn-stopping' ? (payload) => {
+        observedTurn = (payload as { turn: number }).turn
+        listener(payload)
+      } : listener })
+      // Keep turn tests independent of incidental registration order.
+      ctx.listeners.sort((a, b) => Number(a.name === 'tools/result') - Number(b.name === 'tools/result'))
       return () => {}
     },
     effect(fn: () => (() => void) | void): () => void {
@@ -76,7 +90,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.equal(ctx.sections[0]?.name, 'plugin:dsh-memoir')
   assert.equal(ctx.sections[0]?.order, 150)
   assert.equal(typeof ctx.sections[0]?.text, 'function')
-  assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed'])
+  assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed', 'tools/result'])
 })
 
 test('apply with enabled=false mounts nothing', () => {
@@ -88,6 +102,22 @@ test('apply with enabled=false mounts nothing', () => {
   assert.equal(ctx.listeners.length, 0)
 })
 
+test('final write diagnostics distinguish failures, cancellation and unresolved similarity without duplicate counting', async () => {
+  const ctx = makeCtx()
+  applyTest(ctx)
+  const observe = ctx.listeners.find(item => item.name === 'tools/result')!.listener
+  const failed = { name: 'memoir_record', token: Symbol('failure') }
+  const error = { isError: true, error: { info: { code: 'IO_ERROR' } } }
+  observe(failed, error)
+  observe(failed, error)
+  observe({ name: 'memoir_update', token: Symbol('cancel') }, { isError: true, error: { info: { code: 'ABORTED_BEFORE_DISPATCH' } } })
+  observe({ name: 'memoir_record', token: Symbol('similar') }, { isError: false, value: { action: 'needs-resolution' } })
+  observe({ name: 'read', token: Symbol('unrelated') }, error)
+  const result = await callRoute(ctx.registeredRoutes[0]!.handler, { url: '/api/dsh-memoir/diagnostics' })
+  const writes = (result.envelope.value as { autoDistill: { writes: Record<string, number> } }).autoDistill.writes
+  assert.deepEqual(writes, { persisted: 0, afterReminder: 0, failed: 1, canceled: 1, needsResolution: 1, receiptFailed: 0 })
+})
+
 test('apply with announceToAgent=false keeps workspace tracking but emits no prompt content', () => {
   const ctx = makeCtx()
   applyTest(ctx, { enabled: true, announceToAgent: false, autoDistill: true })
@@ -97,7 +127,7 @@ test('apply with announceToAgent=false keeps workspace tracking but emits no pro
   const provider = ctx.sections[0]?.text
   assert.equal(typeof provider, 'function')
   assert.equal((provider as (context: unknown) => string)({ agent: { session: { header: { cwd: 'C:\\workspace' } } } }), '')
-  assert.equal(ctx.listeners.length, 2)
+  assert.equal(ctx.listeners.length, 3)
 })
 
 test('apply with autoDistill=false keeps an inert listener for live Web enablement', () => {
@@ -106,7 +136,7 @@ test('apply with autoDistill=false keeps an inert listener for live Web enableme
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 2)
+  assert.equal(ctx.listeners.length, 3)
   const messages: unknown[] = []
   ctx.listeners[0]?.listener({
     agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, steer: (message: unknown) => messages.push(message) },
@@ -121,7 +151,7 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
   applyTest(ctx)
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 2)
+  assert.equal(ctx.listeners.length, 3)
 })
 
 test('agent language switches tools, prompt guidance, and auto-distill live', async () => {
