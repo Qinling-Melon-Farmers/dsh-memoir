@@ -7,6 +7,8 @@ body:
       value: |
         请保持本模板完整并填写所有必填部分。删除必填部分的 Issue 将被自动关闭。Bug 请使用「Bug 报告」表单，并附截图 / 日志证据、冒烟测试、引用代码与补丁。
 
+        无需自行添加标签或具备打标签权限；机器人将按 Issue 类型补标，缺标不构成关闭理由。
+
         提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues?q=is%3Aissue)
   - type: checkboxes
     id: duplicate-check

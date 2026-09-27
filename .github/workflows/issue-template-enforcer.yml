@@ -52,23 +52,39 @@ jobs:
             };
 
             const issueType = readSection('Issue 类型').trim().toLowerCase();
-            const hasBugLabel = (issue.labels || []).some((label) => String(label.name || '').toLowerCase() === 'bug');
-            const isBug = issueType === 'bug 报告' || hasBugLabel;
+            const labels = new Set((issue.labels || []).map((label) =>
+              String(typeof label === 'string' ? label : label.name || '').trim().toLowerCase()));
+            // Exact form values only: never guess moderation labels from prose.
+            const typeLabels = new Map([
+              ['bug 报告', 'bug'],
+              ['功能请求', 'enhancement'],
+              ['文档', 'documentation'],
+              ['问题', 'question'],
+            ]);
+            const typeLabel = typeLabels.get(issueType);
+            const isBug = typeLabel === 'bug' || labels.has('bug');
             const requiredSections = isBug
               ? [...baseRequiredSections, '证据截图 / 日志', '冒烟测试', '引用代码', '补丁']
               : baseRequiredSections;
 
             const missingSections = requiredSections.filter((label) => isBlank(readSection(label)));
             const invalidSections = [];
-            if (isBug && !hasBugLabel) {
+            const classification = isBug ? 'bug' : typeLabel;
+            if (classification && !labels.has(classification)) {
               // Classification is the bot's responsibility: external reporters
-              // may not have permission to add labels themselves.
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                labels: ['bug'],
-              });
+              // may not have permission to add labels themselves. Preserve
+              // existing labels; permission/configuration failures are not
+              // invalid reports and must not bypass independent body checks.
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: [classification],
+                });
+              } catch {
+                core.warning(`Issue #${issue.number}: could not add classification label; maintainers should check label configuration and workflow permissions. Reporters do not need to add labels. Template validation continues independently.`);
+              }
             }
             const bugEvidence = readSection('证据截图 / 日志');
             if (isBug && !isBlank(bugEvidence) && !hasScreenshotEvidence(bugEvidence)) {

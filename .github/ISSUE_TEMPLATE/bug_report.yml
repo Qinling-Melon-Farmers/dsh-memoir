@@ -8,6 +8,8 @@ body:
       value: |
         请保持本模板完整并填写所有必填部分。缺少截图 / 日志证据、冒烟测试、代码引用或补丁的 Bug 报告将被自动关闭。
 
+        无需自行添加标签或具备打标签权限；机器人会补充 bug 标签，缺标不构成关闭理由。
+
         提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues?q=is%3Aissue)
   - type: checkboxes
     id: duplicate-check

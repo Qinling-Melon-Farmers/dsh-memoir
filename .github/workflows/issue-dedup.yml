@@ -125,8 +125,10 @@ jobs:
                 issue_number: issue.number,
                 labels: ['duplicate'],
               });
-            } catch (error) {
-              // `duplicate` label 可能不存在，忽略，不影响关闭。
+            } catch {
+              // A labeling failure is not the reporter's responsibility.
+              // Duplicate evidence, not label presence, determines closure.
+              core.warning(`Issue #${issue.number}: could not add duplicate label; maintainers should check label configuration and workflow permissions. Duplicate detection is independent of labels.`);
             }
 
             await github.rest.issues.update({

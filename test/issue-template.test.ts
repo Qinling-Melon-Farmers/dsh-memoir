@@ -9,9 +9,9 @@ const marker = '          script: |'
 assert.equal(workflow.split(marker).length, 2)
 const script = workflow.split(marker)[1]!.split(/\r?\n/).map(line => line.replace(/^ {12}/, '')).join('\n')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-const run = new AsyncFunction('context', 'github', script)
+const run = new AsyncFunction('context', 'github', 'core', script)
 
-type Issue = { number: number; body: string; labels?: { name: string }[]; pull_request?: object }
+type Issue = { number: number; body: string; labels?: Array<string | { name: string }>; pull_request?: object }
 type Call = { action: 'addLabels' | 'createComment' | 'update'; args: Record<string, unknown> }
 
 function report(type = 'Bug 报告', overrides: Record<string, string> = {}): string {
@@ -33,7 +33,7 @@ function report(type = 'Bug 报告', overrides: Record<string, string> = {}): st
   return Object.entries(sections).map(([heading, content]) => `### ${heading}\n\n${content}`).join('\n\n')
 }
 
-async function execute(issue: Issue, labelFailure = false): Promise<Call[]> {
+async function execute(issue: Issue, labelFailure = false, warnings: string[] = []): Promise<Call[]> {
   const calls: Call[] = []
   const context = { payload: { issue }, repo: { owner: 'owner', repo: 'repo' } }
   const github = { rest: { issues: Object.fromEntries(
@@ -42,11 +42,7 @@ async function execute(issue: Issue, labelFailure = false): Promise<Call[]> {
       calls.push({ action, args })
     }]),
   ) } }
-  if (labelFailure) {
-    await assert.rejects(run(context, github), /API label permission failure/)
-  } else {
-    await run(context, github)
-  }
+  await run(context, github, { warning: (message: string) => warnings.push(message) })
   return calls
 }
 
@@ -59,8 +55,63 @@ test('already labeled complete bug report has no redundant mutations', async () 
   assert.deepEqual(await execute({ number: 12, body: report(), labels: [{ name: 'bug' }] }), [])
 })
 
-test('request/question needs only its own sections and is not labeled as a bug', async () => {
-  assert.deepEqual(await execute({ number: 13, body: report('问题') }), [])
+const classifications = [
+  ['Bug 报告', 'bug'], ['功能请求', 'enhancement'], ['文档', 'documentation'], ['问题', 'question'],
+] as const
+
+for (const [type, label] of classifications) {
+  test(`external ${type} without labels is accepted and gets only ${label}`, async () => {
+    assert.deepEqual(await execute({ number: 20, body: report(type) }), [
+      { action: 'addLabels', args: { owner: 'owner', repo: 'repo', issue_number: 20, labels: [label] } },
+    ])
+  })
+
+  test(`${type} preserves unrelated labels and reopening does not add duplicate labels`, async () => {
+    const labels = [{ name: 'accessibility' }, { name: 'help wanted' }]
+    const issue = { number: 20, body: report(type), labels }
+    const snapshot = structuredClone(issue)
+    assert.deepEqual((await execute(issue)).map(call => call.args.labels), [[label]])
+    assert.deepEqual(issue, snapshot, 'do not replace labels or edit issue body')
+    assert.deepEqual(await execute({ ...issue, labels: [...labels, { name: label.toUpperCase() }] }), [])
+    assert.deepEqual(await execute({ ...issue, labels: [label] }), [], 'string label representation is also supported')
+  })
+
+  test(`${type} label API failure only warns and does not reject a valid issue`, async () => {
+    const warnings: string[] = []
+    assert.deepEqual(await execute({ number: 20, body: report(type) }, true, warnings), [])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0]!, /maintainers should check/)
+    assert.match(warnings[0]!, /Reporters do not need to add labels/)
+  })
+
+  test(`${type} label API failure does not bypass independent body validation`, async () => {
+    const warnings: string[] = []
+    const calls = await execute({ number: 20, body: report(type, { '摘要': '_No response_' }) }, true, warnings)
+    assert.equal(warnings.length, 1)
+    assert.deepEqual(calls.map(call => call.action), ['createComment', 'update'])
+    assert.match(String(calls[0]!.args.body), /缺少或为空的必填部分：摘要/)
+    assert.doesNotMatch(String(calls[0]!.args.body), /权限|必须附带.*标签/)
+    assert.equal(calls[1]!.args.state, 'closed')
+  })
+}
+
+test('classification covers both forms; Other and unknown values remain unclassified', async () => {
+  const options = ['bug_report', 'standard_issue'].flatMap(name => {
+    const form = readFileSync(new URL(`../.github/ISSUE_TEMPLATE/${name}.yml`, import.meta.url), 'utf8')
+    const section = form.match(/id: issue-type[\s\S]*?options:\r?\n((?:\s+- [^\r\n]+\r?\n)+)/)![1]!
+    return section.trim().split(/\r?\n/).map(line => line.trim().replace(/^- /, ''))
+  })
+  assert.deepEqual(options, [...classifications.map(([type]) => type), '其他'])
+  for (const type of ['其他', 'unrecognized', '__proto__', 'constructor']) {
+    assert.deepEqual(await execute({ number: 21, body: report(type) }), [])
+  }
+})
+
+test('moderation labels do not make a complete non-bug issue invalid', async () => {
+  for (const name of ['duplicate', 'invalid', 'wontfix', 'good first issue', 'help wanted', 'accessibility']) {
+    const calls = await execute({ number: 21, body: report('问题'), labels: [{ name }] })
+    assert.deepEqual(calls.map(call => [call.action, call.args.labels]), [['addLabels', ['question']]])
+  }
 })
 
 test('missing bug content still closes with a useful reason and a request to complete the original issue', async () => {
@@ -91,4 +142,10 @@ test('pull requests are not processed as issues', async () => {
 
 test('bot labeling API failure does not close or blame the reporter', async () => {
   assert.deepEqual(await execute({ number: 12, body: report() }, true), [])
+})
+
+test('bug evidence remains required even when automatic labeling fails', async () => {
+  const calls = await execute({ number: 12, body: report('Bug 报告', { '证据截图 / 日志': 'No image.' }) }, true)
+  assert.deepEqual(calls.map(call => call.action), ['createComment', 'update'])
+  assert.match(String(calls[0]!.args.body), /证据截图 \/ 日志必须包含/)
 })

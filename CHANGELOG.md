@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 中文
+
+- 将 Issue 自动补标推广至 `bug` / `enhancement` / `documentation` / `question`；外部贡献者无需标签权限，标签 API 失败只告警，正文/证据仍独立校验。保留已有标签，未知分类交由维护者判断；增加重复检测及 PR 审核不依赖缺标的回归覆盖。本项仅调整仓库自动化，不改 npm 插件运行时。
+
+### English
+
+- Extend automatic issue classification to `bug`, `enhancement`, `documentation` and `question`. External contributors need no labeling permissions; label API failures only warn while body/evidence validation remains independent. Preserve existing labels and leave unknown types to maintainers; add regressions keeping duplicate detection and PR review independent of missing labels. Repository automation only; no npm runtime change.
+
 ## [0.8.2] - 2026-09-27
 
 ### 中文
