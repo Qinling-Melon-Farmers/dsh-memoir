@@ -25,6 +25,7 @@ import { makeT } from './i18n.js'
 import { MemoirPanel } from './panel.jsx'
 import { mountPanelStyles } from './styles.js'
 import { mainWorkspaceCwd } from './native-navigation.js'
+import { watchSidebar } from './sidebar.js'
 
 type NativeGlobalProps = { useSessions: UseSessions }
 type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
@@ -115,6 +116,7 @@ export function apply(rawCtx: Context): void {
   const t = makeT(document)
 
   ctx.effect(() => mountPanelStyles(), 'dsh-memoir: native alpha styles')
+  ctx.effect(() => watchSidebar(ctx, api, t), 'dsh-memoir: optional sidebar')
   ctx.effect(() => {
     let disposers: Array<() => void> = []
     const register = (): void => {

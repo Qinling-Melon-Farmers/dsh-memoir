@@ -12,13 +12,13 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH and Zod 4 peers are supplied by the host environment; Zod validates session projections and is not bundled.
 
 > [!IMPORTANT]
-> **0.8.1 requires DSH `>=0.1.7-rc.1 <0.1.8-0`**, with SDKs pinned to `0.1.7-rc.2`. It refines unskinned Desktop settings backgrounds, spacing and cards, adds actual-save diagnostics, and adopts public Session projections. Keep `dsh-memoir@0.7.1` on DSH 0.1.5.
+> **0.8.2 requires DSH `>=0.1.7-rc.1 <0.1.8-0`**, with SDKs pinned to `0.1.7-rc.2`. It fixes auto-distillation hiding the original task answer, adds an optional native right-sidebar panel and offline About & help, and retains unskinned Desktop styling, actual-save diagnostics and public Session projections. Keep `dsh-memoir@0.7.1` on DSH 0.1.5.
 >
 > `dsh-memoir@0.7.1` fixes lost session snapshots after restart or RAM eviction (#10), supporting DSH **0.1.5-rc.1 / rc.2**. It requires `>=0.1.5-rc.1 <0.1.6-0`; check your host first. Keep `0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2; those older lines do not include this fix.
 
 ```bash
 npm install --global @deepseek-ai/dsh@0.1.7-rc.2
-dsh plugin --profile web add dsh-memoir@0.8.1
+dsh plugin --profile web add dsh-memoir@0.8.2
 ```
 
 Restart `dsh web`. Memory remains local and is not automatically deleted when the plugin is updated or removed.
@@ -88,13 +88,15 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 
 ## Automatic distillation
 
-0.8.1 diagnostics distinguish reminders, persistence, failures, cancellation, unresolved similarity, and unavailable receipts. Only persisted `memoir_record` / `memoir_update` operations suppress reminders; failed calls or unresolved candidates do not count as saves. Host cancellation may follow persistence, so counters can overlap. Correlation with a reminder proves neither causation nor semantic correctness. GUI writes are excluded from Agent-tool counters.
+0.8.2 diagnostics distinguish reminders, persistence, failures, cancellation, unresolved similarity, and unavailable receipts. Only persisted `memoir_record` / `memoir_update` operations suppress reminders; failed calls or unresolved candidates do not count as saves. Host cancellation may follow persistence, so counters can overlap. Correlation with a reminder proves neither causation nor semantic correctness. GUI writes are excluded from Agent-tool counters.
 
-0.8.1 uses public `sessionProjections` to reconstruct current-turn activity from logs and checkpoints without deprecated `snapshotEvents()` reads. Each session retains at most 4096 current-turn call IDs, without arguments or content; evicted IDs degrade to session-only provenance. Gate state is capped at 1024 agents and cleared on disposal. Legacy writes have no receipts: a historical call alone cannot prove persistence. BM25 remains lexical retrieval, not guaranteed cross-language semantic matching.
+0.8.2 uses public `sessionProjections` to reconstruct current-turn activity from logs and checkpoints without deprecated `snapshotEvents()` reads. Each session retains at most 4096 current-turn call IDs, without arguments or content; evicted IDs degrade to session-only provenance. Gate state is capped at 1024 agents and cleared on disposal. Legacy writes have no receipts: a historical call alone cannot prove persistence. BM25 remains lexical retrieval, not guaranteed cross-language semantic matching.
 
 Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
 
-> **Known display limitation (DSH 0.1.7-rc.2 with Memoir 0.8.0 / 0.8.1):** Compact chat selects only the turn's final step as its default answer. A short distillation receipt can fold the original task answer into the process disclosure; a locally modified, fully silent prompt can leave the answer area empty. Expand the process disclosure or switch the transcript display to Normal (`normal`) to read the folded answer. Do not implement silent distillation merely by prohibiting output while retaining same-turn `steer`. This remains unresolved; follow [#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13).
+> **0.8.2 fixes distillation-induced answer folding for new turns ([#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)):** The public `followup` API queues a separate memory wrap-up turn instead of using same-turn `steer`. A short receipt, empty output or failed wrap-up tool cannot change the original task answer’s turn boundary. Memory provenance still points to the source work turn. Wrap-up turns neither advance the worked-turn cadence nor recursively trigger distillation. This is still visible, cancelable model work—not a free background task—and may increase the displayed turn count.
+>
+> Upgrading does not rewrite history. For same-turn folding already recorded by 0.8.0 / 0.8.1, expand the process disclosure or use Normal (`normal`) transcript mode. This fix does not change DSH’s answer selection for arbitrary same-turn continuations from other producers, and does not rely on a “remain silent” prompt.
 
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
@@ -154,11 +156,11 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.8.1`) | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.1` | DSH 0.1.7 line |
+| npm `latest` (`0.8.2`) | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | DSH 0.1.7 line |
 | pinned npm `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | Legacy 0.1.5 line |
 | pinned npm `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | Legacy 0.1.2 line |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| Source `v0.8.1` | `>=0.1.7-rc.1 <0.1.8-0` | local build + `link:` | Development; not compatible with legacy 0.1.5 / 0.1.6 |
+| Source `v0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | local build + `link:` | Development; not compatible with legacy 0.1.5 / 0.1.6 |
 
 Node.js `^22.19.0 || >=24.0.0` is required. 0.7.1 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
 
@@ -178,7 +180,14 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 </details>
 
-0.8.1 uses native `uiWorkspace`, `conversation.view` / `settings.section`, and the Session V4 producer-owned distillation source. Links open sessions and turn IDs remain copyable; no global DOM turn scrolling is used. Settings inherit the host background and cards use theme layers while preserving skins and independent scrolling. Store v4 / settings v3 / snapshot v1 are unchanged. Back up DSH_HOME before upgrading: host session migration is separate from plugin memory storage.
+0.8.2 uses native `uiWorkspace`, `conversation.view` / `settings.section`, and the Session V4 producer-owned distillation source. Links open sessions and turn IDs remain copyable; no global DOM turn scrolling is used. Settings inherit the host background and cards use theme layers while preserving skins and independent scrolling. Store v4 / settings v3 / snapshot v1 are unchanged. Back up DSH_HOME before upgrading: host session migration is separate from plugin memory storage.
+
+## Native sidebar and help
+
+- Existing Conversation and Settings entries stay unchanged. The right-sidebar guide now offers Memory for browsing project memory, Hot Memory and diagnostics alongside chat; it never opens automatically or replaces another panel.
+- Each sidebar instance follows its own session workspace and reuses the same data layer, with independent active surfaces and scroll state. Conversation and Settings remain available when the optional sidebar service is absent.
+- Under Memory settings, the collapsed About & help card shows the plugin version, host range, SDK baseline, maintainer, repository, bilingual documentation, releases and issue links. The plugin repository is explicitly distinct from the current workspace.
+- No background update requests, workspace Git-remote inspection or path/memory uploads. Use the host plugin manager to update, after checking the target package’s DSH requirements and prerelease channel. The panel does not auto-upgrade.
 
 ## Storage, privacy, and security boundaries
 
@@ -260,6 +269,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current version is [v0.8.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.1), targeting DSH 0.1.7. Keep 0.7.1 on legacy DSH 0.1.5.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current version is [v0.8.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.2), targeting DSH 0.1.7. Keep 0.7.1 on legacy DSH 0.1.5.
 
 Apache-2.0

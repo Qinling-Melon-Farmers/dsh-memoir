@@ -93,6 +93,25 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed', 'tools/result'])
 })
 
+test('wrap-up writes link to the work turn but persist their receipt in the execution turn', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const ctx = makeCtx()
+    const state = { ...emptyActivity(), turn: 2, originTurn: 1, distilling: true, reminded: true, toolCalls: 1, worked: true, calls: ['call-test-2'] }
+    ctx.sessionProjections.stateOf = () => state
+    const storePath = ws.cwd + '/memory.json'
+    apply(ctx as unknown as Context, { storePath, settingsPath: ws.cwd + '/settings.json' })
+    const receipts: unknown[] = []
+    const exec = makeExec(ws.cwd, 'origin-session', 2)
+    Object.assign(exec.agent!.session, { append: (type: string, data: unknown) => { receipts.push({ type, data }) } })
+    const record = ctx.registeredTools.find(tool => tool.name === 'memoir_record')!
+    await record.execute({ section: 'work', title: 'Verified work', content: 'Preserve the original work source.' }, exec)
+    const entry = new MemoirStore(storePath).entries(ws.cwd)[0]!
+    assert.deepEqual(entry.source, { sessionId: 'origin-session', turnId: 1 })
+    assert.deepEqual(receipts, [{ type: 'dsh-memoir/written', data: { turn: 2, callId: 'call-test-2' } }])
+  } finally { ws.cleanup() }
+})
+
 test('apply with enabled=false mounts nothing', () => {
   const ctx = makeCtx()
   applyTest(ctx, { enabled: false })
@@ -139,7 +158,7 @@ test('apply with autoDistill=false keeps an inert listener for live Web enableme
   assert.equal(ctx.listeners.length, 3)
   const messages: unknown[] = []
   ctx.listeners[0]?.listener({
-    agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, steer: (message: unknown) => messages.push(message) },
+    agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, followup: (message: unknown) => messages.push(message) },
     turn: 1,
     signal: new AbortController().signal,
   })
@@ -179,7 +198,7 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
     agent: {
       id: 'english-agent',
       session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] },
-      steer: (message: { content?: Array<{ text?: string }> }) => messages.push(message),
+      followup: (message: { content?: Array<{ text?: string }> }) => messages.push(message),
     },
     turn: 1,
     signal: new AbortController().signal,
@@ -209,7 +228,7 @@ test('apply forwards auto-distill frequency config to the turn-end listener', ()
   const agent = {
     id: 'configured-agent',
     session: { header: {}, events },
-    steer: (message: unknown) => { messages.push(message) },
+    followup: (message: unknown) => { messages.push(message) },
   }
   const signal = new AbortController().signal
 
@@ -244,7 +263,7 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
         { type: 'tool/call', data: { turn: 1, name: 'read' } },
         { type: 'tool/call', data: { turn: 2, name: 'read' } },
       ] },
-      steer: (message: unknown) => messages.push(message),
+      followup: (message: unknown) => messages.push(message),
     }
     const signal = new AbortController().signal
     listener({ agent, turn: 1, signal })

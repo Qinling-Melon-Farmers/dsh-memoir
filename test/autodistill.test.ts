@@ -1,7 +1,7 @@
 /**
- * Auto-distill tests: the turn-end steering decision logic — turn activity
+ * Auto-distill tests: the turn-end follow-up decision logic — turn activity
  * scanning, subagent exclusion, the per-turn gate, and the listener wiring
- * against a mock event wire (steer assertions on a spy agent).
+ * against a mock event wire (followup assertions on a spy agent).
  */
 
 import { test } from 'node:test'
@@ -58,7 +58,7 @@ test('a call alone, including a failed or unresolved write, is not persistence',
 })
 
 test('isSubagentSession excludes subagents and nested delegations', () => {
-  const base = { id: 's', session: { header: {}, events: [] }, steer: () => {} } as unknown as AutoDistillAgentLike
+  const base = { id: 's', session: { header: {}, events: [] }, followup: () => {} } as unknown as AutoDistillAgentLike
   assert.equal(isSubagentSession(base), false)
   assert.equal(isSubagentSession({ ...base, session: { ...base.session, header: { origin: 'subagent' } } }), true)
   assert.equal(isSubagentSession({ ...base, session: { ...base.session, header: { delegationDepth: 1 } } }), true)
@@ -69,7 +69,7 @@ test('AutoDistillGate claims each turn once per agent and prunes', () => {
   const gate = new AutoDistillGate()
   const policy = { every: 1, cooldownMs: 0, minTools: 1 }
   assert.equal(gate.consume('a', 1, 1, policy, 0), true)
-  gate.recordSteer('a', 0)
+  gate.recordReminder('a', 0)
   assert.equal(gate.consume('a', 1, 1, policy, 0), false, 'same agent+turn only once')
   assert.equal(gate.consume('a', 2, 1, policy, 0), true)
   assert.equal(gate.consume('b', 1, 1, policy, 0), true, 'independent per agent')
@@ -93,7 +93,7 @@ test('AutoDistillGate combines worked-turn interval, tool threshold, and cooldow
   assert.equal(gate.consume('a', 2, 2, policy, 0), false, 'only two worked turns')
   assert.equal(gate.consume('a', 3, 1, policy, 0), false, 'interval ready but tool threshold is not')
   assert.equal(gate.consume('a', 4, 2, policy, 0), true, 'all three conditions are ready')
-  gate.recordSteer('a', 0)
+  gate.recordReminder('a', 0)
 
   assert.equal(gate.consume('a', 5, 2, policy, 59_999), false)
   assert.equal(gate.consume('a', 6, 2, policy, 59_999), false)
@@ -123,17 +123,17 @@ function makeWire(): WireHarness {
   }
 }
 
-function makeAgent(options: { events: TurnEventLike[]; origin?: string; delegationDepth?: number }): { agent: AutoDistillAgentLike; steered: UserMessage[] } {
-  const steered: UserMessage[] = []
+function makeAgent(options: { events: TurnEventLike[]; origin?: string; delegationDepth?: number }): { agent: AutoDistillAgentLike; queued: UserMessage[] } {
+  const queued: UserMessage[] = []
   const agent: AutoDistillAgentLike = {
     id: 'session-1',
     session: {
       header: { origin: options.origin, delegationDepth: options.delegationDepth },
       events: options.events,
     },
-    steer: (message) => { steered.push(message) },
+    followup: (message) => { queued.push(message) },
   }
-  return { agent, steered }
+  return { agent, queued }
 }
 
 const liveSignal = new AbortController().signal
@@ -141,15 +141,15 @@ test('diagnostics distinguish interval, duplicate, submission and prior update',
   const harness = makeWire()
   const diagnostics = new DistillDiagnostics()
   installAutoDistill(harness.wire, { enabled: () => true, every: 2, diagnostics, now: () => 100 })
-  const { agent, steered } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2), toolCallEvent(3, 'memoir_update'), { type: 'dsh-memoir/written', data: { turn: 3 } }] })
+  const { agent, queued } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2), toolCallEvent(3, 'memoir_update'), { type: 'dsh-memoir/written', data: { turn: 3 } }] })
   for (const turn of [1, 1, 2, 3]) harness.dispatch({ agent, turn, signal: liveSignal })
-  assert.equal(steered.length, 1)
+  assert.equal(queued.length, 1)
   const snapshot = diagnostics.snapshot()
-  assert.deepEqual(snapshot.counts, { interval: 1, duplicate: 1, steered: 1, recorded: 1 })
+  assert.deepEqual(snapshot.counts, { interval: 1, duplicate: 1, queued: 1, recorded: 1 })
   assert.equal(snapshot.workedTurns, 2)
   assert.equal(snapshot.last?.outcome, 'recorded')
-  snapshot.counts.steered = 900
-  assert.equal(diagnostics.snapshot().counts.steered, 1)
+  snapshot.counts.queued = 900
+  assert.equal(diagnostics.snapshot().counts.queued, 1)
 })
 
 test('agent disposal releases turn state and unregisters disposal listener', () => {
@@ -159,11 +159,11 @@ test('agent disposal releases turn state and unregisters disposal listener', () 
     onDisposed = listener
     return () => { onDisposed = undefined }
   } }, { enabled: () => true })
-  const { agent, steered } = makeAgent({ events: [toolCallEvent(1)] })
+  const { agent, queued } = makeAgent({ events: [toolCallEvent(1)] })
   harness.dispatch({ agent, turn: 1, signal: liveSignal })
   onDisposed?.(agent.id)
   harness.dispatch({ agent, turn: 1, signal: liveSignal })
-  assert.equal(steered.length, 2)
+  assert.equal(queued.length, 2)
   dispose()
   assert.equal(onDisposed, undefined)
 })
@@ -182,36 +182,36 @@ test('gate bounds retained agents and rejects old turns after long sessions', ()
 const aborted = new AbortController()
 aborted.abort()
 
-test('installAutoDistill steers once per worked turn with the plugin source', () => {
+test('installAutoDistill followups once per worked turn with the plugin source', () => {
   const harness = makeWire()
   const dispose = installAutoDistill(harness.wire, { enabled: () => true })
-  const { agent, steered } = makeAgent({ events: [toolCallEvent(3, 'read')] })
+  const { agent, queued } = makeAgent({ events: [toolCallEvent(3, 'read')] })
 
   harness.dispatch({ agent, turn: 3, signal: liveSignal })
-  assert.equal(steered.length, 1)
-  const message = steered[0]!
+  assert.equal(queued.length, 1)
+  const message = queued[0]!
   assert.ok(String((message.content[0] as { text?: string }).text).includes('memoir_record'))
-  assert.deepEqual(message.source, { kind: 'dsh-memoir' })
+  assert.deepEqual(message.source, { kind: 'dsh-memoir', originTurn: 3 })
   assert.ok(DISTILL_PROMPT.includes('memoir_record'))
 
   harness.dispatch({ agent, turn: 3, signal: liveSignal })
-  assert.equal(steered.length, 1, 'same turn is never steered twice')
+  assert.equal(queued.length, 1, 'same turn is never queued twice')
 
   dispose()
   harness.dispatch({ agent, turn: 4, signal: liveSignal })
-  assert.equal(steered.length, 1, 'disposed listener stops steering')
+  assert.equal(queued.length, 1, 'disposed listener stops follow-up')
 })
 
 test('installAutoDistill respects the enabled switch', () => {
   const harness = makeWire()
   let enabled = false
   installAutoDistill(harness.wire, { enabled: () => enabled })
-  const { agent, steered } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2)] })
+  const { agent, queued } = makeAgent({ events: [toolCallEvent(1), toolCallEvent(2)] })
   harness.dispatch({ agent, turn: 1, signal: liveSignal })
-  assert.equal(steered.length, 0, 'disabled: no steering')
+  assert.equal(queued.length, 0, 'disabled: no follow-up')
   enabled = true
   harness.dispatch({ agent, turn: 2, signal: liveSignal })
-  assert.equal(steered.length, 1, 'enabled: worked turns are steered')
+  assert.equal(queued.length, 1, 'enabled: worked turns are queued')
 })
 
 test('installAutoDistill skips aborted turns, subagents, idle turns, and already-recorded turns', () => {
@@ -220,19 +220,19 @@ test('installAutoDistill skips aborted turns, subagents, idle turns, and already
 
   const abortedAgent = makeAgent({ events: [toolCallEvent(1)] })
   harness.dispatch({ agent: abortedAgent.agent, turn: 1, signal: aborted.signal })
-  assert.equal(abortedAgent.steered.length, 0, 'aborted turns are left alone')
+  assert.equal(abortedAgent.queued.length, 0, 'aborted turns are left alone')
 
   const subagent = makeAgent({ events: [toolCallEvent(1)], origin: 'subagent' })
   harness.dispatch({ agent: subagent.agent, turn: 1, signal: liveSignal })
-  assert.equal(subagent.steered.length, 0, 'subagent sessions never steer')
+  assert.equal(subagent.queued.length, 0, 'subagent sessions never followup')
 
   const idle = makeAgent({ events: [] })
   harness.dispatch({ agent: idle.agent, turn: 5, signal: liveSignal })
-  assert.equal(idle.steered.length, 0, 'turns without tool calls are left alone')
+  assert.equal(idle.queued.length, 0, 'turns without tool calls are left alone')
 
   const recorded = makeAgent({ events: [toolCallEvent(9, 'memoir_record'), { type: 'dsh-memoir/written', data: { turn: 9 } }] })
   harness.dispatch({ agent: recorded.agent, turn: 9, signal: liveSignal })
-  assert.equal(recorded.steered.length, 0, 'turns that already recorded are left alone')
+  assert.equal(recorded.queued.length, 0, 'turns that already recorded are left alone')
 })
 
 test('installAutoDistill applies configurable frequency with an injected clock', () => {
@@ -245,7 +245,7 @@ test('installAutoDistill applies configurable frequency with an injected clock',
     minTools: 2,
     now: () => now,
   })
-  const { agent, steered } = makeAgent({ events: [
+  const { agent, queued } = makeAgent({ events: [
     toolCallEvent(1),
     toolCallEvent(2), toolCallEvent(2, 'write'),
     toolCallEvent(3), toolCallEvent(3, 'write'),
@@ -254,18 +254,18 @@ test('installAutoDistill applies configurable frequency with an injected clock',
   ] })
 
   harness.dispatch({ agent, turn: 1, signal: liveSignal })
-  assert.equal(steered.length, 0, 'first worked turn is below both interval and tool threshold')
+  assert.equal(queued.length, 0, 'first worked turn is below both interval and tool threshold')
   harness.dispatch({ agent, turn: 2, signal: liveSignal })
-  assert.equal(steered.length, 1, 'second worked turn satisfies interval and tool threshold')
+  assert.equal(queued.length, 1, 'second worked turn satisfies interval and tool threshold')
 
   now = 59_999
   harness.dispatch({ agent, turn: 3, signal: liveSignal })
   harness.dispatch({ agent, turn: 4, signal: liveSignal })
-  assert.equal(steered.length, 1, 'cooldown blocks even after the next interval')
+  assert.equal(queued.length, 1, 'cooldown blocks even after the next interval')
 
   now = 60_000
   harness.dispatch({ agent, turn: 5, signal: liveSignal })
-  assert.equal(steered.length, 2, 'cooldown updates only from the successful prior steer')
+  assert.equal(queued.length, 2, 'cooldown updates only from the successful prior followup')
 })
 
 test('installAutoDistill reads the live policy for each subsequent turn', () => {
@@ -275,23 +275,23 @@ test('installAutoDistill reads the live policy for each subsequent turn', () => 
     enabled: () => true,
     policy: () => policy,
   })
-  const { agent, steered } = makeAgent({ events: [
+  const { agent, queued } = makeAgent({ events: [
     toolCallEvent(1),
     toolCallEvent(2),
     toolCallEvent(3), toolCallEvent(3, 'write'),
   ] })
 
   harness.dispatch({ agent, turn: 1, signal: liveSignal })
-  assert.equal(steered.length, 0)
+  assert.equal(queued.length, 0)
   policy = { every: 1, cooldownMin: 0, minTools: 1 }
   harness.dispatch({ agent, turn: 2, signal: liveSignal })
-  assert.equal(steered.length, 1, 'updated interval and threshold apply without reinstalling the listener')
+  assert.equal(queued.length, 1, 'updated interval and threshold apply without reinstalling the listener')
   policy = { every: 1, cooldownMin: 0, minTools: 2 }
   harness.dispatch({ agent, turn: 3, signal: liveSignal })
-  assert.equal(steered.length, 2, 'later policy updates are read again')
+  assert.equal(queued.length, 2, 'later policy updates are read again')
 })
 
-test('installAutoDistill does not start cooldown when steer throws', () => {
+test('installAutoDistill does not start cooldown when followup throws', () => {
   const harness = makeWire()
   installAutoDistill(harness.wire, {
     enabled: () => true,
@@ -306,16 +306,40 @@ test('installAutoDistill does not start cooldown when steer throws', () => {
   const agent: AutoDistillAgentLike = {
     id: 'retry-after-failure',
     session: { header: {}, events },
-    steer: () => {
+    followup: () => {
       attempts += 1
-      if (shouldFail) throw new Error('steer failed')
+      if (shouldFail) throw new Error('followup failed')
     },
   }
 
-  assert.throws(() => harness.dispatch({ agent, turn: 1, signal: liveSignal }), /steer failed/)
+  assert.throws(() => harness.dispatch({ agent, turn: 1, signal: liveSignal }), /followup failed/)
   shouldFail = false
   harness.dispatch({ agent, turn: 2, signal: liveSignal })
   assert.equal(attempts, 2, 'the next worked turn retries without a false cooldown')
   harness.dispatch({ agent, turn: 3, signal: liveSignal })
   assert.equal(attempts, 2, 'the successful retry starts cooldown')
+})
+
+test('distillation turns never advance cadence, including no-op and failed writes after remount', () => {
+  const harness = makeWire()
+  const diagnostics = new DistillDiagnostics()
+  let state = { ...emptyActivity(), turn: 1, toolCalls: 1 }
+  const dispose = install(harness.wire, { enabled: () => true, every: 2, activity: () => state, diagnostics })
+  const { agent, queued } = makeAgent({ events: [] })
+  harness.dispatch({ agent, turn: 1, signal: liveSignal })
+  for (const turn of [2, 3, 4]) {
+    state = { ...state, turn, distilling: true, recorded: false }
+    harness.dispatch({ agent, turn, signal: liveSignal })
+  }
+  assert.equal(queued.length, 0)
+  assert.equal(diagnostics.snapshot().workedTurns, 1)
+  state = { ...state, turn: 5, distilling: false }
+  harness.dispatch({ agent, turn: 5, signal: liveSignal })
+  assert.equal(queued.length, 1, 'only actual work advances the interval')
+  dispose()
+  state = { ...state, turn: 6, distilling: true }
+  const remount = install(harness.wire, { enabled: () => true, activity: () => state })
+  harness.dispatch({ agent, turn: 6, signal: liveSignal })
+  assert.equal(queued.length, 1, 'cold process-local gate still excludes the persisted reminder turn')
+  remount()
 })

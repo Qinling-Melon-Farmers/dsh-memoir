@@ -1,7 +1,7 @@
 {
   "name": "dsh-memoir",
   "description": "DeepSeek Harness (DSH) local-first cross-session project memory: bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, lifecycle and bilingual Web GUI; no embeddings, external service or bundled runtime dependencies.",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -27,6 +27,7 @@
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-settings-general"
       ],
       "platform": "web"
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-agent": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent-loop": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
@@ -47,6 +49,7 @@
     "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-settings-general": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-workspace": "0.1.7-rc.2",
     "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.2",
@@ -61,6 +64,8 @@
     "@types/react-dom": "^18.3.7",
     "esbuild": "^0.28.2",
     "jsdom": "26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "typescript": "~5.8.3",
     "zod": "4.4.3"
   },

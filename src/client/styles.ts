@@ -52,6 +52,34 @@ export const PANEL_CSS = `
   background: transparent;
 }
 
+.memoir-sidebar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.memoir-sidebar-title svg { flex: 0 0 auto; }
+.memoir-sidebar-view { container-type: inline-size; }
+.memoir-sidebar-view .memoir-panel { padding: 12px; }
+.memoir-sidebar-view .memoir-surface-tabs { flex-wrap: wrap; }
+.memoir-sidebar-view .memoir-entry-actions { flex-wrap: wrap; }
+.memoir-about { margin-top: 16px; }
+.memoir-about summary { cursor: pointer; font-weight: 600; padding: 4px; }
+.memoir-about summary:focus-visible,
+.memoir-about a:focus-visible { outline: 2px solid var(--accent, #5284e7); outline-offset: 3px; }
+.memoir-about-body { display: grid; gap: 12px; padding-top: 14px; font-weight: 400; line-height: 1.65; overflow-wrap: anywhere; }
+.memoir-about-body p { margin: 0; }
+.memoir-about-body dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 6px 12px; margin: 0; }
+.memoir-about-body dd { margin: 0; }
+.memoir-about-links { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.memoir-about-links a { color: var(--dsw-alias-interactive-primary, var(--accent, #5284e7)); text-decoration: underline; text-underline-offset: 3px; }
+.memoir-about-note { color: var(--dsw-alias-label-secondary, var(--text-secondary, #666)); font-size: 12px; }
+@container (max-width: 420px) {
+  .memoir-sidebar-view .memoir-panel { padding: 8px; }
+  .memoir-sidebar-view .memoir-entry { padding: 12px; }
+  .memoir-about-body dl { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* --- center-column takeover (mirrors dsh-ssh / dsh-task-board) --------------- */
 
 [data-pane='conversation'],
@@ -203,7 +231,7 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.memoir-native-view .memoir-surface-scroll {
+.memoir-native-view:not(.memoir-sidebar-view) .memoir-surface-scroll {
   padding-bottom: calc(var(--dsh-composer-height, 112px) + 16px);
   scroll-padding-bottom: calc(var(--dsh-composer-height, 112px) + 16px);
 }

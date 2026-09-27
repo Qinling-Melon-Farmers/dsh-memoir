@@ -1,11 +1,12 @@
 /**
  * Automatic turn-end distillation: when the plugin is enabled, each turn of a
  * top-level agent that did real work (made tool calls) and did not already
- * persist memory is followed by one steering step asking the agent to distill
+ * persist memory is followed by a separate turn asking the agent to distill
  * the turn into memoir_record entries. Turns without tool activity are left
- * alone (no extra model cost), subagent sessions are never steered, and each
- * turn is steered at most once — the steering step runs inside the same turn,
- * so the per-turn gate is what lets the turn close afterwards.
+ * alone (no extra model cost), subagent sessions are excluded, and each work
+ * turn queues at most one reminder. Never steer inside the completed work
+ * turn: compact chat selects its last step as the answer. The replayable
+ * activity projection excludes reminder turns, including failed/no-op ones.
  *
  * Pure decision helpers are exported for unit tests.
  */
@@ -16,14 +17,15 @@ declare module '@deepseek-ai/dsh-llm/message' {
     interface MessageSourceMap {
         'dsh-memoir': {
             kind: 'dsh-memoir';
+            originTurn?: number;
         };
     }
 }
-/** The steering prompt injected at the end of an active turn. */
-export declare function distillPrompt(language?: MemoirLanguage): string;
+/** The follow-up instruction; the originating work turn is not rewritten. */
+export declare function distillPrompt(language?: MemoirLanguage, originTurn?: number): string;
 /** Backwards-compatible Chinese prompt constant. */
 export declare const DISTILL_PROMPT: string;
-/** Plugin identity stamped on the steering message source. */
+/** Plugin identity stamped on the follow-up message source. */
 export declare const AUTO_DISTILL_PLUGIN = "dsh-memoir";
 /** A minimal event view for the turn-activity scan (data is narrowed inside). */
 export interface TurnEventLike {
@@ -48,7 +50,7 @@ export interface AutoDistillAgentLike {
         readonly events?: readonly TurnEventLike[];
         snapshotEvents?: () => readonly TurnEventLike[];
     };
-    steer(message: UserMessage): void;
+    followup(message: UserMessage): void;
 }
 /** Subagent sessions (and any nested delegation) never get distilled. */
 export declare function isSubagentSession(agent: AutoDistillAgentLike): boolean;
@@ -69,12 +71,12 @@ export declare class AutoDistillGate {
      * are ready. Duplicate events never advance the worked-turn counter.
      */
     consume(agentId: string, turn: number, toolCalls: number, policy: AutoDistillPolicy, now: number): boolean;
-    /** Record a successful steer; failed steer attempts do not start cooldown. */
-    recordSteer(agentId: string, now: number): void;
+    /** Record a successful followup; failed followup attempts do not start cooldown. */
+    recordReminder(agentId: string, now: number): void;
     /** Drop all state for one agent (disposal hygiene). */
     forget(agentId: string): void;
 }
-export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed' | 'unavailable';
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'queued' | 'distillation' | 'failed' | 'unavailable';
 /** Process-local counters only; never retains message content or credentials. */
 export declare class DistillDiagnostics {
     private counts;
@@ -95,7 +97,8 @@ export declare class DistillDiagnostics {
             disabled?: number | undefined;
             aborted?: number | undefined;
             idle?: number | undefined;
-            steered?: number | undefined;
+            queued?: number | undefined;
+            distillation?: number | undefined;
             failed?: number | undefined;
             unavailable?: number | undefined;
         };
@@ -144,7 +147,7 @@ export declare function installAutoDistill(wire: AutoDistillWire, options: {
         cooldownMin?: number;
         minTools?: number;
     };
-    /** Optional live language source for the steering instruction. */
+    /** Optional live language source for the follow-up instruction. */
     language?: () => MemoirLanguage;
     now?: () => number;
     diagnostics?: DistillDiagnostics;

@@ -9,6 +9,8 @@ declare const schema: z.ZodObject<{
     calls: z.ZodArray<z.ZodString>;
     recorded: z.ZodBoolean;
     reminded: z.ZodBoolean;
+    distilling: z.ZodBoolean;
+    originTurn: z.ZodNullable<z.ZodNumber>;
 }, z.core.$strip>;
 export type MemoirActivity = z.infer<typeof schema>;
 export declare const emptyActivity: () => MemoirActivity;

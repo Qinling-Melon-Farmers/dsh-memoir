@@ -11,13 +11,13 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主环境提供；Zod 用于验证宿主会话投影，不捆绑进插件。
 
 > [!IMPORTANT]
-> **0.8.1 要求 DSH `>=0.1.7-rc.1 <0.1.8-0`**，开发 SDK 为 `0.1.7-rc.2`。优化桌面端无皮肤设置页的底色、留白及卡片排版；增加实际保存诊断，并迁移到公开 Session projection。旧 DSH 0.1.5 请固定安装 `dsh-memoir@0.7.1`。
+> **0.8.2 要求 DSH `>=0.1.7-rc.1 <0.1.8-0`**，开发 SDK 为 `0.1.7-rc.2`。修复自动蒸馏遮住原任务答复的问题；新增可选原生右侧记忆面板和离线“关于与帮助”。保留无皮肤桌面适配、实际保存诊断和公开 Session projection。旧 DSH 0.1.5 请固定安装 `dsh-memoir@0.7.1`。
 >
 > `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
 npm install --global @deepseek-ai/dsh@0.1.7-rc.2
-dsh plugin --profile web add dsh-memoir@0.8.1
+dsh plugin --profile web add dsh-memoir@0.8.2
 ```
 
 重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
@@ -87,13 +87,15 @@ memoir_record / memoir_update
 
 ## 自动蒸馏
 
-0.8.1 诊断页区分提醒提交、实际保存、失败、取消、相似记忆待确认和回执降级。只有成功保存的 `memoir_record` / `memoir_update` 才抑制本回合提醒；失败或相似候选待确认不算写入。保存后宿主仍可能取消最终工具结果，因此计数可以重叠。提醒与后续保存的关联不证明因果或内容正确。GUI 手工写入不计入 Agent 工具计数。
+0.8.2 诊断页区分提醒提交、实际保存、失败、取消、相似记忆待确认和回执降级。只有成功保存的 `memoir_record` / `memoir_update` 才抑制本回合提醒；失败或相似候选待确认不算写入。保存后宿主仍可能取消最终工具结果，因此计数可以重叠。提醒与后续保存的关联不证明因果或内容正确。GUI 手工写入不计入 Agent 工具计数。
 
-0.8.1 使用公开 `sessionProjections` 从日志和 checkpoint 重建当前回合，不再读取弃用的 `snapshotEvents()`。每会话只保留当前回合最多 4096 个调用 ID，不保存参数或正文；超出保留范围时来源降级为 session-only。门控最多保留 1024 个 Agent，销毁时清理；旧版写入没有保存回执，不能仅从历史调用推断成功。BM25 是词项召回，不承诺跨语言语义匹配。
+0.8.2 使用公开 `sessionProjections` 从日志和 checkpoint 重建当前回合，不再读取弃用的 `snapshotEvents()`。每会话只保留当前回合最多 4096 个调用 ID，不保存参数或正文；超出保留范围时来源降级为 session-only。门控最多保留 1024 个 Agent，销毁时清理；旧版写入没有保存回执，不能仅从历史调用推断成功。BM25 是词项召回，不承诺跨语言语义匹配。
 
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
-> **已知显示限制（DSH 0.1.7-rc.2，Memoir 0.8.0 / 0.8.1）**：紧凑对话模式只选择同回合最后一步作为默认答案。自动蒸馏追加短回执后，原任务答复可能被折进“用时 / 过程”；若自行把提示改成完全静默，默认答案区域还可能变空。展开过程或将对话显示切到“标准（normal）”可查看被折叠的正文。不要仅靠“禁止输出”与同回合 `steer` 实现静默蒸馏；此问题尚未修复，进展见 [#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)。
+> **0.8.2 修复了新回合的蒸馏答案折叠问题（[#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)）**：通过公开 `followup` 排入独立记忆收尾回合，不再用同回合 `steer` 抢占原任务回合的最后一步。短回执、空输出或收尾工具失败都不会改变原任务答复的回合边界；记忆来源仍指向原工作回合。收尾回合不计入 worked-turn 频率，也不会递归触发蒸馏。它仍是可见、可取消的模型收尾，不是无成本后台任务，可能增加会话显示的回合数。
+>
+> 升级不会改写旧会话：0.8.0 / 0.8.1 产生的同回合折叠历史仍需展开“用时 / 过程”或切到标准（`normal`）模式查看。本修复不改变 DSH 对任意其他同回合追加步骤的答案选择，也不靠“禁止输出”的提示词掩盖问题。
 
 `autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已成功保存记忆的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
 
@@ -153,11 +155,11 @@ memoir_record / memoir_update
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.8.1`） | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.1` | 0.1.7 兼容线 |
+| npm `latest`（`0.8.2`） | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | 0.1.7 兼容线 |
 | npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| 源码 `v0.8.1` | `>=0.1.7-rc.1 <0.1.8-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.5 / 0.1.6 |
+| 源码 `v0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.5 / 0.1.6 |
 
 需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
@@ -177,7 +179,14 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 </details>
 
-0.8.1 使用原生 `uiWorkspace`、`conversation.view` / `settings.section` 与 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不通过全局 DOM 自动滚到回合。设置页继承宿主背景、卡片使用主题层级色，保留皮肤覆盖与独立滚动。store v4 / settings v3 / snapshot v1 不变。升级 DSH 前备份 DSH_HOME，其会话迁移与插件记忆是两回事。
+0.8.2 使用原生 `uiWorkspace`、`conversation.view` / `settings.section` 与 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不通过全局 DOM 自动滚到回合。设置页继承宿主背景、卡片使用主题层级色，保留皮肤覆盖与独立滚动。store v4 / settings v3 / snapshot v1 不变。升级 DSH 前备份 DSH_HOME，其会话迁移与插件记忆是两回事。
+
+## 原生侧栏与帮助入口
+
+- 会话“记忆”和设置页入口保持不变；右侧栏引导页新增“记忆”，可边对话边看项目记忆、Hot Memory 和诊断，不会自动打开或抢占其它面板。
+- 侧栏读取所属会话的工作区，复用同一数据层；每个实例独立保存当前功能区和滚动状态。缺少侧栏服务时，会话页和设置页仍可用。
+- 任一记忆面板的“记忆设置”底部提供默认折叠的“关于与帮助”：显示插件版本、宿主范围、SDK 基线、维护者，以及仓库、双语文档、Release、反馈链接。插件仓库与当前工作区明确区分。
+- 关于区不后台联网、不探测工作区 Git remote、不上传路径或记忆内容。更新通过宿主插件管理器操作，先核对目标包要求的 DSH 版本和预发布通道；本面板不自动升级。
 
 ## 存储、隐私与安全边界
 
@@ -259,6 +268,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.8.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.1)，面向 DSH 0.1.7；旧 0.1.5 保留 0.7.1。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.8.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.2)，面向 DSH 0.1.7；旧 0.1.5 保留 0.7.1。
 
 Apache-2.0

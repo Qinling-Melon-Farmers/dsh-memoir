@@ -34,7 +34,7 @@ test('DSH 0.1.7 Session V4 retains tool provenance, distillation and frozen memo
     assert.deepEqual(resolveMemorySource(exec, hooks), { sessionId: session.id, turnId: 1 })
     let steered = 0
     const dispose = installAutoDistill({ on: (_name, listener) => {
-      listener({ agent: { id: session.id, session, steer: () => { steered++ } }, turn: 1, signal: new AbortController().signal })
+      listener({ agent: { id: session.id, session, followup: () => { steered++ } }, turn: 1, signal: new AbortController().signal })
       return () => {}
     } }, { enabled: () => true, activity })
     assert.equal(steered, 1)

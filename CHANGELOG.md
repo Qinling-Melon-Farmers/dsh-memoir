@@ -4,15 +4,27 @@
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-27
+
 ### 中文
 
-- 修复 Issue 模板机器人因缺少 `bug` 标签误关外部报告的问题：机器人自动补标，仍校验正文和证据；补充原 Issue 后可请求重开，无需重复提单（#12）。此项为仓库工作流维护，不改变已发布 npm 包。
-- 中英文 README 补充 compact 模式下同回合自动蒸馏的答案折叠限制、临时查看办法及静默提示风险；不宣称已修复显示异常（#13）。
+- 修复自动蒸馏遮住原任务答复（#13）：使用公开 `followup` 排入独立收尾回合，保留原任务回合最后一步。短回执、空输出和失败的收尾不再抢占原答案；不修改 DSH 核心、不重写旧会话。
+- 通过可重放的来源标记排除收尾回合，避免递归蒸馏或虚增工作回合频率。记忆溯源保留原工作回合，保存回执归属实际执行回合；取消、冷却、去重和冻结 Hot Memory 语义保持。
+- 新增可选原生右侧“记忆”面板及引导图标；保留会话/设置入口，复用同一数据层，按所属会话隔离项目、功能区及滚动。侧栏服务缺失/重载不阻塞原入口，注册与卸载仅处理本插件命名空间。
+- 设置功能区新增默认折叠的双语“关于与帮助”，展示构建版本、宿主范围、SDK 基线、维护者及仓库/文档/Release/反馈链接。无后台更新检查、工作区远端探测或隐式数据上传；升级前提示核对宿主和预发布通道。
+- 修复模板机器人因缺少 `bug` 标签误关外部报告（#12）：自动补标，仍校验正文/证据；可补全原 Issue 后请求重开，无需重复提单。
+- 补充真实 npm AgentLoop 的确定性回合边界测试、来源/保存回执分离、重放/重挂载、防递归、React DOM 多实例隔离与安全双语外链回归。SDK 固定 `0.1.7-rc.2`，宿主范围仍为 `>=0.1.7-rc.1 <0.1.8-0`；store v4 / settings v3 / snapshot v1 和零普通运行时依赖不变。
+- 旧版本已经生成的同回合折叠历史仍需展开过程或切换 Normal 查看；独立收尾仍消耗模型调用且可显示为单独回合，不宣称完全静默或修复宿主所有生产者的答案选择。
 
 ### English
 
-- Fix the issue-template bot closing external bug reports solely for a missing `bug` label. Apply the label automatically while retaining content/evidence validation; reporters can complete the original issue and request reopening instead of filing duplicates (#12). This is repository workflow maintenance, not a change to the published npm package.
-- Document compact-view folding after same-turn distillation, viewing workarounds and the risk of silent prompts in both READMEs; the display issue remains unresolved (#13).
+- Fix auto-distillation obscuring the original task answer (#13): use public `followup` to queue a separate wrap-up turn and preserve the original turn’s final step. Short receipts, empty output and failed wrap-up work no longer displace it. No DSH core patch or history rewrite.
+- Replayable source markers exclude wrap-up turns from recursive distillation and worked-turn cadence. Entry provenance retains the original work turn; save receipts belong to the executing turn. Cancellation, cooldown, deduplication and frozen Hot Memory semantics are preserved.
+- Add an optional native right-sidebar Memory panel and guide icon while keeping Conversation/Settings entries. Reuse the same data layer with session-bound projects and independent surfaces/scroll state. Missing/reloaded sidebar services do not block existing entries; cleanup touches only Memoir’s namespace.
+- Add collapsed bilingual About & help under Memory settings: build version, host range, SDK baseline, maintainer and repository/docs/releases/issues links. No background update checks, workspace-remote inspection or implicit uploads; upgrade guidance asks users to check host and prerelease compatibility.
+- Fix the template bot closing external reports solely for a missing `bug` label (#12). Add the label automatically while retaining body/evidence checks; reporters can complete the original issue and request reopening without filing duplicates.
+- Add deterministic real npm AgentLoop boundary tests, provenance/receipt separation, replay/remount and recursion guards, plus React DOM multi-instance and safe bilingual-link regressions. SDKs remain pinned to `0.1.7-rc.2`; host range `>=0.1.7-rc.1 <0.1.8-0`, store v4 / settings v3 / snapshot v1 and zero ordinary runtime dependencies are unchanged.
+- Previously recorded same-turn folding still needs process expansion or Normal mode. Separate wrap-up remains model work and may appear as another turn; this is not fully silent distillation or a host-wide answer-selection fix for all producers.
 
 ## [0.8.1] - 2026-09-26
 

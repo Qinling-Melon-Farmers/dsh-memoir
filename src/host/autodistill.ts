@@ -1,11 +1,12 @@
 /**
  * Automatic turn-end distillation: when the plugin is enabled, each turn of a
  * top-level agent that did real work (made tool calls) and did not already
- * persist memory is followed by one steering step asking the agent to distill
+ * persist memory is followed by a separate turn asking the agent to distill
  * the turn into memoir_record entries. Turns without tool activity are left
- * alone (no extra model cost), subagent sessions are never steered, and each
- * turn is steered at most once — the steering step runs inside the same turn,
- * so the per-turn gate is what lets the turn close afterwards.
+ * alone (no extra model cost), subagent sessions are excluded, and each work
+ * turn queues at most one reminder. Never steer inside the completed work
+ * turn: compact chat selects its last step as the answer. The replayable
+ * activity projection excludes reminder turns, including failed/no-op ones.
  *
  * Pure decision helpers are exported for unit tests.
  */
@@ -20,19 +21,22 @@ import type { MemoirActivity } from './activity.js'
 // `plugin` kind was removed. This is the SDK's public extension seam.
 declare module '@deepseek-ai/dsh-llm/message' {
   interface MessageSourceMap {
-    'dsh-memoir': { kind: 'dsh-memoir' }
+    'dsh-memoir': { kind: 'dsh-memoir'; originTurn?: number }
   }
 }
 
-/** The steering prompt injected at the end of an active turn. */
-export function distillPrompt(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): string {
-  return hostCopy(language).distillPrompt
+/** The follow-up instruction; the originating work turn is not rewritten. */
+export function distillPrompt(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE, originTurn?: number): string {
+  const origin = originTurn === undefined ? '' : language === 'en'
+    ? `Source work turn: ${originTurn}. This is a separate memory-only follow-up, not a new user task.\n`
+    : `来源工作回合：${originTurn}。这是独立的记忆收尾回合，不是新的用户任务。\n`
+  return origin + hostCopy(language).distillPrompt
 }
 
 /** Backwards-compatible Chinese prompt constant. */
 export const DISTILL_PROMPT = distillPrompt()
 
-/** Plugin identity stamped on the steering message source. */
+/** Plugin identity stamped on the follow-up message source. */
 export const AUTO_DISTILL_PLUGIN = 'dsh-memoir'
 
 /** A minimal event view for the turn-activity scan (data is narrowed inside). */
@@ -73,7 +77,7 @@ export interface AutoDistillAgentLike {
     readonly events?: readonly TurnEventLike[]
     snapshotEvents?: () => readonly TurnEventLike[]
   }
-  steer(message: UserMessage): void
+  followup(message: UserMessage): void
 }
 
 /** Subagent sessions (and any nested delegation) never get distilled. */
@@ -89,8 +93,8 @@ export interface AutoDistillPolicy {
 
 interface AgentGateState {
   lastTurn: number
-  workedSinceSteer: number
-  lastSteeredAt?: number
+  workedSinceReminder: number
+  lastRemindedAt?: number
 }
 
 /** Per-agent frequency, cooldown, and duplicate-turn state (with pruning). */
@@ -109,7 +113,7 @@ export class AutoDistillGate {
   consume(agentId: string, turn: number, toolCalls: number, policy: AutoDistillPolicy, now: number): boolean {
     let state = this.states.get(agentId)
     if (state === undefined) {
-      state = { lastTurn: -Infinity, workedSinceSteer: 0 }
+      state = { lastTurn: -Infinity, workedSinceReminder: 0 }
       this.states.set(agentId, state)
       if (this.states.size > this.capacity) this.states.delete(this.states.keys().next().value!)
     }
@@ -120,21 +124,21 @@ export class AutoDistillGate {
     state.lastTurn = turn
     this.states.delete(agentId)
     this.states.set(agentId, state)
-    state.workedSinceSteer += 1
+    state.workedSinceReminder += 1
 
-    const intervalReady = state.workedSinceSteer >= policy.every
+    const intervalReady = state.workedSinceReminder >= policy.every
     const activityReady = toolCalls >= policy.minTools
-    const cooldownReady = state.lastSteeredAt === undefined || now - state.lastSteeredAt >= policy.cooldownMs
+    const cooldownReady = state.lastRemindedAt === undefined || now - state.lastRemindedAt >= policy.cooldownMs
     this.reason = !intervalReady ? 'interval' : !activityReady ? 'tools' : !cooldownReady ? 'cooldown' : 'ready'
     return this.reason === 'ready'
   }
 
-  /** Record a successful steer; failed steer attempts do not start cooldown. */
-  recordSteer(agentId: string, now: number): void {
+  /** Record a successful followup; failed followup attempts do not start cooldown. */
+  recordReminder(agentId: string, now: number): void {
     const state = this.states.get(agentId)
     if (state === undefined) return
-    state.workedSinceSteer = 0
-    state.lastSteeredAt = now
+    state.workedSinceReminder = 0
+    state.lastRemindedAt = now
   }
 
   /** Drop all state for one agent (disposal hygiene). */
@@ -143,7 +147,7 @@ export class AutoDistillGate {
   }
 }
 
-export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'steered' | 'failed' | 'unavailable'
+export type DistillOutcome = 'disabled' | 'subagent' | 'aborted' | 'idle' | 'recorded' | 'duplicate' | 'interval' | 'tools' | 'cooldown' | 'queued' | 'distillation' | 'failed' | 'unavailable'
 
 /** Process-local counters only; never retains message content or credentials. */
 export class DistillDiagnostics {
@@ -157,7 +161,7 @@ export class DistillDiagnostics {
 
   record(outcome: DistillOutcome, at: number, turn: number, toolCalls: number, agents: number): void {
     this.counts[outcome] = (this.counts[outcome] ?? 0) + 1
-    if (['interval', 'tools', 'cooldown', 'steered', 'failed'].includes(outcome)) this.workedTurns += 1
+    if (['interval', 'tools', 'cooldown', 'queued', 'failed'].includes(outcome)) this.workedTurns += 1
     this.last = { outcome, at, turn, toolCalls }
     this.agents = agents
   }
@@ -190,7 +194,7 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
   minTools?: number
   /** Optional live policy source used by the Web settings panel. */
   policy?: () => { every?: number; cooldownMin?: number; minTools?: number }
-  /** Optional live language source for the steering instruction. */
+  /** Optional live language source for the follow-up instruction. */
   language?: () => MemoirLanguage
   now?: () => number
   diagnostics?: DistillDiagnostics
@@ -212,6 +216,7 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
     const activity = options.activity?.(agent)
     if (activity === undefined) { report('unavailable'); return }
     if (activity.turn > turn) { report('duplicate'); return }
+    if (activity.turn === turn && activity.distilling) { report('distillation', activity.toolCalls); return }
     const { recorded, toolCalls, reminded } = activity.turn === turn ? activity : { recorded: false, toolCalls: 0, reminded: false }
     if (toolCalls === 0 || recorded) { report(recorded ? 'recorded' : 'idle', toolCalls); return }
     if (reminded) { report('duplicate', toolCalls); return }
@@ -225,17 +230,17 @@ export function installAutoDistill(wire: AutoDistillWire, options: {
       report(gate.reason === 'ready' ? 'duplicate' : gate.reason, toolCalls)
       return
     }
-    try { agent.steer(
+    try { agent.followup(
       createUserMessage({
-        content: [{ type: 'text', text: distillPrompt(options.language?.()) }],
-        source: { kind: AUTO_DISTILL_PLUGIN },
+        content: [{ type: 'text', text: distillPrompt(options.language?.(), turn) }],
+        source: { kind: AUTO_DISTILL_PLUGIN, originTurn: turn },
       }),
     ) } catch (error) {
       report('failed', toolCalls)
       throw error
     }
-    gate.recordSteer(agent.id, now)
-    report('steered', toolCalls)
+    gate.recordReminder(agent.id, now)
+    report('queued', toolCalls)
   })
   const disposeAgent = wire.onDisposed?.((agentId) => { gate.forget(agentId); options.diagnostics?.setAgents(gate.size) })
   return () => { dispose(); disposeAgent?.(); gate.clear(); options.diagnostics?.setAgents(0) }

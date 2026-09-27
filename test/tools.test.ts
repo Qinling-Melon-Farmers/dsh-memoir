@@ -79,7 +79,7 @@ test('memoir_record writes to both project file and store', async () => {
   try {
     const store = new MemoirStore(makeTempStorePath())
     const value = (await memoirRecordTool(store, new RetrievalEngine(store), 'zh', {
-      activity: () => ({ turn: 12, calls: ['call-test-12'], toolCalls: 1, recorded: false, reminded: false }),
+      activity: () => ({ turn: 12, calls: ['call-test-12'], toolCalls: 1, recorded: false, reminded: false, distilling: false, originTurn: null }),
     }).execute(
       { section: 'actions', title: '下一步', content: '跑一次全量测试' },
       makeExec(ws.cwd, 's-9', 12),
@@ -239,7 +239,7 @@ test('memoir_read limit/detail: full restores timestamps, limit clamps to max', 
 })
 
 test('resolveMemorySource correlates the tool call with its DSH turn', () => {
-  const hooks = { activity: () => ({ turn: 7, calls: ['call-test-7'], toolCalls: 1, recorded: false, reminded: false }) }
+  const hooks = { activity: () => ({ turn: 7, calls: ['call-test-7'], toolCalls: 1, recorded: false, reminded: false, distilling: false, originTurn: null }) }
   assert.deepEqual(resolveMemorySource(makeExec('C:\\proj', 'session-source', 7), hooks), { sessionId: 'session-source', turnId: 7 })
   assert.deepEqual(resolveMemorySource({
     callId: 'call-alpha4',

@@ -6,7 +6,7 @@
  *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
  *   - 全局索引：~/.dsh/dsh-memoir.json（结构化源数据，跨项目检索）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
- *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
+ *   - 自动收尾：有实际工作的 turn 结束后，用 followup 排入独立归纳回合
  *
  * v0.4.0 cache-aware injection:
  *   - system prompt 只注入 selector 选出的 Hot Memory（token 预算），
@@ -229,7 +229,9 @@ export function apply(ctx: Context, config?: Config): void {
       try {
         const state = memoryHooks.activity(exec)
         if (state?.reminded) distillDiagnostics.write('afterReminder')
-        const turn = resolveMemorySource(exec, memoryHooks)?.turnId
+        // The entry links to the originating work, but its receipt belongs to
+        // the executing wrap-up turn so activity replay counts this save.
+        const turn = resolveMemorySource(exec, memoryHooks)?.turnId === undefined ? undefined : state?.turn
         if (turn === undefined || exec.agent === undefined) { distillDiagnostics.write('receiptFailed'); return }
         exec.agent.session.append('dsh-memoir/written', { turn, callId: String(exec.callId) })
       } catch { distillDiagnostics.write('receiptFailed') }

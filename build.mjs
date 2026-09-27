@@ -8,6 +8,9 @@
  */
 
 import { build } from 'esbuild'
+import { readFileSync } from 'node:fs'
+
+const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 /** Platform modules answered by the shell's frozen module table (shared/web-platform.ts). */
 const PLATFORM_MODULES = [
@@ -35,6 +38,11 @@ await build({
   minify: false,
   external: [...PLATFORM_MODULES],
   define: {
+    __MEMOIR_PACKAGE_INFO__: JSON.stringify({
+      version: manifest.version,
+      hostRange: manifest.dsh.engines.dsh,
+      sdkBaseline: manifest.devDependencies['@deepseek-ai/dsh-agent'],
+    }),
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
   },
   banner: {

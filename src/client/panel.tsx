@@ -10,6 +10,7 @@ import type { MemoirApi, WireDiagnostics, WireEntry, WireHotMemory, WireMemoirSe
 import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
+import { MemoirAbout } from './about.js'
 import {
   ENTRY_PAGE_SIZE,
   PROJECT_PAGE_SIZE,
@@ -993,6 +994,7 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
         <section id={`${panelId}-settings-panel`} className="memoir-surface" role="tabpanel" aria-labelledby={`${panelId}-settings-tab`} hidden={surface !== 'settings'}>
           <div className="memoir-surface-scroll" data-dsh-part="settings-scroll" tabIndex={0} aria-label={t('surface.settings')}>
             <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} alwaysOpen />
+            <MemoirAbout t={t} />
           </div>
         </section>
 

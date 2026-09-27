@@ -50,6 +50,7 @@ test('shipped client mounts, relocalizes and disposes native slots/styles three 
     for (let cycle = 0; cycle < 3; cycle++) {
       const disposers: (() => void)[] = []
       plugin!.apply({
+        inject: () => ({ dispose: async () => {} }), // sidebar service absent
         effect: (effect: () => () => void) => { disposers.push(effect()) },
         slots: {
           inject: (_name: string, callback: () => () => void) => callback(),

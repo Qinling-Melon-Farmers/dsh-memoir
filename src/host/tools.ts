@@ -71,7 +71,11 @@ export function resolveMemorySource(exec: ToolRunContext | undefined, hooks?: Me
   if (exec?.callId !== undefined) callIds.add(String(exec.callId))
   if (exec?.rootCallId !== undefined) callIds.add(String(exec.rootCallId))
   const activity = exec === undefined ? undefined : hooks?.activity(exec)
-  if (activity !== undefined && activity.turn >= 1 && activity.calls.some(id => callIds.has(id))) turnId = activity.turn
+  if (activity !== undefined && activity.turn >= 1 && activity.calls.some(id => callIds.has(id))) {
+    // Separate wrap-up turns preserve the original work's source link. Tool
+    // matching is still required; uncorrelated calls never borrow provenance.
+    turnId = activity.distilling && activity.originTurn !== null ? activity.originTurn : activity.turn
+  }
   if (sessionId === undefined && turnId === undefined) return undefined
   return {
     ...(sessionId !== undefined ? { sessionId } : {}),

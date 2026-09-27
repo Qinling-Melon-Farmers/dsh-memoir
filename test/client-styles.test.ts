@@ -3,6 +3,18 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { mountPanelStyles, PANEL_STYLE_SELECTOR } from '../src/client/styles.ts'
 
+test('sidebar keeps its own bounded scroll without conversation composer clearance', () => {
+  const dom = new JSDOM('<html><head></head><body><div class="memoir-native-view memoir-sidebar-view"><div class="memoir-panel"><nav class="memoir-surface-tabs"></nav><div class="memoir-surface-scroll"></div></div></div></body></html>')
+  try {
+    mountPanelStyles(dom.window.document)
+    const style = (selector: string) => dom.window.getComputedStyle(dom.window.document.querySelector(selector)!)
+    assert.equal(style('.memoir-sidebar-view .memoir-panel').overflow, 'hidden')
+    assert.equal(style('.memoir-surface-scroll').overflowY, 'auto')
+    assert.equal(style('.memoir-surface-scroll').paddingBottom, '20px')
+    assert.equal(style('.memoir-surface-tabs').flexWrap, 'wrap')
+  } finally { dom.window.close() }
+})
+
 test('native settings inherits host background and keeps padded readable cards', () => {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>
     <div class="memoir-settings-section"><div class="memoir-panel">

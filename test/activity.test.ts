@@ -13,6 +13,11 @@ import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeExec, makeTempWorkspace } from './helpers.ts'
 import { join } from 'node:path'
 
+function userEvent(data: ReturnType<typeof createUserMessage>): SessionEvent {
+  const session = Session.create(SessionId('source-fixture'), [], { id: SessionId('source-fixture'), version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false })
+  return session.append('user/message', data, { surfaceOp: 'append' })
+}
+
 test('activity projection replays late registration, checkpoints and remounts without retaining content', () => {
   const session = Session.create(SessionId('late'), [], { id: SessionId('late'), version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false })
   session.append('tool/call', { turn: 8, step: 1, callId: ToolCallId('root'), name: 'run_code', arguments: 'sensitive arguments' })
@@ -52,7 +57,7 @@ test('projection bounds current-turn IDs, resets on the next turn, and remembers
   let listener: Parameters<Parameters<typeof installAutoDistill>[0]['on']>[1] | undefined
   const diagnostics = new DistillDiagnostics()
   const dispose = installAutoDistill({ on: (_name, fn) => { listener = fn; return () => {} } }, { enabled: () => true, activity: () => state, diagnostics })
-  listener!({ agent: { id: 'restored', session: { header: {} }, steer: () => { assert.fail('restored turn must not steer twice') } }, turn: 1, signal: new AbortController().signal })
+  listener!({ agent: { id: 'restored', session: { header: {} }, followup: () => { assert.fail('restored turn must not followup twice') } }, turn: 1, signal: new AbortController().signal })
   assert.equal(diagnostics.snapshot().counts.duplicate, 1)
   dispose()
   state = activityProjection.apply(state, { type: 'turn/start', data: { turn: 2 } } as SessionEvent)
@@ -105,4 +110,37 @@ test('JSON commit is reported even if the subsequent Markdown projection fails',
     assert.equal(persisted, 1)
     assert.equal(new MemoirStore(store.path).entries(ws.cwd).length, 1)
   } finally { ws.cleanup() }
+})
+
+test('follow-up identity and work provenance replay across queued user turns, then reset', () => {
+  let state = { ...emptyActivity(), turn: 7, toolCalls: 1, calls: ['work'] }
+  const reminder = createUserMessage({ content: [{ type: 'text', text: 'private reminder text' }], source: { kind: 'dsh-memoir', originTurn: 7 } })
+  state = activityProjection.apply(state, { type: 'agent/inbox/spliced', seq: SessionSeq(1), time: 1, data: { target: 'next-turn', start: 1, inserted: [reminder] } } as SessionEvent)
+  assert.equal(state.reminded, true)
+  assert.equal(state.distilling, false, 'queuing a reminder does not reclassify the current task')
+  state = activityProjection.apply(state, { type: 'turn/start', data: { turn: 8 } } as SessionEvent)
+  assert.equal(state.reminded, false, 'an already-queued user task remains a task')
+  state = activityProjection.apply(state, { type: 'turn/start', data: { turn: 9 } } as SessionEvent)
+  state = activityProjection.apply(state, userEvent(reminder))
+  assert.equal(state.distilling, true)
+  assert.equal(state.originTurn, 7)
+  assert.ok(!JSON.stringify(state).includes('private'))
+  const exec = makeExec('fixture', 'origin', 9)
+  state = { ...state, calls: ['call-test-9'], toolCalls: 1 }
+  assert.deepEqual(resolveMemorySource(exec, { activity: () => state }), { sessionId: 'origin', turnId: 7 })
+  assert.deepEqual(resolveMemorySource(makeExec('fixture', 'origin', 10), { activity: () => state }), { sessionId: 'origin' })
+  state = activityProjection.apply(state, { type: 'dsh-memoir/written', data: { turn: 9, callId: 'call-test-9' } } as SessionEvent)
+  assert.equal(state.recorded, true)
+  state = activityProjection.apply(state, { type: 'turn/start', data: { turn: 10 } } as SessionEvent)
+  assert.deepEqual(state, { ...emptyActivity(), turn: 10 })
+})
+
+test('legacy and malformed origin markers never invent a source turn', () => {
+  for (const originTurn of [undefined, -1, 0, 1.5, 4, 99]) {
+    const state = activityProjection.apply({ ...emptyActivity(), turn: 4 }, userEvent(
+      createUserMessage({ content: [], source: { kind: 'dsh-memoir', ...(originTurn === undefined ? {} : { originTurn }) } }),
+    ))
+    assert.equal(state.distilling, true, 'even a legacy/invalid marker suppresses recursion')
+    assert.equal(state.originTurn, null)
+  }
 })
