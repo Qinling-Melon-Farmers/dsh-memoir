@@ -61,7 +61,14 @@ jobs:
             const missingSections = requiredSections.filter((label) => isBlank(readSection(label)));
             const invalidSections = [];
             if (isBug && !hasBugLabel) {
-              invalidSections.push('Bug 报告必须附带 bug 标签：请通过「Bug 报告」表单提交，该表单会自动附加 bug 标签。');
+              // Classification is the bot's responsibility: external reporters
+              // may not have permission to add labels themselves.
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['bug'],
+              });
             }
             const bugEvidence = readSection('证据截图 / 日志');
             if (isBug && !isBlank(bugEvidence) && !hasScreenshotEvidence(bugEvidence)) {
@@ -76,9 +83,9 @@ jobs:
             }
 
             const comment = [
-              '该 Issue 因未使用仓库要求的 Issue 模板而被自动关闭。',
+              '该 Issue 因必填内容缺失或证据不符合模板要求而被自动关闭。',
               '',
-              '请从仓库的 Issue 表单重新发起，并填写所有必填部分：',
+              '请直接补全本 Issue 后留言请求重开，无需另开重复 Issue，也无需自行添加标签：',
               '',
               ...requiredSections.map((label) => `- ${label}`),
               '',

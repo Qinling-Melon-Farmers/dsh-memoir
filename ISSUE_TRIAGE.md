@@ -36,7 +36,8 @@ snapshot）、`retrieval`（BM25 检索与排序）、`selector`（Hot Memory �
 1. **查重**：检索 `duplicate` 标签与标题关键词；若与既有 open/closed Issue
    重复，打 `duplicate` 并关闭，评论附上原 Issue 链接。
 2. **定类型**：按标题前缀与正文模板判断 `bug` / `enhancement` /
-   `documentation` / `question`，打对应标签。
+   `documentation` / `question`，打对应标签。标签由维护者或机器人补充，
+   不要求外部提问者具备打标签权限；缺少 `bug` 标签本身不是关闭理由。
 3. **补信息**：Bug 报告正文缺复现步骤、环境信息、证据截图 / 日志、冒烟测试、
    代码引用或补丁时，评论请作者补充，并保留 `bug` 或 `question` 标签等待回复。
 4. **新手任务**：范围小、验收明确的任务追加 `good first issue`；涉及深层
@@ -66,8 +67,9 @@ snapshot）、`retrieval`（BM25 检索与排序）、`selector`（Hot Memory �
 - `.github/workflows/issue-dedup.yml`：对疑似重复的 Issue 自动打 `duplicate`
   标签，评论附原 Issue 链接并关闭（`not_planned`）；
 - `.github/workflows/issue-template-enforcer.yml`：Bug 报告必填段（含证据
-  截图 / 日志、冒烟测试、引用代码与补丁）缺失或无效、或未带 `bug` 标签时
-  自动评论说明并关闭（`not_planned`），补充完整后可请求重开；
+  截图 / 日志、冒烟测试、引用代码与补丁）缺失或无效时，自动评论说明并关闭
+  （`not_planned`）；识别为 Bug 报告但缺少 `bug` 标签时由机器人自动补标，
+  不因此关闭。作者直接补全原 Issue 后可请求重开，无需另开重复 Issue；
 - `.github/workflows/pr-contribution-rules.yml`：PR 描述缺 PR 类型勾选、
   最新 main 确认、本地验证命令 / 结果摘要，或外部贡献者的用户可见功能缺
   证据时评论提示（`synchronize` 事件仅失败不重复评论）；

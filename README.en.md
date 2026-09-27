@@ -94,6 +94,8 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 
 Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
 
+> **Known display limitation (DSH 0.1.7-rc.2 with Memoir 0.8.0 / 0.8.1):** Compact chat selects only the turn's final step as its default answer. A short distillation receipt can fold the original task answer into the process disclosure; a locally modified, fully silent prompt can leave the answer area empty. Expand the process disclosure or switch the transcript display to Normal (`normal`) to read the folded answer. Do not implement silent distillation merely by prohibiting output while retaining same-turn `steer`. This remains unresolved; follow [#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13).
+
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
 `language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. It defaults to `zh` for backward compatibility and can be switched to `en` in the GUI. Tool schemas and subsequent prompts update live without restarting DSH.

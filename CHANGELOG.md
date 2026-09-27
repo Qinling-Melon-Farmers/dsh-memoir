@@ -6,11 +6,13 @@
 
 ### 中文
 
-- 暂无。
+- 修复 Issue 模板机器人因缺少 `bug` 标签误关外部报告的问题：机器人自动补标，仍校验正文和证据；补充原 Issue 后可请求重开，无需重复提单（#12）。此项为仓库工作流维护，不改变已发布 npm 包。
+- 中英文 README 补充 compact 模式下同回合自动蒸馏的答案折叠限制、临时查看办法及静默提示风险；不宣称已修复显示异常（#13）。
 
 ### English
 
-- None.
+- Fix the issue-template bot closing external bug reports solely for a missing `bug` label. Apply the label automatically while retaining content/evidence validation; reporters can complete the original issue and request reopening instead of filing duplicates (#12). This is repository workflow maintenance, not a change to the published npm package.
+- Document compact-view folding after same-turn distillation, viewing workarounds and the risk of silent prompts in both READMEs; the display issue remains unresolved (#13).
 
 ## [0.8.1] - 2026-09-26
 

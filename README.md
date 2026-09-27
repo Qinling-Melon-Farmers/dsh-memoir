@@ -93,7 +93,9 @@ memoir_record / memoir_update
 
 自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
 
-`autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已调用 `memoir_record` 的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
+> **已知显示限制（DSH 0.1.7-rc.2，Memoir 0.8.0 / 0.8.1）**：紧凑对话模式只选择同回合最后一步作为默认答案。自动蒸馏追加短回执后，原任务答复可能被折进“用时 / 过程”；若自行把提示改成完全静默，默认答案区域还可能变空。展开过程或将对话显示切到“标准（normal）”可查看被折叠的正文。不要仅靠“禁止输出”与同回合 `steer` 实现静默蒸馏；此问题尚未修复，进展见 [#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)。
+
+`autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已成功保存记忆的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
 
 `language` 独立控制 Agent 可见的工具描述、参数说明、蒸馏提示、工具结果、Hot Memory / `PROJECT_MEMORY.md` 标题以及校验与治理错误。默认 `zh` 保持向后兼容，也可在 GUI 中切换为 `en`；切换后工具 schema 与后续提示即时更新，不要求重启 DSH。
 
