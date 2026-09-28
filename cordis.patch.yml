@@ -1,7 +1,7 @@
 # dsh-memoir bundle patch: inserts the host-half plugin row into the web
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
-# manifest field) over dsh-base. dsh-memoir v0.8.1 targets the DSH
-# line >=0.1.7-rc.1 <0.1.8-0. Keep Memoir 0.7.1 on older DSH 0.1.5.
+# manifest field) over dsh-base. dsh-memoir v0.9.0 targets the DSH
+# line >=0.2.0-rc.1 <0.3.0-0. Keep Memoir 0.8.2 on older DSH 0.1.7.
 #
 # The row is a bare plugin by package name: the node half (exports ".")
 # registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel
@@ -12,9 +12,9 @@
 # Optional config (all default true):
 #   config:
 #     enabled: true          # master switch (tools, routes, prompt section)
-#     language: zh           # agent-facing copy: zh (default) or en
+#     language: zh           # agent-facing copy: zh (default), en, de, ru
 #     announceToAgent: true  # system-prompt announcement
-#     autoDistill: true      # steer a distill prompt after each worked turn
+#     autoDistill: true      # queue a separate wrap-up after each worked turn
 #     autoDistillEvery: 1    # remind at most once per N worked turns
 #     autoDistillCooldownMin: 0 # minimum minutes between successful reminders
 #     autoDistillMinTools: 1 # minimum tool calls on the triggering turn

@@ -13,6 +13,7 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
 import type { CacheStats, MemoirEntry, MemoirStore } from './store.js';
 import type { RetrievalDiagnostics, RetrievalEngine } from './retrieval.js';
 import type { MemoirSettingsPatch, MemoirSettingsSnapshot } from './settings.js';
+import type { MemoirLanguage } from './languages.js';
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
     storeRevision: number;
@@ -34,7 +35,7 @@ export interface DiagnosticsValue {
         storeRevision: number;
     } | null;
     config: {
-        language: 'zh' | 'en';
+        language: MemoirLanguage;
         announceToAgent: boolean;
         autoDistill: boolean;
         autoDistillEvery: number;

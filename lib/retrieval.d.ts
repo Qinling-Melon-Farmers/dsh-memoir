@@ -1,6 +1,6 @@
 /**
  * Local ranked retrieval (roadmap §2.4) — lexical search without embeddings:
- *   - tokenizer: Chinese 2-grams (+3-grams), lowercase english words,
+ *   - tokenizer: Chinese 2-grams (+3-grams), lowercase Unicode words,
  *     path/code identifiers split on / \ . _ - and camelCase
  *   - in-memory inverted index (term → entryId → tf) rebuilt when the store
  *     epoch changes

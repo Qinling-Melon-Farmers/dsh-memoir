@@ -61,7 +61,7 @@ test('shipped client mounts, relocalizes and disposes native slots/styles three 
           },
         },
       })
-      assert.equal(active.size, 2)
+      assert.equal(active.size, 3)
       assert.ok(dom.window.document.querySelectorAll('style').length > 0)
       dom.window.document.documentElement.lang = 'en'
       await new Promise(resolve => setImmediate(resolve))

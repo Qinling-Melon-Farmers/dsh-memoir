@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { resolveDshHome } from './dsh-home.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, resolveMemoirLanguage } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
+import { isMemoirLanguage } from './languages.js'
 import { writeFileAtomic } from './store.js'
 
 export const SETTINGS_VERSION = 3
@@ -131,7 +132,7 @@ export function validateMemoirSettingsPatch(payload: unknown, base: MemoirSettin
   if (keys.length === 0) return copy.settingRequired
   const unknown = keys.find((key) => !ALLOWED_FIELDS.includes(key as never))
   if (unknown !== undefined) return copy.unknownSetting(unknown)
-  if ('language' in record && record.language !== 'zh' && record.language !== 'en') return copy.language
+  if ('language' in record && !isMemoirLanguage(record.language)) return copy.language
   for (const key of BOOLEAN_FIELDS) {
     if (key in record && typeof record[key] !== 'boolean') return copy.booleanSetting(key)
   }

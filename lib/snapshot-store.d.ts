@@ -1,4 +1,5 @@
 import type { SessionSnapshot, SnapshotPersistence } from './snapshot.js';
+import { type MemoirLanguage } from './languages.js';
 export declare const SNAPSHOT_FORMAT_VERSION = 1;
 export declare const MAX_SNAPSHOT_BYTES: number;
 export declare const MAX_SNAPSHOT_RECORD_BYTES: number;
@@ -23,7 +24,7 @@ export declare class MemorySnapshotStore implements SnapshotPersistence {
     constructor(options: {
         storePath: string;
         settingsPath: string;
-        language: () => 'zh' | 'en';
+        language: () => MemoirLanguage;
         directory?: string;
         lockTimeoutMs?: number;
         warning?: (code: Failure) => void;

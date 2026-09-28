@@ -1,9 +1,10 @@
 /** Locale-aware copy used by every agent-facing dsh-memoir surface. */
 
-export type MemoirLanguage = 'zh' | 'en'
-
-export const MEMOIR_LANGUAGES: MemoirLanguage[] = ['zh', 'en']
-export const DEFAULT_MEMOIR_LANGUAGE: MemoirLanguage = 'zh'
+import { resolveMemoirLanguage, type MemoirLanguage } from './languages.js'
+import { de } from './i18n-de.js'
+import { ru } from './i18n-ru.js'
+export { MEMOIR_LANGUAGES, DEFAULT_MEMOIR_LANGUAGE, resolveMemoirLanguage } from './languages.js'
+export type { MemoirLanguage } from './languages.js'
 
 export type MemoirLanguageSource = MemoirLanguage | (() => MemoirLanguage)
 
@@ -18,6 +19,7 @@ export interface HostCopy {
   guidance: string
   sectionHeading: string
   distillPrompt: string
+  distillOrigin: (turn: number) => string
   sections: Record<SectionKey, SectionCopy>
   hotMemory: {
     header: string
@@ -124,6 +126,7 @@ export interface HostCopy {
 }
 
 const zh: HostCopy = {
+  distillOrigin: turn => `来源工作回合：${turn}。这是独立的记忆收尾回合，不是新的用户任务。\n`,
   guidance:
     'dsh-memoir 提供项目持久记忆。下方仅注入本项目高优先级记忆；' +
     '需要历史细节时调用 memoir_read；产生可复用的工作结论、经验或后续行动时调用 memoir_record。',
@@ -244,7 +247,7 @@ const zh: HostCopy = {
     unknownSetting: (key) => `未知设置：${key}`,
     booleanSetting: (key) => `${key} 必须是布尔值`,
     integerSetting: (key) => `${key} 必须是不小于 1 的整数`,
-    language: 'language 必须是 zh 或 en',
+    language: 'language 必须是 zh、en、de 或 ru',
     cooldown: 'autoDistillCooldownMin 必须是不小于 0 的有限数值',
     hotMax: 'hotMemoryMaxTokens 必须不小于 hotMemoryTokens',
     readMax: 'readMaxLimit 必须不小于 readDefaultLimit',
@@ -252,6 +255,7 @@ const zh: HostCopy = {
 }
 
 const en: HostCopy = {
+  distillOrigin: turn => `Source work turn: ${turn}. This is a separate memory-only follow-up, not a new user task.\n`,
   guidance:
     'dsh-memoir provides persistent project memory. Only high-priority memory for this project is injected below; ' +
     'call memoir_read for historical details, and call memoir_record when you produce reusable conclusions, lessons, or follow-up actions.',
@@ -372,18 +376,14 @@ const en: HostCopy = {
     unknownSetting: (key) => `unknown setting: ${key}`,
     booleanSetting: (key) => `${key} must be a boolean`,
     integerSetting: (key) => `${key} must be an integer greater than or equal to 1`,
-    language: 'language must be zh or en',
+    language: 'language must be zh, en, de, or ru',
     cooldown: 'autoDistillCooldownMin must be a finite number greater than or equal to 0',
     hotMax: 'hotMemoryMaxTokens must be greater than or equal to hotMemoryTokens',
     readMax: 'readMaxLimit must be greater than or equal to readDefaultLimit',
   },
 }
 
-const dictionaries: Record<MemoirLanguage, HostCopy> = { zh, en }
-
-export function resolveMemoirLanguage(value: unknown, fallback: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE): MemoirLanguage {
-  return value === 'zh' || value === 'en' ? value : fallback
-}
+const dictionaries: Record<MemoirLanguage, HostCopy> = { zh, en, de, ru }
 
 export function languageFrom(source: MemoirLanguageSource | undefined): MemoirLanguage {
   return resolveMemoirLanguage(typeof source === 'function' ? source() : source)

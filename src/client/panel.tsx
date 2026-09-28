@@ -1,7 +1,7 @@
 /**
  * The memoir panel: project / global memory tabs, client-side search,
- * manual record form, per-entry delete. Rendered into the center-column
- * container by mount.tsx; visibility is CSS-driven (html data attribute).
+ * manual record form, per-entry delete. Shared by native Conversation,
+ * Settings and optional right-sidebar slots; each owns its view state.
  */
 
 import { Fragment, useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
@@ -11,6 +11,7 @@ import type { CwdTracker } from './cwd.js'
 import type { PanelController } from './controller.js'
 import type { MemoirStatus, SectionKey } from './types.ts'
 import { MemoirAbout } from './about.js'
+import { MEMOIR_LANGUAGES, resolveMemoirLanguage } from '../host/languages.js'
 import {
   ENTRY_PAGE_SIZE,
   PROJECT_PAGE_SIZE,
@@ -32,6 +33,7 @@ interface PanelProps {
   openSource?: (sessionId: string, turnId?: number) => void
   /** Native settings may close their owning shell without a legacy controller. */
   onClose?: () => void
+  announceOnOpen?: boolean
 }
 
 const EMPTY_CWD_TRACKER: CwdTracker = {
@@ -580,10 +582,9 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
                     <span>{t('settings.language')}</span>
                     <select
                       value={settings.language}
-                      onChange={(event) => setSettings({ ...settings, language: event.target.value === 'en' ? 'en' : 'zh' })}
+                      onChange={(event) => setSettings({ ...settings, language: resolveMemoirLanguage(event.target.value) })}
                     >
-                      <option value="zh">{t('settings.language.zh')}</option>
-                      <option value="en">{t('settings.language.en')}</option>
+                      {MEMOIR_LANGUAGES.map(language => <option key={language} value={language}>{t(`settings.language.${language}`)}</option>)}
                     </select>
                     <small>{t('settings.languageHint')}</small>
                   </label>
@@ -661,7 +662,7 @@ const PANEL_SURFACES: Array<{ id: PanelSurface; label: string }> = [
   { id: 'diagnostics', label: 'surface.diagnostics' },
 ]
 
-export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, cwd: fixedCwd, t, openSource, onClose }: PanelProps) {
+export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, cwd: fixedCwd, t, openSource, onClose, announceOnOpen = false }: PanelProps) {
   const [, setLanguage] = useState(document.documentElement.lang)
   useEffect(() => {
     const observer = new MutationObserver(() => setLanguage(document.documentElement.lang))
@@ -872,6 +873,10 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
           ? null
           : <button type="button" className="memoir-iconbtn" title={t('panel.close')} onClick={close}>×</button>}
       </div>
+      <MemoirAbout t={t} announceOnOpen={announceOnOpen} settingsTarget={`${panelId}-settings-panel`} onSettings={() => {
+        setSurface('settings')
+        document.getElementById(`${panelId}-settings-tab`)?.focus()
+      }} />
       <nav className="memoir-surface-tabs" data-dsh-part="surface-tabs" role="tablist" aria-label={t('surface.navigation')}>
         {PANEL_SURFACES.map((item, index) => (
           <button
@@ -994,7 +999,6 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
         <section id={`${panelId}-settings-panel`} className="memoir-surface" role="tabpanel" aria-labelledby={`${panelId}-settings-tab`} hidden={surface !== 'settings'}>
           <div className="memoir-surface-scroll" data-dsh-part="settings-scroll" tabIndex={0} aria-label={t('surface.settings')}>
             <MemoirSettingsPanel api={api} t={t} refreshKey={refreshKey} onChanged={reload} alwaysOpen />
-            <MemoirAbout t={t} />
           </div>
         </section>
 

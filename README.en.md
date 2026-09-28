@@ -12,13 +12,13 @@
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH and Zod 4 peers are supplied by the host environment; Zod validates session projections and is not bundled.
 
 > [!IMPORTANT]
-> **0.8.2 requires DSH `>=0.1.7-rc.1 <0.1.8-0`**, with SDKs pinned to `0.1.7-rc.2`. It fixes auto-distillation hiding the original task answer, adds an optional native right-sidebar panel and offline About & help, and retains unskinned Desktop styling, actual-save diagnostics and public Session projections. Keep `dsh-memoir@0.7.1` on DSH 0.1.5.
+> **0.9.0 requires DSH `>=0.2.0-rc.1 <0.3.0-0`**, built and tested against the published `0.2.0-rc.1` (not an unqualified final 0.2.0 release). Adds a visible plugin guide, native plugin configuration, German/Russian agent copy and offline release highlights. Retains separate distillation turns, provenance, frozen snapshots and zero bundled runtime dependencies. **On DSH 0.1.7, pin `dsh-memoir@0.8.2`; upgrade the host before installing 0.9.0.**
 >
 > `dsh-memoir@0.7.1` fixes lost session snapshots after restart or RAM eviction (#10), supporting DSH **0.1.5-rc.1 / rc.2**. It requires `>=0.1.5-rc.1 <0.1.6-0`; check your host first. Keep `0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2; those older lines do not include this fix.
 
 ```bash
-npm install --global @deepseek-ai/dsh@0.1.7-rc.2
-dsh plugin --profile web add dsh-memoir@0.8.2
+npm install --global @deepseek-ai/dsh@0.2.0-rc.1
+dsh plugin --profile web add dsh-memoir@0.9.0
 ```
 
 Restart `dsh web`. Memory remains local and is not automatically deleted when the plugin is updated or removed.
@@ -37,7 +37,11 @@ Restart `dsh web`. Memory remains local and is not automatically deleted when th
 
 It fits personal and local development workflows where a new agent should continue understanding a project. It is not a raw chat backup, multi-user cloud sync service, or vector-semantic knowledge base.
 
-![dsh-memoir v0.6.1 global memory grouped and collapsed by project](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png)
+### UI preview
+
+**0.9.0 component preview with demonstration data.** Plugin identity, GitHub, documentation and memory settings stay at the top, before long lists.
+
+![0.9.0 UI preview: visible plugin guide and memory browsing](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
 
 ## How it works
 
@@ -100,7 +104,9 @@ Automatic distillation is an observable agent turn-end reminder, not silent back
 
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
-`language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. It defaults to `zh` for backward compatibility and can be switched to `en` in the GUI. Tool schemas and subsequent prompts update live without restarting DSH.
+`language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. Released 0.8.2 supports `zh` / `en`, defaulting to `zh`. Tool descriptions and subsequent prompts update live without restarting DSH.
+
+**0.9.0 adds `de` (Deutsch) and `ru` (Русский)**, explicitly selected in Memory settings rather than inferred from the agent or user messages. Tool names, parameter keys and enums remain unchanged. The GUI remains Chinese/English and existing memory content is not automatically translated. Switching language alone does not rewrite JSON or Markdown; projection headings use the current language on subsequent normal writes. Each of the four languages has its own frozen-snapshot namespace; switching back reuses the previous baseline. Select `zh` or `en` before downgrading to 0.8.2.
 
 ## Local recall and caching
 
@@ -111,11 +117,13 @@ Automatic distillation is an observable agent turn-end reminder, not silent back
 - epoch-aware LRU query cache with one-hour time buckets; `limit` and output detail stay outside the key so output shapes share rankings;
 - the GUI and `memoir_read` use the same RetrievalEngine and expose hits, misses, evictions, hit rate, and last-query latency.
 
+0.9.0 extends word splitting to Unicode letters, combining marks and numbers with NFC normalization, preserving German umlauts and Russian Cyrillic. Original content and existing Chinese/code-identifier rules are preserved. This remains lexical retrieval, not automatic translation, stemming or cross-language semantic search.
+
 Top-5 recall on the fixed quality set is 100%; the repository gate requires at least 90%.
 
 ## Web GUI
 
-Installing into a DSH-alpha `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
+Installing into a compatible DSH `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
 
 - Project memory and all-project global memory, with project groups collapsed by default and complete lifecycle totals;
 - status, section, and keyword filters with BM25 scores;
@@ -130,7 +138,22 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 - live GUI Chinese/English switching from `<html lang>`, with a separate `language` setting for agent-facing copy.
 
 <details>
-<summary>More GUI screenshots</summary>
+<summary>0.9.0 UI previews: native plugin configuration and language settings</summary>
+
+The native plugin detail page reuses Memory settings directly, without opening the memory list. Shown below is the native plugin detail page in DSH 0.2.0-rc.1.
+
+![0.9.0 native plugin detail configuration](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-host-plugin-zh.png)
+
+Choose German agent-facing copy independently of the English GUI; settings and memory browsing scroll separately.
+
+![0.9.0 UI preview: German agent copy selected in the English GUI](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-settings-en.png)
+
+</details>
+
+<details>
+<summary>GUI screenshots from previous releases</summary>
+
+![v0.6.1 global memory grouped by project](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png)
 
 ![v0.7.1 durable snapshot diagnostics on DSH rc.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png)
 
@@ -156,25 +179,26 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| npm `latest` (`0.8.2`) | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | DSH 0.1.7 line |
+| npm `latest` (`0.9.0`) | `>=0.2.0-rc.1 <0.3.0-0` | `dsh plugin --profile web add dsh-memoir@0.9.0` | Tested on 0.2.0-rc.1 |
+| pinned npm `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | Legacy 0.1.7 line |
 | pinned npm `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | Legacy 0.1.5 line |
 | pinned npm `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | Legacy 0.1.2 line |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| Source `v0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | local build + `link:` | Development; not compatible with legacy 0.1.5 / 0.1.6 |
+| Source `v0.9.0` | `>=0.2.0-rc.1 <0.3.0-0` | local build + `link:` | Development; not compatible with legacy 0.1.x |
 
 Node.js `^22.19.0 || >=24.0.0` is required. 0.7.1 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
 
 <details>
 <summary>Install from source</summary>
 
-Published 0.7.1 source (legacy DSH 0.1.5):
+0.9.0 source (DSH 0.2.0-rc.1):
 
 ```bash
-git clone --branch v0.7.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+git clone --branch v0.9.0 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@0.1.5-rc.1
+npm install --global @deepseek-ai/dsh@0.2.0-rc.1
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
@@ -184,10 +208,26 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 ## Native sidebar and help
 
+**Released 0.8.2:**
+
 - Existing Conversation and Settings entries stay unchanged. The right-sidebar guide now offers Memory for browsing project memory, Hot Memory and diagnostics alongside chat; it never opens automatically or replaces another panel.
 - Each sidebar instance follows its own session workspace and reuses the same data layer, with independent active surfaces and scroll state. Conversation and Settings remain available when the optional sidebar service is absent.
 - Under Memory settings, the collapsed About & help card shows the plugin version, host range, SDK baseline, maintainer, repository, bilingual documentation, releases and issue links. The plugin repository is explicitly distinct from the current workspace.
 - No background update requests, workspace Git-remote inspection or path/memory uploads. Use the host plugin manager to update, after checking the target package’s DSH requirements and prerelease channel. The panel does not auto-upgrade.
+
+**0.9.0:**
+
+- Plugin identity, version, GitHub project, documentation and Open memory settings move to the top of Conversation, Settings and sidebar panels, before any long memory or configuration list. Detailed compatibility information stays collapsed; no forced navigation or Star prompt.
+- Open `dsh-memoir` on the native Plugins page to use the same memory-settings form. No duplicate configuration store or registration pretending to be an official plugin; existing entries still work without this host page.
+- Develop and validate against official npm `0.2.0-rc.1`. Check the host version before installation; keep Memoir 0.8.2 on DSH 0.1.7.
+
+## Offline release highlights
+
+The first Memory Conversation opening shows the bundled 0.9.0 highlights without blocking chat. Choose “Got it” to stop automatic display for this version in the same browser origin. Reopen anytime from “About & help → View release highlights”. Settings and sidebar panels never open the notice automatically.
+
+The Chinese/English notice is offline: no network requests, uploads, memory changes or conversation edits. Only the acknowledged version is stored locally by the UI. If storage is unavailable, acknowledgment lasts for the current page; Web/Desktop and different origins are not guaranteed to share it.
+
+![0.9.0 offline announcement component preview with demonstration data](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-announcement-zh.png)
 
 ## Storage, privacy, and security boundaries
 
@@ -213,7 +253,7 @@ Every field below can be set in the memoir `config` row in `cordis.patch.yml`. E
 | Field | Default | Purpose |
 | --- | ---: | --- |
 | `enabled` | `true` | master switch for tools, routes, and prompt injection |
-| `language` | `zh` | agent-facing prompt, tool schema/result, projection-heading, and error language; `zh` or `en` |
+| `language` | `zh` | agent-facing copy; `zh` / `en` in 0.8.2, plus `de` / `ru` in 0.9.0; independent of GUI language |
 | `announceToAgent` | `true` | announce memory tools and rules to the agent |
 | `autoDistill` | `true` | enable top-level worked-turn reminders |
 | `autoDistillEvery` | `1` | remind at most once per N worked turns |
@@ -269,6 +309,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current version is [v0.8.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.8.2), targeting DSH 0.1.7. Keep 0.7.1 on legacy DSH 0.1.5.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current version is [v0.9.0](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.9.0), targeting DSH 0.2.0-rc.1. Pin 0.8.2 on DSH 0.1.7, or 0.7.1 on DSH 0.1.5.
 
 Apache-2.0

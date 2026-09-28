@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { snapshotHash } from './snapshot.js'
 import type { SessionSnapshot, SnapshotPersistence } from './snapshot.js'
 import { withFileLock, writeFileAtomic } from './store.js'
+import { resolveMemoirLanguage, type MemoirLanguage } from './languages.js'
 
 export const SNAPSHOT_FORMAT_VERSION = 1
 export const MAX_SNAPSHOT_BYTES = 256 * 1024
@@ -38,7 +39,7 @@ function canonicalPath(path: string): string {
 export class MemorySnapshotStore implements SnapshotPersistence {
   readonly directory: string
   private readonly namespace: string
-  private readonly language: () => 'zh' | 'en'
+  private readonly language: () => MemoirLanguage
   private readonly lockTimeoutMs: number
   private readonly warning?: (code: Failure) => void
   private warned = new Set<Failure>()
@@ -47,7 +48,7 @@ export class MemorySnapshotStore implements SnapshotPersistence {
   constructor(options: {
     storePath: string
     settingsPath: string
-    language: () => 'zh' | 'en'
+    language: () => MemoirLanguage
     directory?: string
     lockTimeoutMs?: number
     warning?: (code: Failure) => void
@@ -60,7 +61,7 @@ export class MemorySnapshotStore implements SnapshotPersistence {
   }
 
   scope(): string {
-    return `${this.namespace}/${this.language() === 'en' ? 'en' : 'zh'}`
+    return `${this.namespace}/${resolveMemoirLanguage(this.language())}`
   }
 
   diagnostics(): SnapshotPersistenceDiagnostics { return { ...this.stats } }

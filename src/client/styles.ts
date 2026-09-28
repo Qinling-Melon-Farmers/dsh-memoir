@@ -63,17 +63,38 @@ export const PANEL_CSS = `
 .memoir-sidebar-view .memoir-panel { padding: 12px; }
 .memoir-sidebar-view .memoir-surface-tabs { flex-wrap: wrap; }
 .memoir-sidebar-view .memoir-entry-actions { flex-wrap: wrap; }
-.memoir-about { margin-top: 16px; }
+.memoir-plugin-guide {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1, var(--border, rgba(128, 128, 128, .22)));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, var(--bg-card, transparent));
+  color: var(--dsw-alias-label-primary, var(--text-primary, inherit));
+  font-size: 12px;
+}
+.memoir-plugin-guide-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.memoir-plugin-identity { overflow-wrap: anywhere; }
+.memoir-plugin-identity span { font-weight: 400; color: var(--dsw-alias-label-secondary, var(--text-secondary, #8a8f9c)); }
+.memoir-about { margin-top: 4px; }
+.memoir-announcement { margin-top: 6px; padding: 10px; border-top: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.22)); max-height: min(180px, 24dvh); overflow-y: auto; overscroll-behavior: contain; line-height: 1.5; }
+.memoir-announcement p { margin: 6px 0; }
+.memoir-announcement small { color: var(--dsw-alias-label-secondary, var(--text-secondary, #666)); }
 .memoir-about summary { cursor: pointer; font-weight: 600; padding: 4px; }
 .memoir-about summary:focus-visible,
-.memoir-about a:focus-visible { outline: 2px solid var(--accent, #5284e7); outline-offset: 3px; }
-.memoir-about-body { display: grid; gap: 12px; padding-top: 14px; font-weight: 400; line-height: 1.65; overflow-wrap: anywhere; }
+.memoir-plugin-guide a:focus-visible,
+.memoir-guide-settings:focus-visible { outline: 2px solid var(--accent, #5284e7); outline-offset: 3px; }
+.memoir-about-body { display: grid; gap: 12px; padding: 10px 4px 4px; max-height: min(200px, 25dvh); overflow-y: auto; overscroll-behavior: contain; font-weight: 400; line-height: 1.65; overflow-wrap: anywhere; }
 .memoir-about-body p { margin: 0; }
 .memoir-about-body dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 6px 12px; margin: 0; }
 .memoir-about-body dd { margin: 0; }
 .memoir-about-links { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.memoir-about-links a { color: var(--dsw-alias-interactive-primary, var(--accent, #5284e7)); text-decoration: underline; text-underline-offset: 3px; }
+.memoir-about-links a,
+.memoir-guide-settings { color: var(--dsw-alias-interactive-primary, var(--accent, #5284e7)); text-decoration: underline; text-underline-offset: 3px; }
+.memoir-guide-settings { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
 .memoir-about-note { color: var(--dsw-alias-label-secondary, var(--text-secondary, #666)); font-size: 12px; }
+.memoir-plugin-settings { display: grid; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary, var(--text-primary, inherit)); font-family: var(--dsw-font-family, inherit); }
+.memoir-plugin-settings .memoir-settings { margin: 0; }
 @container (max-width: 420px) {
   .memoir-sidebar-view .memoir-panel { padding: 8px; }
   .memoir-sidebar-view .memoir-entry { padding: 12px; }
@@ -938,12 +959,9 @@ html[data-dsh-memoir-active]:not([data-dsh-ssh-active]):not([data-dsh-taskboard-
   margin-top: 0;
 }
 .memoir-surface .memoir-settings-body > .memoir-form-actions {
-  position: sticky;
-  z-index: 2;
-  bottom: 0;
-  margin: 0 -2px -2px;
-  padding: 10px 2px 2px;
-  background: linear-gradient(to bottom, transparent, var(--dsw-alias-bg-layer-2, var(--bg-card, #ffffff)) 32%);
+  /* Normal flow avoids painting actions over fields above composer padding. */
+  flex-wrap: wrap;
+  padding-top: 10px;
 }
 @media (max-width: 760px) {
   .memoir-settings-grid {

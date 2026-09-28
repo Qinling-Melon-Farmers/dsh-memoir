@@ -2,14 +2,30 @@
 
 本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
 
-## [Unreleased]
+## [0.9.0] - 2026-09-28
 
 ### 中文
 
+- 新增离线版本公告：记忆会话页首次打开显示内联摘要，明确确认后同版本不再自动显示，关于区可手动重看。中英切换、多实例通知与禁用存储降级；不联网、不修改记忆、设置页/侧栏不自动展示。
+
+- 新增德语 `de`、俄语 `ru` Agent 文案（#8），覆盖工具/参数说明、注入与蒸馏提示、结果、投影标题及校验/治理错误；GUI 可选四种 Agent 语言，界面本身仍为中英双语。保留默认中文、固定工具标识和用户记忆原文，不推断语言或自动翻译。
+- 按完整语言标识隔离持久冻结快照，防止德语/俄语误用中文快照空间。BM25 分词保留 Unicode 字母、组合标记和数字并做 NFC 归一化，修复俄文字母被丢弃、德语变音字符被拆开的召回缺口；保留词频、缓存与现有中文/代码查询回归，不提供跨语言语义搜索。
+- 更新双语 README 的新版 UI 预览；设置保存操作回归正常文档流，避免遮住字段，保留表单到底可达性。新版组件预览与历史版本截图明确区分。
+- 将插件名、版本、GitHub、文档和记忆设置快捷入口移至记忆面板顶部，在会话、设置和右侧栏首屏可见，长列表滚动时不随内容消失。兼容详情与反馈仍可折叠，展开区有独立高度限制；不自动联网、跳转或收藏。
+- 通过公开 `plugins.bundle.config` 为原生插件详情页提供设置入口，复用现有表单和存储；管理器缺失或重载不阻塞其它入口，不冒充官方插件。新增布局、双语、保存与生命周期回归。
+- 正式适配官方 npm DSH `0.2.0-rc.1`，开发 SDK 与 peer/engine 边界为 `>=0.2.0-rc.1 <0.3.0-0`；不再安装到旧 0.1.7，旧宿主固定 Memoir 0.8.2。store v4 / settings v3 / snapshot v1 不变。
 - 将 Issue 自动补标推广至 `bug` / `enhancement` / `documentation` / `question`；外部贡献者无需标签权限，标签 API 失败只告警，正文/证据仍独立校验。保留已有标签，未知分类交由维护者判断；增加重复检测及 PR 审核不依赖缺标的回归覆盖。本项仅调整仓库自动化，不改 npm 插件运行时。
 
 ### English
 
+- Add offline release highlights on first opening of the Memory Conversation view. Explicit acknowledgment suppresses repeat display for that version; About allows manual replay. Bilingual copy, instance coordination and blocked-storage fallback; no network or memory writes, and no automatic notice in Settings/sidebar.
+
+- Add German (`de`) and Russian (`ru`) agent-facing copy (#8) for tools/parameters, injection and distillation prompts, results, projection headings, and validation/governance errors. The GUI offers four agent languages but remains Chinese/English itself. Preserve the Chinese default, stable tool identifiers and user content; no language inference or automatic translation.
+- Namespace persistent frozen snapshots by the complete language identifier, preventing German/Russian from sharing the Chinese namespace. BM25 tokenization now preserves Unicode letters, combining marks and numbers with NFC normalization, fixing discarded Cyrillic and split German umlauts. Preserve term frequency, caching and existing Chinese/code-query regressions; no cross-language semantic search.
+- Refresh bilingual README previews with explicit component-preview/historical version labels. Keep settings actions in normal document flow so they cannot cover fields while remaining reachable at the end of the form.
+- Move plugin identity, version, GitHub, documentation and the memory-settings shortcut to the top of Conversation, Settings and sidebar panels, visible before scrolling and independent of long memory lists. Compatibility details and feedback remain collapsible with bounded height; no automatic network requests, navigation or starring.
+- Contribute configuration to the native plugin detail page through public `plugins.bundle.config`, reusing the existing form and store. Missing/reloaded managers do not block other entries; Memoir does not register as an official plugin. Add layout, bilingual, save and lifecycle regressions.
+- Support official npm DSH `0.2.0-rc.1`, with matching development SDKs and peer/engine range `>=0.2.0-rc.1 <0.3.0-0`. Keep Memoir 0.8.2 on legacy DSH 0.1.7. Store v4 / settings v3 / snapshot v1 remain unchanged.
 - Extend automatic issue classification to `bug`, `enhancement`, `documentation` and `question`. External contributors need no labeling permissions; label API failures only warn while body/evidence validation remains independent. Preserve existing labels and leave unknown types to maintainers; add regressions keeping duplicate detection and PR review independent of missing labels. Repository automation only; no npm runtime change.
 
 ## [0.8.2] - 2026-09-27

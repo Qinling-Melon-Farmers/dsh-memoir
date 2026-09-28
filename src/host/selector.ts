@@ -98,7 +98,7 @@ export function rankEntries(entries: MemoirEntry[], now = Date.now()): ScoredEnt
 
 /** Compact bullet for one entry: title prefix + content (no ids/timestamps). */
 export function compactLine(entry: MemoirEntry, language?: MemoirLanguage): string {
-  const separator = language === 'en' ? ': ' : '：'
+  const separator = language === undefined || language === 'zh' ? '：' : ': '
   const head = entry.title !== undefined && entry.title !== '' ? entry.title + separator : ''
   return '- ' + head + entry.content.replace(/\s+/g, ' ').trim()
 }

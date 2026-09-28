@@ -1,6 +1,6 @@
 /**
  * Local ranked retrieval (roadmap §2.4) — lexical search without embeddings:
- *   - tokenizer: Chinese 2-grams (+3-grams), lowercase english words,
+ *   - tokenizer: Chinese 2-grams (+3-grams), lowercase Unicode words,
  *     path/code identifiers split on / \ . _ - and camelCase
  *   - in-memory inverted index (term → entryId → tf) rebuilt when the store
  *     epoch changes
@@ -178,7 +178,7 @@ function tokenizeInternal(text: string, dedupe: boolean): string[] {
   let latin = ''
   const flushLatin = (): void => {
     if (latin === '') return
-    for (const raw of latin.split(/[^A-Za-z0-9_]+/)) {
+    for (const raw of latin.split(/[^\p{L}\p{M}\p{N}_]+/u)) {
       if (raw === '') continue
       // Full compound token first (memoir_record, __ModuleLoader__), then
       // underscore sub-tokens; camelCase is split on the ORIGINAL case so
@@ -203,7 +203,8 @@ function tokenizeInternal(text: string, dedupe: boolean): string[] {
     }
     cjk = ''
   }
-  for (const ch of text) {
+  // Normalize lookup tokens only; never normalize or rewrite stored memory.
+  for (const ch of text.normalize('NFC')) {
     const cp = ch.codePointAt(0) ?? 0
     if (isCjk(cp)) {
       flushLatin()

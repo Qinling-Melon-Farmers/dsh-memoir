@@ -1,7 +1,7 @@
 /** Locale-aware copy used by every agent-facing dsh-memoir surface. */
-export type MemoirLanguage = 'zh' | 'en';
-export declare const MEMOIR_LANGUAGES: MemoirLanguage[];
-export declare const DEFAULT_MEMOIR_LANGUAGE: MemoirLanguage;
+import { type MemoirLanguage } from './languages.js';
+export { MEMOIR_LANGUAGES, DEFAULT_MEMOIR_LANGUAGE, resolveMemoirLanguage } from './languages.js';
+export type { MemoirLanguage } from './languages.js';
 export type MemoirLanguageSource = MemoirLanguage | (() => MemoirLanguage);
 export interface SectionCopy {
     label: string;
@@ -12,6 +12,7 @@ export interface HostCopy {
     guidance: string;
     sectionHeading: string;
     distillPrompt: string;
+    distillOrigin: (turn: number) => string;
     sections: Record<SectionKey, SectionCopy>;
     hotMemory: {
         header: string;
@@ -116,8 +117,6 @@ export interface HostCopy {
         readMax: string;
     };
 }
-export declare function resolveMemoirLanguage(value: unknown, fallback?: MemoirLanguage): MemoirLanguage;
 export declare function languageFrom(source: MemoirLanguageSource | undefined): MemoirLanguage;
 export declare function hostCopy(language: MemoirLanguage): HostCopy;
 export declare function sectionCopy(section: SectionKey, language: MemoirLanguage): SectionCopy;
-export {};

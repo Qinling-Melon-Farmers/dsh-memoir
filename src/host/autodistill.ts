@@ -27,9 +27,7 @@ declare module '@deepseek-ai/dsh-llm/message' {
 
 /** The follow-up instruction; the originating work turn is not rewritten. */
 export function distillPrompt(language: MemoirLanguage = DEFAULT_MEMOIR_LANGUAGE, originTurn?: number): string {
-  const origin = originTurn === undefined ? '' : language === 'en'
-    ? `Source work turn: ${originTurn}. This is a separate memory-only follow-up, not a new user task.\n`
-    : `来源工作回合：${originTurn}。这是独立的记忆收尾回合，不是新的用户任务。\n`
+  const origin = originTurn === undefined ? '' : hostCopy(language).distillOrigin(originTurn)
   return origin + hostCopy(language).distillPrompt
 }
 

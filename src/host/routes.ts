@@ -18,6 +18,7 @@ import { governedRecord, type RecordResolution } from './governance.js'
 import { validateMemoirSettingsPatch } from './settings.js'
 import type { MemoirSettingsPatch, MemoirSettingsSnapshot } from './settings.js'
 import { hostCopy } from './i18n.js'
+import type { MemoirLanguage } from './languages.js'
 
 /** Diagnostics payload shape (v0.4 observability, roadmap §4 / §6.3). */
 export interface DiagnosticsValue {
@@ -32,7 +33,7 @@ export interface DiagnosticsValue {
   /** v0.4.2: the most recently frozen session snapshot, if any. */
   snapshot: { hash: string; createdAt: number; storeRevision: number } | null
   config: {
-    language: 'zh' | 'en'
+    language: MemoirLanguage
     announceToAgent: boolean
     autoDistill: boolean
     autoDistillEvery: number

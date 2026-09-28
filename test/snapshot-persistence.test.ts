@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { MemorySnapshotManager } from '../lib/snapshot.js'
 import { MemorySnapshotStore, MAX_SNAPSHOT_RECORD_BYTES, MAX_SNAPSHOT_BYTES } from '../lib/snapshot-store.js'
 import { MemoirStore } from '../lib/store.js'
+import { MEMOIR_LANGUAGES, type MemoirLanguage } from '../lib/i18n.js'
 
 const run = promisify(execFile)
 const worker = fileURLToPath(new URL('./fixtures/snapshot-process.mjs', import.meta.url))
@@ -124,6 +125,29 @@ test('data source, settings and language partition snapshots; switching language
     for (const override of [{ settingsPath: join(f.dir, 'other-settings') }, { storePath: join(f.dir, 'other-store') }]) {
       const other = new MemorySnapshotManager({ persistence: new MemorySnapshotStore({ ...f.options, ...override, directory: disk.directory }) })
       assert.equal(other.getOrCreate('shared', build('separate')).text, 'separate')
+    }
+  } finally { f.cleanup() }
+})
+
+test('all four locales have distinct durable scopes and restore their own frozen bytes after restart', () => {
+  const f = fixture()
+  try {
+    let language: MemoirLanguage = 'zh'
+    const options = { ...f.options, language: () => language }
+    const disk = new MemorySnapshotStore(options)
+    const manager = new MemorySnapshotManager({ persistence: disk })
+    const scopes = new Set<string>()
+    for (const locale of MEMOIR_LANGUAGES) {
+      language = locale
+      scopes.add(disk.scope())
+      assert.ok(disk.scope().endsWith(`/${locale}`))
+      assert.equal(manager.getOrCreate('same-session', build(`${locale}: frozen`)).text, `${locale}: frozen`)
+    }
+    assert.equal(scopes.size, 4, 'de/ru must never alias the zh namespace')
+    const restarted = new MemorySnapshotManager({ persistence: new MemorySnapshotStore(options) })
+    for (const locale of [...MEMOIR_LANGUAGES].reverse()) {
+      language = locale
+      assert.equal(restarted.getOrCreate('same-session', build('must not replace')).text, `${locale}: frozen`)
     }
   } finally { f.cleanup() }
 })

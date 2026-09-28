@@ -1,5 +1,5 @@
 /**
- * Browser-half entry for the DSH 0.1.7 client architecture.
+ * Browser-half entry for the DSH 0.2.0 client architecture.
  *
  * The alpha shell removed dsh-client-runtime and exposes additive UI through
  * domain-owned slots. Memoir therefore registers as a native Conversation
@@ -26,6 +26,7 @@ import { MemoirPanel } from './panel.jsx'
 import { mountPanelStyles } from './styles.js'
 import { mainWorkspaceCwd } from './native-navigation.js'
 import { watchSidebar } from './sidebar.js'
+import { watchPluginSettings } from './plugin-settings.js'
 
 type NativeGlobalProps = { useSessions: UseSessions }
 type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
@@ -68,6 +69,7 @@ function ConversationMemoirView({
         api={api}
         cwd={cwd}
         t={t}
+        announceOnOpen
         openSource={(sourceSessionId) => {
           if (sourceSessionId === sessionId) openView('chat', '')
           ctx.uiWorkspace.openSession(sourceSessionId as SessionId)
@@ -117,6 +119,7 @@ export function apply(rawCtx: Context): void {
 
   ctx.effect(() => mountPanelStyles(), 'dsh-memoir: native alpha styles')
   ctx.effect(() => watchSidebar(ctx, api, t), 'dsh-memoir: optional sidebar')
+  ctx.effect(() => watchPluginSettings(ctx, api, t), 'dsh-memoir: optional plugin settings')
   ctx.effect(() => {
     let disposers: Array<() => void> = []
     const register = (): void => {
