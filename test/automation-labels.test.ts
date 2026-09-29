@@ -20,7 +20,7 @@ type Call = { action: string; args: Record<string, unknown> }
 
 function harness(labelFailure = false, candidates: object[] = []) {
   const calls: Call[] = [], warnings: string[] = [], failures: string[] = []
-  const github = { rest: {
+  const github = { paginate: async () => [], rest: {
     issues: Object.fromEntries(['addLabels', 'createComment', 'update'].map(action => [action, async (args: Record<string, unknown>) => {
       if (action === 'addLabels' && labelFailure) throw new Error('Synthetic label API failure')
       calls.push({ action, args })
@@ -86,16 +86,15 @@ test('missing duplicate label never substitutes for actual duplicate evidence', 
   }
 })
 
-test('duplicate labeling failure warns maintainers without changing evidence-based policy', async () => {
+test('similar titles only produce advisory comments regardless of label permissions', async () => {
   for (const labelFailure of [false, true]) {
     const h = harness(labelFailure, [{ number: 10, title: 'Exact duplicate issue', html_url: 'https://example.invalid/10' }])
     await dedup({ repo: { owner: 'owner', repo: 'repo' }, payload: {
       issue: { number: 20, title: 'Exact duplicate issue', labels: [] },
     } }, h.github, h.core)
-    assert.deepEqual(h.calls.map(call => call.action), labelFailure ? ['createComment', 'update'] : ['createComment', 'addLabels', 'update'])
+    assert.deepEqual(h.calls.map(call => call.action), ['createComment'])
     assert.match(String(h.calls[0]!.args.body), /#10/)
     assert.doesNotMatch(String(h.calls[0]!.args.body), /权限|标签/)
-    assert.equal(h.calls.at(-1)!.args.state, 'closed')
-    assert.equal(h.warnings.length, labelFailure ? 1 : 0)
+    assert.equal(h.warnings.length, 0)
   }
 })

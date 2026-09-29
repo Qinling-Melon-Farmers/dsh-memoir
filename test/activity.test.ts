@@ -4,8 +4,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { Session, SessionId, SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { ACTIVITY_KEY, activityProjection, emptyActivity, CALL_LIMIT } from '../lib/activity.js'
+import { ToolCallId, createUserMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ACTIVITY_KEY, activityProjection, emptyActivity, CALL_LIMIT, writeReceiptMeta } from '../lib/activity.js'
 import { installAutoDistill, DistillDiagnostics } from '../lib/autodistill.js'
 import { memoirRecordTool, memoirUpdateTool, resolveMemorySource } from '../lib/tools.js'
 import { MemoirStore } from '../lib/store.js'
@@ -26,14 +26,20 @@ test('activity projection replays late registration, checkpoints and remounts wi
   const dispose = registry.register(activityProjection)
   try {
     assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.toolCalls, 1)
+    session.append('tool/call', { turn: 8, step: 2, callId: ToolCallId('write'), name: 'memoir_record', arguments: '{}' })
     const checkpoint = registry.checkpoint(session)
     assert.ok(!JSON.stringify(checkpoint).includes('sensitive'))
-    const receipt = session.append('dsh-memoir/written', { turn: 8, callId: 'nested-call' })
+    const receipt = session.append('tool/result', { turn: 8, step: 2,
+      message: createToolResultMessage({ callId: ToolCallId('write'), content: [], isError: false }), meta: writeReceiptMeta(true) }, { surfaceOp: 'append' })
     assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.recorded, true)
     // Full replay and cold checkpoint replay have identical state.
     const restored = registry.restore(checkpoint, [receipt], SessionLogOffset(Number(receipt.seq)), session.header, SessionLogOffset(0))
     assert.equal((restored.checkpoint[ACTIVITY_KEY]?.val as { recorded: boolean }).recorded, true)
     const frozen = registry.checkpoint(session)
+    const legacyCheckpoint = { [ACTIVITY_KEY]: { ...frozen[ACTIVITY_KEY]!, ver: 2 } }
+    assert.equal(registry.restoreFloor(legacyCheckpoint), 0, 'old projection checkpoints force full replay')
+    const upgraded = registry.restore(legacyCheckpoint, session.snapshotEvents(), SessionLogOffset(0), session.header, SessionLogOffset(0))
+    assert.deepEqual(upgraded.checkpoint[ACTIVITY_KEY]?.val, frozen[ACTIVITY_KEY]?.val)
     assert.deepEqual(registry.stateOf(session, ACTIVITY_KEY), frozen[ACTIVITY_KEY]?.val)
     dispose()
     assert.equal(registry.stateOf(session, ACTIVITY_KEY), undefined)
@@ -41,6 +47,26 @@ test('activity projection replays late registration, checkpoints and remounts wi
     assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.recorded, true)
     remount()
   } finally { dispose() }
+})
+
+test('write receipts must match memoir calls and represent a real commit', () => {
+  let state = activityProjection.apply(emptyActivity(), { type: 'tool/call', data: {
+    turn: 1, step: 1, callId: ToolCallId('write'), name: 'memoir_record', arguments: '{}',
+  } } as SessionEvent)
+  for (const [callId, meta, isError] of [
+    ['write', undefined, false], ['write', writeReceiptMeta(false), false],
+    ['unrelated', writeReceiptMeta(true), false], ['write', writeReceiptMeta(true), true],
+    ['write', { memoir: { version: 2, persisted: true } }, false],
+  ] as const) {
+    const next = activityProjection.apply(state, { type: 'tool/result', data: {
+      turn: 1, step: 1, message: createToolResultMessage({ callId: ToolCallId(callId), content: [], isError }), ...(meta ? { meta } : {}),
+    } } as SessionEvent)
+    assert.equal(next.recorded, false)
+  }
+  state = activityProjection.apply(state, { type: 'tool/result', seq: SessionSeq(2), time: 1, surfaceOp: 'append', data: { turn: 1, step: 1,
+    message: createToolResultMessage({ callId: ToolCallId('write'), content: [], isError: false }), meta: writeReceiptMeta(true),
+  } } as SessionEvent)
+  assert.equal(state.recorded, true)
 })
 
 test('projection bounds current-turn IDs, resets on the next turn, and remembers accepted reminders', () => {

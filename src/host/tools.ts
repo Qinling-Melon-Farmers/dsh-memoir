@@ -22,17 +22,21 @@ import type { SimilarityCandidate } from './similarity.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
 import type { MemoirActivity } from './activity.js'
+import { writeReceiptMeta } from './activity.js'
 
-/** Host-owned projection and persistence receipt hooks; no log scans in tools. */
+/** Host-owned projection and live commit hooks; no log scans in tools. */
 export interface MemoryToolHooks {
   activity(exec: ToolRunContext): MemoirActivity | undefined
   written?(exec: ToolRunContext): void
 }
 
 /** JSON is authoritative even when regenerating PROJECT_MEMORY.md then fails. */
-function trackWrite<T>(store: MemoirStore, exec: ToolRunContext, hooks: MemoryToolHooks | undefined, mutate: () => T): T {
+function trackWrite<T>(store: MemoirStore, exec: ToolRunContext, hooks: MemoryToolHooks | undefined, mutate: () => T): { value: T; persisted: boolean } {
   const before = store.currentRevision()
-  try { return mutate() } finally {
+  try {
+    const value = mutate()
+    return { value, persisted: store.currentRevision() !== before }
+  } finally {
     if (store.currentRevision() !== before) hooks?.written?.(exec)
   }
 }
@@ -240,6 +244,7 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
           section: { type: 'string', required: true },
           action: { type: 'string', required: true, enum: ['recorded', 'needs-resolution', 'updated', 'superseded', 'force-recorded'] },
           recorded: { type: 'boolean', required: true },
+          persisted: { type: 'boolean', required: true },
           id: { type: 'string' },
           title: { type: 'string' },
           projectFile: { type: 'string' },
@@ -266,6 +271,7 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
           },
         },
       },
+      presentationMeta: (_args, value) => writeReceiptMeta(value.persisted),
       render: (_args, value) => {
         const copy = hostCopy(currentLanguage()).record
         if (value.action === 'needs-resolution') {
@@ -288,7 +294,7 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
       if (cwd === undefined) {
         throw new Error(hostCopy(language).record.noWorkspace)
       }
-      const result = trackWrite(store, exec, hooks, () => governedRecord(store, retrieval, cwd, {
+      const { value: result, persisted } = trackWrite(store, exec, hooks, () => governedRecord(store, retrieval, cwd, {
         section: args.section,
         ...(args.title !== undefined ? { title: args.title } : {}),
         content: args.content,
@@ -304,13 +310,14 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
       }))
       const candidates = result.candidates.map(candidateValue)
       if (result.entry === undefined) {
-        return { section: args.section, action: result.action, recorded: result.recorded, candidates }
+        return { section: args.section, action: result.action, recorded: result.recorded, persisted, candidates }
       }
       const entry = result.entry
       return {
         section: entry.section,
         action: result.action,
         recorded: result.recorded,
+        persisted,
         id: entry.id,
         ...(entry.title !== undefined ? { title: entry.title } : {}),
         // record() already regenerated the project file — never write twice.
@@ -380,8 +387,10 @@ export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLangu
           section: { type: 'string', required: true },
           status: { type: 'string', required: true },
           updated: { type: 'boolean', required: true },
+          persisted: { type: 'boolean', required: true },
         },
       },
+      presentationMeta: (_args, value) => writeReceiptMeta(value.persisted),
       render: (_args, value) => text(hostCopy(currentLanguage()).update.rendered + ' [' + value.section + '] (id: ' + value.id + ', status: ' + value.status + ')'),
     },
     async execute(args, exec) {
@@ -404,9 +413,9 @@ export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLangu
       }
       const validation = validateEntryUpdate(patch, language)
       if (validation !== undefined) throw new Error(validation)
-      const entry = trackWrite(store, exec, hooks, () => store.update(cwd, args.id, patch))
+      const { value: entry, persisted } = trackWrite(store, exec, hooks, () => store.update(cwd, args.id, patch))
       if (entry === undefined) throw new Error(copy.notFound(args.id))
-      return { id: entry.id, section: entry.section, status: entry.status ?? 'active', updated: true }
+      return { id: entry.id, section: entry.section, status: entry.status ?? 'active', updated: true, persisted }
     },
   })
 }

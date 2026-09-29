@@ -7,6 +7,7 @@ declare const schema: z.ZodObject<{
     turn: z.ZodNumber;
     toolCalls: z.ZodNumber;
     calls: z.ZodArray<z.ZodString>;
+    memoirCalls: z.ZodArray<z.ZodString>;
     recorded: z.ZodBoolean;
     reminded: z.ZodBoolean;
     distilling: z.ZodBoolean;
@@ -14,6 +15,14 @@ declare const schema: z.ZodObject<{
 }, z.core.$strip>;
 export type MemoirActivity = z.infer<typeof schema>;
 export declare const emptyActivity: () => MemoirActivity;
+/** Opaque metadata on the host-owned tool/result event, never a new event type. */
+export declare function writeReceiptMeta(persisted: boolean): {
+    memoir: {
+        version: number;
+        persisted: boolean;
+    };
+};
+export declare function hasWriteReceipt(meta: unknown): boolean;
 declare module '@deepseek-ai/dsh-session-projection/types' {
     interface SessionProjectionStateMap {
         'dsh-memoir/activity': MemoirActivity;
@@ -21,7 +30,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 }
 declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {
-        /** Receipt after the Memoir store commit; no memory content is copied. */
+        /** Legacy READ ONLY: repaired 0.8.1–0.9.0 logs. Never append this event. */
         'dsh-memoir/written': {
             turn: number;
             callId: string;

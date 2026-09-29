@@ -16,6 +16,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
 import type { MemoirActivity } from './activity.js'
+import { hasWriteReceipt } from './activity.js'
 
 // Session V4 requires each producer to own a source kind; the generic
 // `plugin` kind was removed. This is the SDK's public extension seam.
@@ -53,15 +54,19 @@ export interface TurnActivity {
 export function turnActivity(events: readonly TurnEventLike[], turn: number): TurnActivity {
   let recorded = false
   let toolCalls = 0
+  const completedWrites = new Set<string>()
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
-    const data = event.data as { turn?: number; name?: string } | undefined
+    const data = event.data as { turn?: number; name?: string; callId?: string; meta?: unknown; message?: { isError?: boolean; source?: { callId?: string } } } | undefined
     if (data === undefined || typeof data.turn !== 'number') continue
     if (data.turn < turn) break
     if (data.turn !== turn) continue
     if (event.type === 'tool/call') {
       toolCalls += 1
+      if ((data.name === 'memoir_record' || data.name === 'memoir_update') && typeof data.callId === 'string' && completedWrites.has(data.callId)) recorded = true
     }
+    if (event.type === 'tool/result' && data.message?.isError !== true && typeof data.message?.source?.callId === 'string' && hasWriteReceipt(data.meta)) completedWrites.add(data.message.source.callId)
+    // Read-only support for legacy logs after the explicit recovery tool.
     if (event.type === 'dsh-memoir/written') recorded = true
   }
   return { worked: toolCalls > 0, recorded, toolCalls }

@@ -16,7 +16,7 @@ import type { MemoirEntry, MemoirSource, MemoirStore } from './store.js';
 import type { RetrievalEngine } from './retrieval.js';
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
 import type { MemoirActivity } from './activity.js';
-/** Host-owned projection and persistence receipt hooks; no log scans in tools. */
+/** Host-owned projection and live commit hooks; no log scans in tools. */
 export interface MemoryToolHooks {
     activity(exec: ToolRunContext): MemoirActivity | undefined;
     written?(exec: ToolRunContext): void;

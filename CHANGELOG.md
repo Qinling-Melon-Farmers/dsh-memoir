@@ -6,10 +6,16 @@
 
 ### 中文
 
+- 补验官方 DSH `0.2.0-rc.2`；保留 rc.1 兼容下限，恢复工具明确支持已审计的 rc.1 / rc.2 校验器与锁协议。
+- 修复 #14：停止追加不受宿主持久化读取端支持的 `dsh-memoir/written` 事件，成功直接写入改用官方 `tool/result.meta` 保存提交标记；投影升级至 v3 并重放旧 checkpoint。保留活跃会话内嵌套工具/JSON 已提交但 Markdown 失败的真实保存判定，不把待确认或工具调用本身算作保存；冷重启后无持久元数据的这些特殊路径保持未知。
+- 新增显式离线会话恢复脚本与双语说明：默认只读，执行须确认停机并取得官方会话锁；逐帧校验压缩日志，原样备份，仅补旧回执的 `ignorable: true`。损坏、未知事件、并发修改及不支持的格式拒绝修改，不自动触碰用户会话或记忆。
 - 修复 Issue 机器人拒绝纯文本日志及覆盖维护者重开的问题（#14）：模板检查与标题查重仅提供建议，不再自动关闭或自动判定重复；同一建议原位更新，测试、代码引用与补丁改为可选。
 
 ### English
 
+- Verify against official DSH `0.2.0-rc.2` while retaining the rc.1 compatibility floor; explicitly support the reviewed rc.1 / rc.2 validators and lease protocols in the recovery tool.
+- Fix #14: stop appending `dsh-memoir/written`, which the host's persisted-session reader rejects. Successful direct writes carry a commit receipt in official `tool/result.meta`; projection v3 replays old checkpoints. Preserve live commit tracking for nested tools and JSON commits followed by Markdown failure; neither an unresolved candidate nor a call alone counts as saved. Those special outcomes remain unknown after a cold restart if no durable metadata exists.
+- Add an explicit offline session-recovery script and bilingual guide: read-only by default; applying requires stopped-host confirmation and the official session lease. Validate compressed frames, preserve an exact backup and only add `ignorable: true` to legacy receipts. Refuse corruption, other unknown required events, concurrent changes and unsupported formats; never automatically modify user sessions or memory.
 - Fix issue automation rejecting plain-text logs and overriding maintainer reopen decisions (#14). Template checks and title similarity are advisory only: no automatic closure or duplicate verdict; update one advisory in place, and make tests, code references and patches optional.
 
 ## [0.9.0] - 2026-09-28

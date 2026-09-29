@@ -11,6 +11,10 @@
 
 No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH and Zod 4 peers are supplied by the host environment; Zod validates session projections and is not bundled.
 
+> [!WARNING]
+> **Session recovery issue #14 affects legacy receipts written by 0.8.1–0.9.0.** `main` no longer emits the unsupported event; this is not yet an npm package update. Stop memory writes from affected versions until using a fixed build; disabling auto-distillation alone does not stop manual tool writes. Preserve your original sessions and memory data. Follow the [recovery guide](./SESSION_RECOVERY.md#english) to audit first, then stop all hosts and back up before repair. Do not delete logs or downgrade their format.
+> The fix covers official DSH `0.2.0-rc.1` / `0.2.0-rc.2`; upgrading DSH alone does not fix the old plugin or repair affected logs.
+
 > [!IMPORTANT]
 > **0.9.0 requires DSH `>=0.2.0-rc.1 <0.3.0-0`**, built and tested against the published `0.2.0-rc.1` (not an unqualified final 0.2.0 release). Adds a visible plugin guide, native plugin configuration, German/Russian agent copy and offline release highlights. Retains separate distillation turns, provenance, frozen snapshots and zero bundled runtime dependencies. **On DSH 0.1.7, pin `dsh-memoir@0.8.2`; upgrade the host before installing 0.9.0.**
 >

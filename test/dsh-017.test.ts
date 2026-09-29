@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { installAutoDistill } from '../lib/autodistill.js'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
@@ -27,7 +27,7 @@ test('DSH 0.1.7 Session V4 retains tool provenance, distillation and frozen memo
     assert.equal(session.header.version, 4)
     session.append('tool/call', { turn: 1, step: 1, callId: ToolCallId('call-test-1'), name: 'read', arguments: '{}' })
     const activity = () => registry.stateOf(session, ACTIVITY_KEY)!
-    const hooks = { activity, written: () => { session.append('dsh-memoir/written', { turn: activity().turn, callId: 'write' }) } }
+    const hooks = { activity, written: () => {} }
     assert.equal(activity().toolCalls, 1)
     const exec = makeExec(ws.cwd, session.id, 1)
     Object.assign(exec.agent!, { session })
@@ -45,7 +45,13 @@ test('DSH 0.1.7 Session V4 retains tool provenance, distillation and frozen memo
     session.append('tool/call', { turn: 2, step: 1, callId: ToolCallId('call-test-2'), name: 'memoir_record', arguments: '{}' })
     const recordExec = makeExec(ws.cwd, session.id, 2)
     Object.assign(recordExec.agent!, { session })
-    await memoirRecordTool(store, new RetrievalEngine(store), 'zh', hooks).execute({ section: 'lessons', content: 'V4 compatibility verified' }, recordExec)
+    const tool = memoirRecordTool(store, new RetrievalEngine(store), 'zh', hooks)
+    const args = { section: 'lessons' as const, content: 'V4 compatibility verified' }
+    const value = await tool.execute(args, recordExec)
+    session.append('tool/result', { turn: 2, step: 1,
+      message: createToolResultMessage({ callId: ToolCallId('call-test-2'), content: [], isError: false }),
+      meta: tool.output.presentationMeta!(args, value as Parameters<NonNullable<typeof tool.output.presentationMeta>>[1]),
+    }, { surfaceOp: 'append' })
     assert.equal(store.entries(ws.cwd)[0]?.source?.turnId, 2)
     assert.equal(activity().recorded, true)
     assert.equal(memoirSectionText(store, exec, snapshots), before)

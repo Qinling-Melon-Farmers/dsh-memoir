@@ -220,20 +220,29 @@ export function apply(ctx: Context, config?: Config): void {
   if (!value.enabled) return
   const distillDiagnostics = new DistillDiagnostics()
   ctx.effect(() => ctx.sessionProjections.register(activityProjection), 'dsh-memoir: activity projection')
+  // Live commit truth also covers nested PTC writes and a JSON commit followed
+  // by Markdown failure. No foreign event is appended to the host's log.
+  // Only successful direct results have durable metadata; after a cold restart
+  // an outcome without that metadata is unknown, never inferred from a call.
+  const committedTurns = new WeakMap<Session, number>()
+  const activityOf = (session: Session) => {
+    const state = ctx.sessionProjections.stateOf(session, ACTIVITY_KEY)
+    return state !== undefined && committedTurns.get(session) === state.turn ? { ...state, recorded: true } : state
+  }
   const memoryHooks: MemoryToolHooks = {
-    activity: (exec) => exec.agent === undefined ? undefined : ctx.sessionProjections.stateOf(exec.agent.session, ACTIVITY_KEY),
+    activity: (exec) => exec.agent === undefined ? undefined : activityOf(exec.agent.session),
     written: (exec) => {
       distillDiagnostics.write('persisted')
       // A store commit must never be turned into a retryable tool failure if
-      // diagnostics/session receipt persistence subsequently fails.
+      // diagnostics/live commit tracking subsequently fails.
       try {
         const state = memoryHooks.activity(exec)
         if (state?.reminded) distillDiagnostics.write('afterReminder')
         // The entry links to the originating work, but its receipt belongs to
-        // the executing wrap-up turn so activity replay counts this save.
+        // the executing wrap-up turn so live activity counts this save.
         const turn = resolveMemorySource(exec, memoryHooks)?.turnId === undefined ? undefined : state?.turn
         if (turn === undefined || exec.agent === undefined) { distillDiagnostics.write('receiptFailed'); return }
-        exec.agent.session.append('dsh-memoir/written', { turn, callId: String(exec.callId) })
+        committedTurns.set(exec.agent.session, turn)
       } catch { distillDiagnostics.write('receiptFailed') }
     },
   }
@@ -388,7 +397,7 @@ export function apply(ctx: Context, config?: Config): void {
     () => installAutoDistill(autoDistillWire(ctx), {
       diagnostics: distillDiagnostics,
       // The Cordis event contract supplies a real Session, not a history array.
-      activity: (agent) => ctx.sessionProjections.stateOf(agent.session as Session, ACTIVITY_KEY),
+      activity: (agent) => activityOf(agent.session as Session),
       enabled: () => liveSettings.get().settings.autoDistill,
       policy: () => {
         const current = liveSettings.get().settings

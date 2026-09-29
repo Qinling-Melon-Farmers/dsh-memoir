@@ -7,11 +7,12 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
+import { rmSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, MEMOIR_GUIDANCE, memoirSectionText } from '../lib/index.js'
 import type { Config } from '../lib/index.js'
-import { MemoirStore } from '../lib/store.js'
+import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { MemorySnapshotManager, sessionKeyOf } from '../lib/snapshot.js'
 import { callRoute, makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 import { emptyActivity } from '../lib/activity.js'
@@ -93,7 +94,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed', 'tools/result'])
 })
 
-test('wrap-up writes link to the work turn but persist their receipt in the execution turn', async () => {
+test('wrap-up writes link to the work turn without appending foreign session events', async () => {
   const ws = makeTempWorkspace()
   try {
     const ctx = makeCtx()
@@ -108,7 +109,7 @@ test('wrap-up writes link to the work turn but persist their receipt in the exec
     await record.execute({ section: 'work', title: 'Verified work', content: 'Preserve the original work source.' }, exec)
     const entry = new MemoirStore(storePath).entries(ws.cwd)[0]!
     assert.deepEqual(entry.source, { sessionId: 'origin-session', turnId: 1 })
-    assert.deepEqual(receipts, [{ type: 'dsh-memoir/written', data: { turn: 2, callId: 'call-test-2' } }])
+    assert.deepEqual(receipts, [], 'the host persists the ordinary tool result, not a plugin event')
   } finally { ws.cleanup() }
 })
 
@@ -120,6 +121,35 @@ test('apply with enabled=false mounts nothing', () => {
   assert.equal(ctx.sections.length, 0)
   assert.equal(ctx.listeners.length, 0)
 })
+
+for (const mode of ['direct', 'nested', 'markdown-failure'] as const) {
+  test(`live commit suppresses duplicate distillation without foreign events: ${mode}`, async () => {
+    const ws = makeTempWorkspace()
+    try {
+      const ctx = makeCtx()
+      let state = { ...emptyActivity(), turn: 1, calls: ['call-test-1'], toolCalls: 1 }
+      ctx.sessionProjections.stateOf = () => ({ ...state, worked: true })
+      const storePath = join(ws.cwd, 'memory.json')
+      apply(ctx as unknown as Context, { storePath, settingsPath: join(ws.cwd, 'settings.json') })
+      const exec = makeExec(ws.cwd, `live-${mode}`, 1)
+      Object.assign(exec.agent!.session, { append: () => assert.fail('plugin must never append an event') })
+      if (mode === 'nested') Object.assign(exec, { callId: 'nested-call', rootCallId: 'call-test-1' })
+      if (mode === 'markdown-failure') mkdirSync(join(ws.cwd, PROJECT_FILE))
+      const result = ctx.registeredTools.find(tool => tool.name === 'memoir_record')!.execute({ section: 'work', content: 'Committed JSON data' }, exec)
+      if (mode === 'markdown-failure') await assert.rejects(result)
+      else await result
+      assert.equal(new MemoirStore(storePath).entries(ws.cwd).length, 1)
+      let reminders = 0
+      const agent = { id: `live-${mode}`, session: exec.agent!.session, followup: () => { reminders++ } }
+      const stop = ctx.listeners.find(item => item.name === 'agent/turn-stopping')!.listener
+      stop({ agent, turn: 1, signal: new AbortController().signal })
+      assert.equal(reminders, 0, 'actual commit suppresses another reminder in the same live turn')
+      state = { ...emptyActivity(), turn: 2, calls: ['work-2'], toolCalls: 1 }
+      stop({ agent, turn: 2, signal: new AbortController().signal })
+      assert.equal(reminders, 1, 'live receipt must not leak into the next turn')
+    } finally { ws.cleanup() }
+  })
+}
 
 test('final write diagnostics distinguish failures, cancellation and unresolved similarity without duplicate counting', async () => {
   const ctx = makeCtx()
