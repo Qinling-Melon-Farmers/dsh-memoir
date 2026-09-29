@@ -11,8 +11,8 @@ const script = workflow.split(marker)[1]!.split(/\r?\n/).map(line => line.replac
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const run = new AsyncFunction('context', 'github', 'core', script)
 
-type Issue = { number: number; body: string; labels?: Array<string | { name: string }>; pull_request?: object }
-type Call = { action: 'addLabels' | 'createComment' | 'update'; args: Record<string, unknown> }
+type Issue = { number: number; body: string; state?: string; labels?: Array<string | { name: string }>; pull_request?: object }
+type Call = { action: 'addLabels' | 'createComment' | 'update' | 'updateComment'; args: Record<string, unknown> }
 
 function report(type = 'Bug 报告', overrides: Record<string, string> = {}): string {
   const sections: Record<string, string> = {
@@ -33,13 +33,13 @@ function report(type = 'Bug 报告', overrides: Record<string, string> = {}): st
   return Object.entries(sections).map(([heading, content]) => `### ${heading}\n\n${content}`).join('\n\n')
 }
 
-async function execute(issue: Issue, labelFailure = false, warnings: string[] = []): Promise<Call[]> {
+async function execute(issue: Issue, labelFailure = false, warnings: string[] = [], comments: unknown[] = []): Promise<Call[]> {
   const calls: Call[] = []
   const context = { payload: { issue }, repo: { owner: 'owner', repo: 'repo' } }
-  const github = { rest: { issues: Object.fromEntries(
-    (['addLabels', 'createComment', 'update'] as const).map(action => [action, async (args: Record<string, unknown>) => {
+  const github = { paginate: async () => comments, rest: { issues: Object.fromEntries(
+    (['addLabels', 'createComment', 'update', 'updateComment', 'listComments'] as const).map(action => [action, async (args: Record<string, unknown>) => {
       if (action === 'addLabels' && labelFailure) throw new Error('API label permission failure')
-      calls.push({ action, args })
+      if (action !== 'listComments') calls.push({ action, args })
     }]),
   ) } }
   await run(context, github, { warning: (message: string) => warnings.push(message) })
@@ -88,10 +88,10 @@ for (const [type, label] of classifications) {
     const warnings: string[] = []
     const calls = await execute({ number: 20, body: report(type, { '摘要': '_No response_' }) }, true, warnings)
     assert.equal(warnings.length, 1)
-    assert.deepEqual(calls.map(call => call.action), ['createComment', 'update'])
+    assert.deepEqual(calls.map(call => call.action), ['createComment'])
     assert.match(String(calls[0]!.args.body), /缺少或为空的必填部分：摘要/)
     assert.doesNotMatch(String(calls[0]!.args.body), /权限|必须附带.*标签/)
-    assert.equal(calls[1]!.args.state, 'closed')
+    assert.ok(calls.every(call => call.action !== 'update'))
   })
 }
 
@@ -114,26 +114,22 @@ test('moderation labels do not make a complete non-bug issue invalid', async () 
   }
 })
 
-test('missing bug content still closes with a useful reason and a request to complete the original issue', async () => {
+test('a reporter is not required to supply a patch or code references', async () => {
   const calls = await execute({ number: 12, body: report('Bug 报告', { '补丁': '<!-- placeholder -->\n_No response_' }) })
-  assert.deepEqual(calls.map(call => call.action), ['addLabels', 'createComment', 'update'])
-  assert.match(String(calls[1]!.args.body), /缺少或为空的必填部分：补丁/)
-  assert.match(String(calls[1]!.args.body), /直接补全本 Issue/)
-  assert.doesNotMatch(String(calls[1]!.args.body), /Bug 报告必须附带 bug 标签|重新发起/)
-  assert.equal(calls[2]!.args.state, 'closed')
-  assert.equal(calls[2]!.args.state_reason, 'not_planned')
+  assert.deepEqual(calls.map(call => call.action), ['addLabels'])
 })
 
 test('label-based bug classification still validates evidence and bug-specific fields', async () => {
   const calls = await execute({ number: 14, body: report('问题'), labels: [{ name: 'bug' }] })
-  assert.deepEqual(calls.map(call => call.action), ['createComment', 'update'])
-  assert.match(String(calls[0]!.args.body), /缺少或为空的必填部分：证据截图 \/ 日志, 冒烟测试, 引用代码, 补丁/)
+  assert.deepEqual(calls.map(call => call.action), ['createComment'])
+  assert.match(String(calls[0]!.args.body), /缺少或为空的必填部分：证据截图 \/ 日志/)
 })
 
-test('missing screenshot evidence is not bypassed by automatic labeling', async () => {
-  const calls = await execute({ number: 12, body: report('Bug 报告', { '证据截图 / 日志': 'No attached evidence.' }) })
-  assert.deepEqual(calls.map(call => call.action), ['addLabels', 'createComment', 'update'])
-  assert.match(String(calls[1]!.args.body), /证据截图 \/ 日志必须包含/)
+test('issue #14: plain text and indented logs are accepted without a screenshot', async () => {
+  for (const evidence of ['failed to observe session: unknown event type dsh-memoir/written', '    {"type":"dsh-memoir/written","seq":62}', '```text\nSessionFormatUnsupportedError\n```', 'https://example.invalid/log.txt']) {
+    const calls = await execute({ number: 14, body: report('Bug 报告', { '证据截图 / 日志': evidence }), labels: ['bug'] })
+    assert.deepEqual(calls, [])
+  }
 })
 
 test('pull requests are not processed as issues', async () => {
@@ -145,7 +141,36 @@ test('bot labeling API failure does not close or blame the reporter', async () =
 })
 
 test('bug evidence remains required even when automatic labeling fails', async () => {
-  const calls = await execute({ number: 12, body: report('Bug 报告', { '证据截图 / 日志': 'No image.' }) }, true)
-  assert.deepEqual(calls.map(call => call.action), ['createComment', 'update'])
-  assert.match(String(calls[0]!.args.body), /证据截图 \/ 日志必须包含/)
+  const calls = await execute({ number: 12, body: report('Bug 报告', { '证据截图 / 日志': '_No response_' }) }, true)
+  assert.deepEqual(calls.map(call => call.action), ['createComment'])
+  assert.match(String(calls[0]!.args.body), /缺少或为空的必填部分：证据截图/)
+})
+
+test('advisories are idempotent, edited in place, and never override a reopened issue', async () => {
+  const issue = { number: 14, state: 'open', body: report('Bug 报告', { '摘要': '' }), labels: ['bug'] }
+  const first = await execute(issue)
+  const comment = { id: 3, user: { login: 'github-actions[bot]' }, body: first[0]!.args.body }
+  assert.deepEqual(await execute(issue, false, [], [comment]), [])
+  const completed = await execute({ ...issue, body: report() }, false, [], [comment])
+  assert.deepEqual(completed.map(x => x.action), ['updateComment'])
+  assert.equal(completed[0]!.args.comment_id, 3)
+  assert.deepEqual(await execute({ ...issue, state: 'closed' }), [])
+  assert.doesNotMatch(script, /issues\.update\(/)
+})
+
+test('similar titles only suggest a related issue; no duplicate label or auto-closure', async () => {
+  const dedup = readFileSync(new URL('../.github/workflows/issue-dedup.yml', import.meta.url), 'utf8')
+  const source = dedup.split(marker)[1]!.split(/\r?\n/).map(line => line.replace(/^ {12}/, '')).join('\n')
+  const runDedup = new AsyncFunction('context', 'github', 'core', source)
+  const calls: unknown[] = []
+  const comments: unknown[] = []
+  const github = { paginate: async () => comments, rest: {
+    search: { issuesAndPullRequests: async () => ({ data: { items: [{ number: 13, title: 'Memory failure', html_url: 'https://github.com/owner/repo/issues/13' }] } }) },
+    issues: { listComments: () => {}, createComment: async (args: {body: string}) => { calls.push(args); comments.push({user:{login:'github-actions[bot]'}, body:args.body}) } },
+  } }
+  const context = { repo: {owner:'owner',repo:'repo'}, payload: { issue: { number:14, title:'Memory failure', state:'open' } } }
+  await runDedup(context, github, {})
+  await runDedup(context, github, {})
+  assert.equal(calls.length, 1)
+  assert.doesNotMatch(source, /issues\.(?:update|addLabels)\(/)
 })

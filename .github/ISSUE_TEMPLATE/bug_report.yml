@@ -1,12 +1,13 @@
 name: Bug 报告 (Bug report)
-description: 提交可复现的 Bug。必须附截图 / 日志证据，无证据将被关闭。
+description: 提交可复现的 Bug，支持文本日志、报错、截图或附件；缺信息时会提示补充，不自动关闭。
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        请保持本模板完整并填写所有必填部分。缺少截图 / 日志证据、冒烟测试、代码引用或补丁的 Bug 报告将被自动关闭。
+        请描述复现步骤、环境与实际错误。支持原始文本日志、代码块、截图或附件，请先脱敏。
+        冒烟测试、代码定位与补丁均为可选，不要求提问者具备开发能力。机器人仅提示补充信息，不自动关闭 Issue。
 
         无需自行添加标签或具备打标签权限；机器人会补充 bug 标签，缺标不构成关闭理由。
 
@@ -90,36 +91,36 @@ body:
     id: bug-screenshot
     attributes:
       label: 证据截图 / 日志
-      description: 粘贴或上传展示 Bug 的截图；无可见界面的错误（store / 工具 / 路由）可用终端输出、日志或 PROJECT_MEMORY.md 异常内容的截图。无证据的 Bug 报告将被自动关闭。
-      placeholder: 将图片拖到此处，或粘贴 GitHub 图片 / 文件链接。
+      description: 可直接粘贴错误原文、终端日志、代码块、截图或附件链接；不要求把文本转成图片。请移除密钥、私人路径与无关对话。
+      placeholder: 粘贴脱敏日志 / 错误信息，或拖入图片、文件。
     validations:
       required: true
   - type: textarea
     id: smoke-test
     attributes:
       label: 冒烟测试
-      description: 说明你实际执行过的验证：按复现步骤在具体 DSH / 插件版本上的操作与观察结果、执行过的构建或命令（如 pnpm run build / pnpm test）、对照实验。未实际验证的描述视为无效。
+      description: 可选。说明实际执行过的验证与结果；没有测试环境可留空，不要求运行开发命令。
       placeholder: |
         - 环境（DSH / dsh-memoir 版本）:
         - 执行步骤与观察结果:
         - 对照 / 历史版本差异:
     validations:
-      required: true
+      required: false
   - type: textarea
     id: code-reference
     attributes:
       label: 引用代码
-      description: 指向仓库内相关代码的精确位置（文件路径 + 函数 / 行号，可附 GitHub 链接），便于维护者定位。
+      description: 可选。若已定位，可提供文件路径、函数或 GitHub 链接。
       placeholder: |
         src/host/store.ts:120-135
         https://github.com/Qinling-Melon-Farmers/dsh-memoir/blob/main/src/host/store.ts#L120-L135
     validations:
-      required: true
+      required: false
   - type: textarea
     id: patch
     attributes:
       label: 补丁
-      description: 提供你建议的修复补丁或实现草案（diff 或代码片段），即使不完整；只描述问题而不附补丁或草案的 Issue 将被关闭。
+      description: 可选。若有建议补丁或实现思路可附上；不提供补丁也欢迎报告问题。
       placeholder: |
         ```diff
         --- a/src/host/store.ts
@@ -127,7 +128,7 @@ body:
         @@ ... @@
         ```
     validations:
-      required: true
+      required: false
   - type: textarea
     id: additional-context
     attributes:

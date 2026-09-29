@@ -41,10 +41,10 @@ snapshot）、`retrieval`（BM25 检索与排序）、`selector`（Hot Memory �
    机器人根据表单「Issue 类型」的确切选项补标：Bug 报告→`bug`、
    功能请求→`enhancement`、文档→`documentation`、问题→`question`；
    「其他」及未知类型留待人工分类，不从正文猜测 `invalid` / `wontfix` /
-   `help wanted` 等维护标签，不删除或替换已有标签。已有 `bug` 标签仍要求
-   Bug 专用证据，不能改选类型绕过校验。
-3. **补信息**：Bug 报告正文缺复现步骤、环境信息、证据截图 / 日志、冒烟测试、
-   代码引用或补丁时，评论请作者补充，并保留 `bug` 或 `question` 标签等待回复。
+   `help wanted` 等维护标签，不删除或替换已有标签。
+3. **补信息**：Bug 报告正文缺复现步骤、环境信息或证据时，仅评论请作者补充，
+   保持 Issue 开放。日志原文、代码块、截图或附件均可；冒烟测试、代码引用和
+   补丁为可选协助，不要求提问者具备开发能力。
 4. **新手任务**：范围小、验收明确的任务追加 `good first issue`；涉及深层
    存储 / 检索架构或需要修改 DSH 核心的不标。
 5. **开放认领**：确认开放社区协助、暂无维护者排期的任务追加 `help wanted`；
@@ -66,17 +66,15 @@ snapshot）、`retrieval`（BM25 检索与排序）、`selector`（Hot Memory �
 
 ## 自动化
 
-自动化工作流在 Issue / PR 创建时自动初筛并可直接关闭，无需人工确认；作者
-可通过评论请求重开，由维护者评估：
+Issue 自动化只提供分类与建议，不执行关闭，不覆盖维护者重开决定。缺信息、
+未附图片或标题相近不能作为自动拒绝用户报告的依据：
 
-- `.github/workflows/issue-dedup.yml`：对疑似重复的 Issue 自动打 `duplicate`
-  标签，评论附原 Issue 链接并关闭（`not_planned`）；缺标不构成重复证据，
-  补标失败仅向维护者告警，不改变依据重复证据作出的判定；
-- `.github/workflows/issue-template-enforcer.yml`：Bug 报告必填段（含证据
-  截图 / 日志、冒烟测试、引用代码与补丁）缺失或无效时，自动评论说明并关闭
-  （`not_planned`）；自动补齐上述四类分类标签，不因缺标而关闭。
-  标签 API 权限/配置错误只在工作流中告警，不要求作者处理，也不会跳过
-  正文/证据校验。作者直接补全原 Issue 后可请求重开，无需另开重复 Issue；
+- `.github/workflows/issue-dedup.yml`：标题相似度只生成相关 Issue 的参考评论，
+  不自动打 `duplicate`、不关闭。重复判定由维护者比较复现、版本与实际原因；
+- `.github/workflows/issue-template-enforcer.yml`：接受文本证据；缺少基础信息时
+  仅留言提示，不关闭。自动补齐四类分类标签，标签 API 失败只告警。
+  opened/edited/reopened 复核只维护同一条带标记的机器人建议，避免反复刷屏，
+  补充完整后更新原建议；不修改用户正文、不修改人工状态；
 - `.github/workflows/pr-contribution-rules.yml`：PR 描述缺 PR 类型勾选、
   最新 main 确认、本地验证命令 / 结果摘要，或外部贡献者的用户可见功能缺
   证据时评论提示（`synchronize` 事件仅失败不重复评论）；
@@ -89,7 +87,7 @@ snapshot）、`retrieval`（BM25 检索与排序）、`selector`（Hot Memory �
 
 - 提 Issue 前先检索标签与关键词，确认没有重复；
 - Bug 报告用「Bug 报告」表单提交（自动附加 `bug` 标签），并包含复现步骤、
-  环境信息、证据截图 / 日志、冒烟测试、引用代码与建议补丁；功能请求 /
+  环境信息及脱敏证据；冒烟测试、引用代码与补丁为可选。功能请求 /
   文档 / 问题用另一个表单；
 - 想认领任务，优先挑选 `good first issue` 或 `help wanted`，在评论区留言；
 - 已关闭的 Issue 若问题仍然存在，请重开并补充最新信息，不要开新 Issue

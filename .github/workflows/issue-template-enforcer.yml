@@ -2,7 +2,11 @@ name: Enforce Issue Template
 
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened, edited, reopened]
+
+concurrency:
+  group: issue-template-${{ github.event.issue.number }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -10,7 +14,7 @@ permissions:
 
 jobs:
   enforce:
-    name: Close issues that skip the template
+    name: Classify issues and request missing information
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +23,7 @@ jobs:
         with:
           script: |
             const issue = context.payload.issue;
-            if (issue.pull_request) {
+            if (!issue || issue.pull_request || issue.state === 'closed') {
               return;
             }
 
@@ -36,7 +40,7 @@ jobs:
             const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const readSection = (label) => {
               const heading = escapeRegExp(label);
-              const pattern = new RegExp(`(?:^|\\n)###\\s+${heading}\\s*\\n+([\\s\\S]*?)(?=\\n###\\s+|$)`, 'i');
+              const pattern = new RegExp(`^###[ \\t]+${heading}[ \\t]*\\r?\\n([\\s\\S]*?)(?=^###[ \\t]+|(?![\\s\\S]))`, 'im');
               const match = body.match(pattern);
               return match ? match[1].replace(/<!--[\s\S]*?-->/g, '').trim() : '';
             };
@@ -44,11 +48,6 @@ jobs:
             const isBlank = (value) => {
               const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
               return normalized === '' || normalized === 'no response' || normalized === '_no response_';
-            };
-
-            const hasScreenshotEvidence = (value) => {
-              return /!\[[^\]]*]\([^)]+\)/i.test(value)
-                || /https?:\/\/\S*(?:github\.com\/user-attachments\/assets\/|github\.com\/[^)\s]+\/assets\/|githubusercontent\.com\/|[./][^)\s]+\.(?:png|jpe?g|gif|webp))(?:[?#]\S*)?/i.test(value);
             };
 
             const issueType = readSection('Issue 类型').trim().toLowerCase();
@@ -64,11 +63,10 @@ jobs:
             const typeLabel = typeLabels.get(issueType);
             const isBug = typeLabel === 'bug' || labels.has('bug');
             const requiredSections = isBug
-              ? [...baseRequiredSections, '证据截图 / 日志', '冒烟测试', '引用代码', '补丁']
+              ? [...baseRequiredSections, '证据截图 / 日志']
               : baseRequiredSections;
 
             const missingSections = requiredSections.filter((label) => isBlank(readSection(label)));
-            const invalidSections = [];
             const classification = isBug ? 'bug' : typeLabel;
             if (classification && !labels.has(classification)) {
               // Classification is the bot's responsibility: external reporters
@@ -86,40 +84,31 @@ jobs:
                 core.warning(`Issue #${issue.number}: could not add classification label; maintainers should check label configuration and workflow permissions. Reporters do not need to add labels. Template validation continues independently.`);
               }
             }
-            const bugEvidence = readSection('证据截图 / 日志');
-            if (isBug && !isBlank(bugEvidence) && !hasScreenshotEvidence(bugEvidence)) {
-              invalidSections.push('证据截图 / 日志必须包含上传的图片、Markdown 图片或图片链接。');
-            }
             const missingSectionMessages = missingSections.length > 0
               ? [`缺少或为空的必填部分：${missingSections.join(', ')}`]
               : [];
 
-            if (missingSections.length === 0 && invalidSections.length === 0) {
-              return;
-            }
-
-            const comment = [
-              '该 Issue 因必填内容缺失或证据不符合模板要求而被自动关闭。',
-              '',
-              '请直接补全本 Issue 后留言请求重开，无需另开重复 Issue，也无需自行添加标签：',
-              '',
-              ...requiredSections.map((label) => `- ${label}`),
+            // Evidence can be plain text, code blocks, logs, images or files.
+            // A template checker cannot judge validity or overrule a maintainer.
+            const marker = '<!-- memoir-issue-template-advice-v2 -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: issue.number, per_page: 100,
+            });
+            const existing = comments.find(item => item.user?.login === 'github-actions[bot]' && item.body?.includes(marker));
+            if (missingSections.length === 0 && !existing) return;
+            const comment = [marker, ...(missingSections.length === 0 ? [
+              '已检测到所需信息，感谢补充。Issue 保持原状态，后续由维护者审阅。',
+              'Required sections are present. Thank you; a maintainer will review this report.',
+            ] : [
+              '自动检查发现以下信息可能尚未提供；Issue 保持开放，由维护者判断。',
               '',
               ...missingSectionMessages,
-              ...invalidSections,
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              body: comment,
-            });
-
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              state: 'closed',
-              state_reason: 'not_planned',
-            });
+              '',
+              '日志、错误原文、文本代码块、截图或附件均可作为证据；请脱敏。冒烟测试、代码定位和补丁是可选协助，不要求用户会编程。请补充原 Issue，无需重提或自行打标签。',
+              'This is an advisory only: the issue stays open. Plain-text logs are accepted; tests, code references and patches are optional. Please redact secrets and update this issue rather than opening another.',
+            ])].join('\n');
+            if (existing) {
+              if (existing.body !== comment) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body: comment });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body: comment });
+            }

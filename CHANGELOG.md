@@ -2,6 +2,16 @@
 
 本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
 
+## [Unreleased]
+
+### 中文
+
+- 修复 Issue 机器人拒绝纯文本日志及覆盖维护者重开的问题（#14）：模板检查与标题查重仅提供建议，不再自动关闭或自动判定重复；同一建议原位更新，测试、代码引用与补丁改为可选。
+
+### English
+
+- Fix issue automation rejecting plain-text logs and overriding maintainer reopen decisions (#14). Template checks and title similarity are advisory only: no automatic closure or duplicate verdict; update one advisory in place, and make tests, code references and patches optional.
+
 ## [0.9.0] - 2026-09-28
 
 ### 中文

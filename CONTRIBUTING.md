@@ -64,12 +64,12 @@ pnpm run typecheck && pnpm test   # 提交前必过
 
 ## Issue 与讨论
 
-- Bug 用「Bug 报告」表单提交（自动附加 `bug` 标签），需附截图 / 日志证据、
-  冒烟测试、引用代码与建议补丁；
+- Bug 用「Bug 报告」表单提交（自动附加 `bug` 标签），支持文本日志、错误原文、
+  代码块、截图或附件；冒烟测试、代码引用与补丁均为可选，不要求提问者会编程；
 - 功能请求 / 文档 / 问题用「功能请求或问题」表单提交；
 - 所有标签均由维护者或机器人管理，不要求外部贡献者有打标签权限。
   机器人按表单类型补 `bug` / `enhancement` / `documentation` / `question`；
-  缺标或补标失败不是关闭理由，正文与证据校验仍独立执行；
+  缺标或补标失败不是关闭理由；缺信息只提示补充，机器人不自动关闭 Issue；
 - 提 Issue 前先搜索关键词与标签（`bug` / `enhancement` / `question` /
   `good first issue` / `duplicate`），确认没有重复再提交；
 - 标签体系、分类标准与关闭流程见 [ISSUE_TRIAGE.md](ISSUE_TRIAGE.md)；

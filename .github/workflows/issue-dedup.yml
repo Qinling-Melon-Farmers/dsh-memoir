@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   dedup:
-    name: Close duplicate issues
+    name: Suggest related issues for human review
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +19,7 @@ jobs:
         with:
           script: |
             const issue = context.payload.issue;
-            if (!issue || issue.pull_request) {
+            if (!issue || issue.pull_request || issue.state === 'closed') {
               return;
             }
 
@@ -103,38 +103,21 @@ jobs:
             const repo = context.repo.repo;
 
             const comment = [
-              '该 Issue 疑似与已有 Issue 重复，已自动关闭。',
+              '<!-- memoir-related-issue-advice-v2 -->',
+              '标题相近的 Issue 如下，仅供参考，不自动判定重复或关闭：',
               '',
               '- 原 Issue：#' + duplicate.number + '「' + duplicate.title + '」',
               '- 链接：' + duplicate.html_url,
               '',
-              '如果确认不是重复（现象不同、版本不同等），请回复说明差异，我们会重新打开；或直接到原 Issue 下补充信息。',
+              '请维护者比较复现步骤、影响版本和实际原因后决定是否重复。',
+              'Possible related issue only. A maintainer must review the symptoms and versions; this workflow does not label or close issues.',
             ].join('\n');
 
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: issue.number, per_page: 100 });
+            if (comments.some(item => item.user?.login === 'github-actions[bot]' && item.body?.includes('<!-- memoir-related-issue-advice-v2 -->'))) return;
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: issue.number,
               body: comment,
-            });
-
-            try {
-              await github.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number: issue.number,
-                labels: ['duplicate'],
-              });
-            } catch {
-              // A labeling failure is not the reporter's responsibility.
-              // Duplicate evidence, not label presence, determines closure.
-              core.warning(`Issue #${issue.number}: could not add duplicate label; maintainers should check label configuration and workflow permissions. Duplicate detection is independent of labels.`);
-            }
-
-            await github.rest.issues.update({
-              owner,
-              repo,
-              issue_number: issue.number,
-              state: 'closed',
-              state_reason: 'not_planned',
             });
