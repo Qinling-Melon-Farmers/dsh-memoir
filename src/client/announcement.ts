@@ -1,5 +1,5 @@
 /** Offline release notice state. This key stores no workspace or memory data. */
-export const ANNOUNCEMENT_VERSION = '0.9.0'
+export const ANNOUNCEMENT_VERSION = '0.9.1'
 export const ANNOUNCEMENT_KEY = 'dsh-memoir:announcement:last-acknowledged'
 const EVENT = 'dsh-memoir:announcement-acknowledged'
 const acknowledged = new WeakMap<Window, string>()

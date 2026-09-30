@@ -4,18 +4,28 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-30
+
 ### 中文
 
+- **影响与升级边界（#14）**：0.8.1–0.9.0 在实际写入记忆后会追加缺少 `ignorable` 的自定义回执，导致 DSH 重新读取时拒绝整份会话；原始日志与记忆 JSON 并未因此被删除。**0.9.1 阻止新增异常回执，但安装/升级不会自动修复旧日志；仅升级 DSH 也不能修复此问题。**
 - 补验官方 DSH `0.2.0-rc.2`；保留 rc.1 兼容下限，恢复工具明确支持已审计的 rc.1 / rc.2 校验器与锁协议。
 - 修复 #14：停止追加不受宿主持久化读取端支持的 `dsh-memoir/written` 事件，成功直接写入改用官方 `tool/result.meta` 保存提交标记；投影升级至 v3 并重放旧 checkpoint。保留活跃会话内嵌套工具/JSON 已提交但 Markdown 失败的真实保存判定，不把待确认或工具调用本身算作保存；冷重启后无持久元数据的这些特殊路径保持未知。
-- 新增显式离线会话恢复脚本与双语说明：默认只读，执行须确认停机并取得官方会话锁；逐帧校验压缩日志，原样备份，仅补旧回执的 `ignorable: true`。损坏、未知事件、并发修改及不支持的格式拒绝修改，不自动触碰用户会话或记忆。
+- **npm 包内置历史恢复能力**：随包提供 `dsh-memoir-repair` 命令、`scripts/repair-session-receipts.mjs` 和双语 `SESSION_RECOVERY.md`，无需 Git 源码。默认只读审计单个明确文件，不扫描用户目录；**执行恢复须先退出所有相关 Web/CLI/桌面宿主并独立备份，再传 `--apply --host-stopped`**，脚本还会取得官方写锁。建议用 Node 24 并显式指定官方 DSH 安装目录。
+- 恢复只给符合旧版结构的回执补外层 `ignorable: true`，不删事件、不重排 seq、不改正文/时间/工具数据；原始字节先保存在同目录唯一 `.bak`，验证后原子替换。支持原生 v4 JSONL 与带校验和的多帧 Zstandard，存储/解压后各限 128 MiB；日志损坏/截断、其它未知必需事件、链接、并发修改及未审计格式拒绝处理。重复执行是无操作；备份和失败暂存文件不会自动删除。
+- 权限边界：POSIX 要求原文件 uid/gid 匹配当前有效身份；Windows 新文件继承目录 ACL，不保留原文件专属 ACL，只可在继承权限已能保护全部日志的目录执行，且会话锁限同一登录会话。本工具不是通用数据恢复或自动迁移器；恢复前先停止旧插件写入，恢复后使用 0.9.1，避免再次产生异常回执。
+- 更新中英双语应用内公告，明确提示“新写入已修复、旧日志需单独恢复”；已确认过 0.9.0 公告的用户仍能看到本补丁提示。记忆 store v4 / settings v3 / snapshot v1、现有 UI 布局与自动注入语义不变。
 - 修复 Issue 机器人拒绝纯文本日志及覆盖维护者重开的问题（#14）：模板检查与标题查重仅提供建议，不再自动关闭或自动判定重复；同一建议原位更新，测试、代码引用与补丁改为可选。
 
 ### English
 
+- **Affected versions and upgrade boundary (#14):** 0.8.1–0.9.0 appends a custom receipt without `ignorable` after committing memory. DSH then refuses the entire persisted session on reopen; this does not delete the raw log or memory JSON. **0.9.1 prevents new invalid receipts, but installing/upgrading does not repair old logs. Upgrading DSH alone is insufficient.**
 - Verify against official DSH `0.2.0-rc.2` while retaining the rc.1 compatibility floor; explicitly support the reviewed rc.1 / rc.2 validators and lease protocols in the recovery tool.
 - Fix #14: stop appending `dsh-memoir/written`, which the host's persisted-session reader rejects. Successful direct writes carry a commit receipt in official `tool/result.meta`; projection v3 replays old checkpoints. Preserve live commit tracking for nested tools and JSON commits followed by Markdown failure; neither an unresolved candidate nor a call alone counts as saved. Those special outcomes remain unknown after a cold restart if no durable metadata exists.
-- Add an explicit offline session-recovery script and bilingual guide: read-only by default; applying requires stopped-host confirmation and the official session lease. Validate compressed frames, preserve an exact backup and only add `ignorable: true` to legacy receipts. Refuse corruption, other unknown required events, concurrent changes and unsupported formats; never automatically modify user sessions or memory.
+- **Recovery is included in the npm package:** the `dsh-memoir-repair` command, `scripts/repair-session-receipts.mjs` and bilingual `SESSION_RECOVERY.md` require no Git checkout. Default operation audits one explicitly named file without scanning user directories. **Exit every related Web/CLI/desktop host and independently back up first; applying then requires `--apply --host-stopped`** and the official write lease. Use Node 24 and explicitly supply the official DSH installation directory.
+- Repair only adds envelope-level `ignorable: true` to exact legacy receipts, preserving event order, seq, content, timestamps and tool data. Verify an exact adjacent `.bak` before atomic replacement. Support native v4 JSONL and checksummed multi-frame Zstandard, capped at 128 MiB stored/expanded; refuse torn/corrupt logs, other unknown required events, links, concurrent changes and unreviewed formats. Repeated repair is a no-op; backups and failed staging files are retained.
+- Permission boundaries: POSIX requires matching effective uid/gid; Windows replacements inherit directory ACLs and do not retain custom source-file ACLs. Apply only where inherited permissions already protect all log data; the Windows lease is scoped to one login session. This is not a general recovery/migration tool. Stop old plugin writes before recovery and use 0.9.1 afterwards to avoid recurrence.
+- Refresh Chinese/English in-app highlights to distinguish prevention from old-log recovery, including users who acknowledged 0.9.0. Memory store v4 / settings v3 / snapshot v1, existing UI layout and injection semantics remain unchanged.
 - Fix issue automation rejecting plain-text logs and overriding maintainer reopen decisions (#14). Template checks and title similarity are advisory only: no automatic closure or duplicate verdict; update one advisory in place, and make tests, code references and patches optional.
 
 ## [0.9.0] - 2026-09-28
@@ -611,7 +621,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.9.1
 [0.7.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.7.0
 [0.6.2]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.2

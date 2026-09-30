@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
-import { ANNOUNCEMENT_KEY, acknowledgeAnnouncement, hasAcknowledged, subscribeAnnouncement } from '../src/client/announcement.ts'
+import { ANNOUNCEMENT_KEY, ANNOUNCEMENT_VERSION, acknowledgeAnnouncement, hasAcknowledged, subscribeAnnouncement } from '../src/client/announcement.ts'
 
 test('release notices require explicit acknowledgment, persist, and distinguish new versions', () => {
   const dom = new JSDOM('', { url: 'http://localhost' })
@@ -11,11 +11,13 @@ test('release notices require explicit acknowledgment, persist, and distinguish 
     assert.equal(target.localStorage.length, 0, 'reading does not mark as seen')
     acknowledgeAnnouncement(target)
     assert.equal(hasAcknowledged(target), true)
-    assert.equal(target.localStorage.getItem(ANNOUNCEMENT_KEY), '0.9.0')
-    assert.equal(hasAcknowledged(target, '0.9.1'), false)
+    assert.equal(target.localStorage.getItem(ANNOUNCEMENT_KEY), ANNOUNCEMENT_VERSION)
+    assert.equal(hasAcknowledged(target, '0.9.2'), false)
     const restarted = new JSDOM('', { url: 'http://localhost' })
     try {
       restarted.window.localStorage.setItem(ANNOUNCEMENT_KEY, '0.9.0')
+      assert.equal(hasAcknowledged(restarted.window as unknown as Window), false, 'acknowledging 0.9.0 does not hide the recovery warning')
+      restarted.window.localStorage.setItem(ANNOUNCEMENT_KEY, ANNOUNCEMENT_VERSION)
       assert.equal(hasAcknowledged(restarted.window as unknown as Window), true)
     } finally { restarted.window.close() }
   } finally { dom.window.close() }

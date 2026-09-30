@@ -1,13 +1,16 @@
 {
   "name": "dsh-memoir",
   "description": "DeepSeek Harness (DSH) local-first cross-session project memory: bounded cache-friendly Hot Memory, BM25 recall/cache, provenance, lifecycle and bilingual Web GUI; no embeddings, external service or bundled runtime dependencies.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "bin": {
+    "dsh-memoir-repair": "./scripts/repair-session-receipts.mjs"
+  },
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",

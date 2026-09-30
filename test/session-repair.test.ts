@@ -98,6 +98,16 @@ test('apply requires a literal hostStopped:true before loading dependencies or t
   assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
 })
 
+test('npm bin entry works through a symlink or junction without silently skipping main', async t => {
+  const f = await fixture(t)
+  const alias = join(f.root, 'bin')
+  await fs.symlink(dirname(script), alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const { stdout } = await run(process.execPath, [join(alias, 'repair-session-receipts.mjs'), '--help'])
+  assert.match(stdout, /read-only audit/)
+  assert.match(stdout, /--apply --host-stopped/)
+  assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+})
+
 test('missing native zstd gives an explicit Node 24 diagnostic without reading any file', async () => {
   const code = `const z = require('node:zlib'); z.zstdDecompressSync = undefined; require('node:module').syncBuiltinESMExports(); import(${JSON.stringify(pathToFileURL(script).href)}).then(m => m.main(['missing/session.v4.jsonl.zstd'])).then(c => process.exitCode = c)`
   await assert.rejects(run(process.execPath, ['-e', code]), (error: any) => {

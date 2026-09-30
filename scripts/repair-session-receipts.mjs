@@ -493,4 +493,6 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = await main()
+// npm's POSIX bin is a symlink; compare real paths without running on import.
+const entryPath = process.argv[1] ? await fs.realpath(resolve(process.argv[1])).catch(() => undefined) : undefined
+if (entryPath === fileURLToPath(import.meta.url)) process.exitCode = await main()
