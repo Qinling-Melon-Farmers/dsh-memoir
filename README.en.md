@@ -1,6 +1,6 @@
 # dsh-memoir
 
-> **0.9.2** supports official npm DSH `0.2.1-alpha.1` while retaining `0.2.0-rc.1 / rc.2`. Fixes #15's cross-project recall truncation message and English issue-template recognition. Alpha compatibility is explicit; `0.2.1-alpha.2` will be assessed separately after this release and is not yet claimed as verified.
+> **0.9.2 is released** with official npm DSH `0.2.1-alpha.1` support, retaining `0.2.0-rc.1 / rc.2`, and fixes #15's recall accounting and English issue-template recognition. Memory runtime interfaces were subsequently verified with alpha.2. Local follow-up changes add alpha.2 historical recovery, **not yet released**. The npm commands below install 0.9.2, whose recovery utility rejects alpha.2 backends. Project memory remains anchored to the original session project when the execution directory changes.
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)

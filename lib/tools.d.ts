@@ -23,7 +23,7 @@ export interface MemoryToolHooks {
 }
 /** One text content block (the only render shape these tools emit). */
 export declare function text(value: string): ContentBlock[];
-/** Resolve the caller session's workspace cwd (absolute), or undefined. */
+/** Resolve the original project, not alpha.2's mutable execution directory. */
 export declare function resolveWorkspace(exec: ToolRunContext | undefined): string | undefined;
 /** Internal hard caps: bound read output regardless of stored volume. */
 export declare const READ_GLOBAL_MAX_ENTRIES_PER_PROJECT = 50;

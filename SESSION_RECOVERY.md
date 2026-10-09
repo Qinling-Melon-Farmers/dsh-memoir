@@ -17,7 +17,7 @@ npm exec --yes --package=dsh-memoir@0.9.2 -- dsh-memoir-repair --dsh-package "/p
 ```
 
 - Windows 全局路径可用 `npm root -g` 查出，再附加 `@deepseek-ai/dsh`；WSL 使用自己的 Linux 安装。桌面内置依赖不可直接供 Node 加载时，使用单独安装的官方 npm DSH 作为校验器，不修改桌面文件。
-- 0.9.2 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1`，其它版本（包括尚未审计的 alpha.2）拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
+- npm 0.9.2 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1`，不接受 alpha.2。本地后续适配另支持已审计的 `0.2.1-alpha.2`，尚未发布，不能通过上面的 npm 0.9.2 命令获得。其它版本仍拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
 - 支持 `session.v4.jsonl` / `session.v4.jsonl.zstd`，存储和解压后均最多 128 MiB；Zstandard 每帧必须带校验和。日志截断、损坏、其它未知且不可忽略事件、符号链接/目录联接、硬链接等均拒绝修改。
 - 默认不改文件，不递归扫描用户目录；输出只有路径、计数和固定错误码，不输出正文或密钥。`candidates` 是待修复回执数量。
 - 上述 `npm exec` 可能联网下载 npm 包；恢复脚本本身只在本地运行，不上传日志。若插件已通过 npm 安装，也可完全离线执行 `node "/path/to/profile/node_modules/dsh-memoir/scripts/repair-session-receipts.mjs"`，后接相同参数。
@@ -49,7 +49,7 @@ Stop memory writes from affected builds and upgrade to 0.9.1 first: disabling au
 npm exec --yes --package=dsh-memoir@0.9.2 -- dsh-memoir-repair --dsh-package "/path/to/node_modules/@deepseek-ai/dsh" "/path/to/session.v4.jsonl.zstd"
 ```
 
-The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **0.9.2 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1**. Other backends, including unaudited alpha.2, are rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
+The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **npm 0.9.2 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1**, not alpha.2. Local unreleased follow-up changes additionally support the reviewed **0.2.1-alpha.2** backend; the npm command above does not include those changes. Other versions are still rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
 
 `npm exec` may download the package from npm, but the recovery script runs locally and never uploads logs. For an entirely offline invocation of an already installed npm copy, use `node "/path/to/profile/node_modules/dsh-memoir/scripts/repair-session-receipts.mjs"` with the same arguments. In a source checkout with the pinned official SDK devDependencies installed, `--dsh-package` may be omitted. The script never downloads dependencies itself.
 

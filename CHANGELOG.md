@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### 中文
+
+- 发布后补验 DSH `0.2.1-alpha.2`：现有工具、`tool/result.meta` 回执、独立蒸馏回合、冻结快照与原生 UI 挂载契约保持可用，不切换为新增的 `appendPluginRecord` 写入路径。
+- 历史恢复工具增加已审计的 alpha.2 后端：格式目录与锁协议仍兼容，保留新增的目录切换事件和可忽略插件记录；不迁移日志、不修改宿主源码。CLI 帮助与错误信息统一从支持名单生成，避免遗漏 alpha 版本。
+- 明确项目记忆始终绑定会话原始项目；alpha.2 的可变执行目录不改变记忆归属或已冻结注入。新增目录切换隔离和恢复保真测试。
+- 此节是本地后续适配，**未包含在 npm 0.9.2 中**；0.9.2 的恢复工具只支持至已审计的 alpha.1。
+
+### English
+
+- Validate DSH `0.2.1-alpha.2` after the release: existing tools, `tool/result.meta` receipts, separate distillation turns, frozen snapshots and native UI contracts remain compatible. Keep the current receipt path instead of switching to the new `appendPluginRecord` API.
+- Add the reviewed alpha.2 backend to historical recovery. The format catalog and lease protocol remain compatible; preserve working-directory transitions and ignorable plugin records without migration or host-source changes. Generate CLI help/error version lists from the same allowlist.
+- Keep project memory anchored to the session's original project. Alpha.2's mutable execution directory does not redirect memory writes or replace frozen injection. Add directory-isolation and byte-preserving recovery regressions.
+- These local follow-up changes are **not included in npm 0.9.2**; that release's recovery utility supports reviewed backends only through alpha.1.
+
 ## [0.9.2] - 2026-10-09
 
 ### 中文

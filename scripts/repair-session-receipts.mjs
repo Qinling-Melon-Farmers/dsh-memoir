@@ -2,7 +2,7 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 (format, zstd, lease and win32).
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 (format, zstd, lease and win32).
  * Use that installation's public format catalog, not a guessed JSONL schema.
  * Only the two canonical v4 filenames on a trusted local filesystem are supported.
  * Keep every host stopped throughout apply; kernel leases exclude cooperating DSH
@@ -27,7 +27,8 @@ const RECEIPT = 'dsh-memoir/written'
 const INSERTION = Buffer.from(',"ignorable":true')
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 const runtimeCache = new Map()
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1'])
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2'])
+const REVIEWED_BACKEND_TEXT = [...REVIEWED_BACKENDS].join(' / ')
 
 function refuse(code, message) {
   throw Object.assign(new Error(message), { code })
@@ -62,7 +63,7 @@ async function runtimeFor(dshPackage) {
         if (session.SESSION_FORMAT_VERSION !== 4 || catalog.sessionFormatCatalog.currentVersion !== 4) throw new Error()
         return { catalog: catalog.sessionFormatCatalog, known: session.KNOWN_SESSION_EVENT_TYPES, llm, load }
       } catch {
-        refuse('DSH_UNSUPPORTED', 'Cannot load the reviewed official v4 validators (JSONL backend 0.2.0-rc.1, 0.2.0-rc.2 or 0.2.1-alpha.1); no files changed.')
+        refuse('DSH_UNSUPPORTED', `Cannot load the reviewed official v4 validators (JSONL backend ${REVIEWED_BACKEND_TEXT}); no files changed.`)
       }
     })())
   }
@@ -462,7 +463,7 @@ export async function main(argv = process.argv.slice(2)) {
       process.stdout.write([
         'Usage: node scripts/repair-session-receipts.mjs [--dsh-package <official-dsh-directory>] [--apply --host-stopped] <session.v4.jsonl[.zstd]>',
         'Default: read-only audit of exactly one file; no home scan. Uses local official SDK dependencies, or an explicitly supplied DSH installation. Native zstd requires a supported Node build (use Node 24).',
-        'Apply: keep every host stopped; use a trusted local filesystem. Reviewed JSONL backends: 0.2.0-rc.1 / 0.2.0-rc.2. Linux requires its native flock addon and matching effective uid/gid; Windows uses its Koffi dependency for the host semaphore (same login session). No network/UNC filesystem support. Limit: 128 MiB stored/expanded. Backups and failed staging files remain beside the source.',
+        `Apply: keep every host stopped; use a trusted local filesystem. Reviewed JSONL backends: ${REVIEWED_BACKEND_TEXT}. Linux requires its native flock addon and matching effective uid/gid; Windows uses its Koffi dependency for the host semaphore (same login session). No network/UNC filesystem support. Limit: 128 MiB stored/expanded. Backups and failed staging files remain beside the source.`,
         'Windows ACL boundary: backup/staging/replacement files inherit directory ACLs; a source file custom ACL is not preserved. Only apply where inherited directory permissions already protect all log data.',
         '',
       ].join('\n'))
@@ -485,7 +486,7 @@ export async function main(argv = process.argv.slice(2)) {
     const code = safeCode(error)
     const message = code === 'ZSTD_UNAVAILABLE'
       ? 'Native Zstandard is unavailable. Use Node 24; this Node 22/build cannot process .zstd.'
-      : code === 'DSH_UNSUPPORTED' ? 'Expected official JSONL backend 0.2.0-rc.1 or 0.2.0-rc.2 and its v4 validators; check --dsh-package.'
+      : code === 'DSH_UNSUPPORTED' ? `Expected official JSONL backend ${REVIEWED_BACKEND_TEXT} and its v4 validators; check --dsh-package.`
         : code === 'HOST_CONFIRMATION' ? 'Stop every DSH host, then explicitly pass --apply --host-stopped.'
           : 'Refused or stopped; no log content is included. Use --help for prerequisites.'
     process.stderr.write(`${JSON.stringify({ error: code, message, ...(error.path ? { path: error.path } : {}), ...(error.backupPath ? { backupPath: error.backupPath } : {}), ...(error.stagingPath ? { stagingPath: error.stagingPath } : {}), ...(error.committed ? { committed: true } : {}) })}\n`)

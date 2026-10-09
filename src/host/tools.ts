@@ -46,7 +46,7 @@ export function text(value: string): ContentBlock[] {
   return [{ type: 'text', text: value }]
 }
 
-/** Resolve the caller session's workspace cwd (absolute), or undefined. */
+/** Resolve the original project, not alpha.2's mutable execution directory. */
 export function resolveWorkspace(exec: ToolRunContext | undefined): string | undefined {
   const cwd = exec?.agent?.session?.header?.cwd
   return typeof cwd === 'string' && cwd !== '' ? cwd : undefined
@@ -575,4 +575,3 @@ export function memoirReadTool(
     },
   })
 }
-

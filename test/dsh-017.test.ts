@@ -1,18 +1,47 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SESSION_FORMAT_VERSION, KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { installAutoDistill } from '../lib/autodistill.js'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { activityProjection, ACTIVITY_KEY } from '../lib/activity.js'
-import { resolveMemorySource, memoirRecordTool } from '../lib/tools.js'
+import { resolveMemorySource, resolveWorkspace, memoirRecordTool } from '../lib/tools.js'
 import { MemoirStore } from '../lib/store.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { memoirSectionText } from '../lib/index.js'
 import { MemorySnapshotManager } from '../lib/snapshot.js'
 import { makeExec, makeTempWorkspace } from './helpers.ts'
 import { join } from 'node:path'
+
+test('alpha.2 directory changes keep project memory and frozen injection anchored to the original project', async t => {
+  if (!KNOWN_SESSION_EVENT_TYPES.has('working-directory/change' as never)) {
+    t.skip('requires the official alpha.2 working-directory event contract')
+    return
+  }
+  const original = makeTempWorkspace()
+  const other = makeTempWorkspace()
+  try {
+    const session = Session.create(SessionId('memoir-alpha2-project'), [], {
+      id: SessionId('memoir-alpha2-project'), version: SESSION_FORMAT_VERSION,
+      createdAt: 1, isSeeded: false, cwd: original.cwd,
+    })
+    const store = new MemoirStore(join(original.cwd, 'memory.json'))
+    store.record(original.cwd, { section: 'work', content: 'original project memory' })
+    store.record(other.cwd, { section: 'work', content: 'other project memory' })
+    const exec = makeExec(original.cwd, session.id)
+    Object.assign(exec.agent!, { session })
+    const snapshots = new MemorySnapshotManager()
+    const before = memoirSectionText(store, exec, snapshots)
+    // This public event exists only in the alpha.2 SDK matrix, not our rc.1 type baseline.
+    Reflect.apply(session.append, session, ['working-directory/change', { cwd: other.cwd }])
+    assert.equal(resolveWorkspace(exec), original.cwd)
+    assert.equal(memoirSectionText(store, exec, snapshots), before)
+    await memoirRecordTool(store, new RetrievalEngine(store)).execute({ section: 'lessons', content: 'after directory switch' }, exec)
+    assert.ok(store.entries(original.cwd).some(entry => entry.content === 'after directory switch'))
+    assert.ok(!store.entries(other.cwd).some(entry => entry.content === 'after directory switch'))
+  } finally { original.cleanup(); other.cleanup() }
+})
 
 test('DSH 0.1.7 Session V4 retains tool provenance, distillation and frozen memory injection', async () => {
   const ws = makeTempWorkspace()

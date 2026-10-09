@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
+import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 
 // The standalone script deliberately has no package/runtime dependency on the
 // plugin. Integration tests default to the official JSONL devDependency (SDK
@@ -135,6 +136,25 @@ test('default CLI and API audit are byte-preserving and report only counts/paths
   assert.equal((await fs.stat(f.path, { bigint: true })).mtimeNs, stat.mtimeNs)
   assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
   assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
+})
+
+test('repair help lists every reviewed backend, including both alpha builds', async () => {
+  const { stdout } = await run(process.execPath, [script, '--help'])
+  for (const version of ['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2']) assert.ok(stdout.includes(version))
+})
+
+test('alpha.2 repair preserves working-directory transitions and ignorable plugin records', async t => {
+  if (!KNOWN_SESSION_EVENT_TYPES.has('working-directory/change' as never)) {
+    t.skip('requires the official alpha.2 working-directory event contract')
+    return
+  }
+  const tail = line({ type: 'working-directory/change', seq: 5, time: 1790662733587, data: { cwd: 'D:/example/work' } })
+    + line({ type: 'plugin:example/receipt', seq: 6, time: 1790662733588, data: { message: 'preserve exactly' }, ignorable: true })
+  const f = await fixture(t, originalText + tail)
+  const result = await repairSessionReceipts(f.path, applying)
+  assert.equal(result.changed, 1)
+  assert.equal(await fs.readFile(f.path, 'utf8'), patchedText + tail)
+  assert.equal(await fs.readFile(result.backupPath, 'utf8'), originalText + tail)
 })
 
 test('plaintext apply makes an exact verified backup and changes only the one inserted flag; second apply is a no-op', async t => {

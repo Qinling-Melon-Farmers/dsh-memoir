@@ -1,6 +1,6 @@
 # dsh-memoir
 
-> **0.9.2**：支持官方 npm DSH `0.2.1-alpha.1`，保留 `0.2.0-rc.1 / rc.2` 支持，修复 #15 的跨项目召回截断提示及英文 Issue 模板误判。alpha 兼容范围单独声明；`0.2.1-alpha.2` 将在发布后另行适配，目前不宣称已验证。
+> **0.9.2 已发布**：支持官方 npm DSH `0.2.1-alpha.1`，保留 `0.2.0-rc.1 / rc.2` 支持，修复 #15 的跨项目召回截断提示及英文 Issue 模板误判。发布后已核验 alpha.2 的记忆运行接口；本地后续适配另增加 alpha.2 历史恢复支持，**尚未发布**。下面的 npm 命令安装 0.9.2，其恢复工具不接受 alpha.2 后端。项目记忆始终绑定会话原始项目，切换执行目录不会转移记忆归属。
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
