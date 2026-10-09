@@ -2,7 +2,7 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 (format, zstd, lease and win32).
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 (format, zstd, lease and win32).
  * Use that installation's public format catalog, not a guessed JSONL schema.
  * Only the two canonical v4 filenames on a trusted local filesystem are supported.
  * Keep every host stopped throughout apply; kernel leases exclude cooperating DSH
@@ -27,7 +27,7 @@ const RECEIPT = 'dsh-memoir/written'
 const INSERTION = Buffer.from(',"ignorable":true')
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 const runtimeCache = new Map()
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2'])
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1'])
 
 function refuse(code, message) {
   throw Object.assign(new Error(message), { code })
@@ -62,7 +62,7 @@ async function runtimeFor(dshPackage) {
         if (session.SESSION_FORMAT_VERSION !== 4 || catalog.sessionFormatCatalog.currentVersion !== 4) throw new Error()
         return { catalog: catalog.sessionFormatCatalog, known: session.KNOWN_SESSION_EVENT_TYPES, llm, load }
       } catch {
-        refuse('DSH_UNSUPPORTED', 'Cannot load the reviewed official v4 validators (JSONL backend 0.2.0-rc.1 or 0.2.0-rc.2); no files changed.')
+        refuse('DSH_UNSUPPORTED', 'Cannot load the reviewed official v4 validators (JSONL backend 0.2.0-rc.1, 0.2.0-rc.2 or 0.2.1-alpha.1); no files changed.')
       }
     })())
   }

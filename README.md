@@ -1,5 +1,7 @@
 # dsh-memoir
 
+> **0.9.2**：支持官方 npm DSH `0.2.1-alpha.1`，保留 `0.2.0-rc.1 / rc.2` 支持，修复 #15 的跨项目召回截断提示及英文 Issue 模板误判。alpha 兼容范围单独声明；`0.2.1-alpha.2` 将在发布后另行适配，目前不宣称已验证。
+
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![license](https://img.shields.io/npm/l/dsh-memoir.svg)](./LICENSE)
@@ -11,17 +13,17 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主环境提供；Zod 用于验证宿主会话投影，不捆绑进插件。
 
 > [!WARNING]
-> **0.9.1 修复会话恢复问题 #14：0.8.1–0.9.0 写入的旧回执可能导致会话重新打开失败。** 升级阻止新增异常，但不自动重写旧日志；npm 包已内置 `dsh-memoir-repair` 命令。旧会话仍打不开时，按[恢复说明](./SESSION_RECOVERY.md)先只读检查、停机备份后再显式恢复；不要删除日志或降级数据格式。恢复前停止旧插件写入，仅关闭自动蒸馏不能阻止手动工具写入。
+> **0.9.2 修复会话恢复问题 #14：0.8.1–0.9.0 写入的旧回执可能导致会话重新打开失败。** 升级阻止新增异常，但不自动重写旧日志；npm 包已内置 `dsh-memoir-repair` 命令。旧会话仍打不开时，按[恢复说明](./SESSION_RECOVERY.md)先只读检查、停机备份后再显式恢复；不要删除日志或降级数据格式。恢复前停止旧插件写入，仅关闭自动蒸馏不能阻止手动工具写入。
 > 修复已覆盖官方 DSH `0.2.0-rc.1` / `0.2.0-rc.2`；仅升级 DSH 不会修复旧插件或已有异常日志。
 
 > [!IMPORTANT]
-> **0.9.1 要求 DSH `>=0.2.0-rc.1 <0.3.0-0`**，已验证官方 `0.2.0-rc.1` / `rc.2`（不是无后缀正式 0.2.0）。保留首屏导引、原生设置、四种 Agent 语言、独立蒸馏回合与冻结快照。**DSH 0.1.7 兼容线为 `0.8.2`，但仍受 #14 影响；使用本修复须先升级宿主，再安装 0.9.1。**
+> **0.9.2 要求 DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**，已验证官方 `0.2.0-rc.1` / `rc.2` / `0.2.1-alpha.1`（不是无后缀正式 0.2.0）。保留首屏导引、原生设置、四种 Agent 语言、独立蒸馏回合与冻结快照。**DSH 0.1.7 兼容线为 `0.8.2`，但仍受 #14 影响；使用本修复须先升级宿主，再安装 0.9.2。**
 >
 > `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
 npm install --global @deepseek-ai/dsh@0.2.0-rc.2
-dsh plugin --profile web add dsh-memoir@0.9.1
+dsh plugin --profile web add dsh-memoir@0.9.2
 ```
 
 重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
@@ -182,22 +184,22 @@ memoir_record / memoir_update
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.9.1`） | `>=0.2.0-rc.1 <0.3.0-0` | `dsh plugin --profile web add dsh-memoir@0.9.1` | 实测 0.2.0-rc.1 / rc.2；修复 #14 |
+| npm `latest`（`0.9.2`） | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.2` | 实测 0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1；修复 #14 |
 | npm 固定版 `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | 旧 0.1.7 兼容线，仍受 #14 影响 |
 | npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| 源码 `v0.9.1` | `>=0.2.0-rc.1 <0.3.0-0` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.x |
+| 源码 `v0.9.2` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.x |
 
 需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
 <details>
 <summary>从源码安装</summary>
 
-0.9.1 源码（DSH 0.2.0-rc.1 / rc.2）：
+0.9.2 源码（DSH 0.2.0-rc.1 / rc.2）：
 
 ```bash
-git clone --branch v0.9.1 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+git clone --branch v0.9.2 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
@@ -226,7 +228,7 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 ## 离线更新公告
 
-首次打开记忆会话页时展示 0.9.1 更新摘要，提示会话写入修复与旧日志恢复边界，不阻塞对话；点击“知道了”后，同一浏览器 origin 的本版本不再自动展示。“关于与帮助 → 查看本版更新”可随时重看。设置页和右侧栏不会自动弹出公告。下图保留为已标注版本的 0.9.0 历史预览。
+首次打开记忆会话页时展示 0.9.2 更新摘要，提示 alpha.1 兼容、召回计数修复与旧日志恢复边界，不阻塞对话；点击“知道了”后，同一浏览器 origin 的本版本不再自动展示。“关于与帮助 → 查看本版更新”可随时重看。设置页和右侧栏不会自动弹出公告。下图保留为已标注版本的 0.9.0 历史预览。
 
 公告随包内置、中英双语，不联网、不上传信息、不改变记忆或对话。仅在 UI 本地存储记录已确认版本；存储不可用时退化为当前页面去重，Web/桌面端或不同 origin 的确认状态不承诺同步。
 
@@ -312,6 +314,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.9.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.9.1)，面向 DSH 0.2.0-rc.1 / rc.2；旧兼容线与风险见上方兼容性表。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.9.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.9.2)，面向 DSH 0.2.0-rc.1 / rc.2；旧兼容线与风险见上方兼容性表。
 
 Apache-2.0

@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { memoirRecordTool, memoirReadTool, memoirUpdateTool, resolveMemorySource, resolveWorkspace } from '../lib/tools.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
+import { hostCopy } from '../lib/i18n.js'
 import { makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 test('resolveWorkspace extracts the agent session cwd', () => {
@@ -201,6 +202,39 @@ test('memoir_read global ranked limit is a true global Top-K (not per project)',
     for (const ws of workspaces) ws.cleanup()
   }
 })
+
+for (const language of ['zh', 'en', 'de', 'ru'] as const) {
+  test(`#15: all recall does not call already displayed matches truncated (${language})`, async () => {
+    const ws = makeTempWorkspace()
+    const other = makeTempWorkspace()
+    try {
+      const store = new MemoirStore(makeTempStorePath())
+      const first = store.record(ws.cwd, { section: 'work', content: 'memoir first' })
+      const second = store.record(ws.cwd, { section: 'actions', content: 'memoir second' })
+      const read = memoirReadTool(store, undefined, new RetrievalEngine(store), language)
+      const project = await read.execute({ scope: 'project', query: 'memoir', limit: 8 }, makeExec(ws.cwd)) as { text: string }
+      const all = await read.execute({ scope: 'all', query: 'memoir', limit: 8 }, makeExec(ws.cwd)) as { text: string }
+      assert.equal(all.text, project.text, 'no extra truncation footer after project deduplication')
+      for (const entry of [first, second]) assert.equal(all.text.split(entry.id).length - 1, 1)
+      const completed = await read.execute({ scope: 'all', query: 'memoir', limit: 1 }, makeExec(ws.cwd)) as { text: string }
+      for (const entry of [first, second]) assert.equal(completed.text.split(entry.id).length - 1, 1)
+      assert.ok(!completed.text.includes(hostCopy(language).read.clipped(2, 1)), 'the global pass completes the project results')
+      const third = store.record(other.cwd, { section: 'work', content: 'memoir external' })
+      const mixed = await read.execute({ scope: 'all', query: 'memoir', limit: 8 }, makeExec(ws.cwd)) as { text: string }
+      for (const entry of [first, second, third]) assert.equal(mixed.text.split(entry.id).length - 1, 1)
+      assert.ok(!mixed.text.includes(hostCopy(language).read.clipped(3, 1)))
+      const truncated = await read.execute({ scope: 'all', query: 'memoir', limit: 1 }, makeExec(ws.cwd)) as { text: string }
+      assert.ok(truncated.text.includes(hostCopy(language).read.clipped(2, 1)), 'one pending match is genuinely omitted')
+      const limited = await memoirReadTool(store, undefined, undefined, language).execute(
+        { scope: 'project', query: 'memoir', limit: 1 }, makeExec(ws.cwd),
+      ) as { text: string }
+      assert.ok(limited.text.includes(hostCopy(language).read.clipped(2, 1)), 'real limit truncation remains visible')
+    } finally {
+      ws.cleanup()
+      other.cleanup()
+    }
+  })
+}
 
 test('memoir_read output budget preserves the top-ranked head', async () => {
   const ws = makeTempWorkspace()

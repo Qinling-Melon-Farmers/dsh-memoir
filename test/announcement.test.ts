@@ -12,7 +12,7 @@ test('release notices require explicit acknowledgment, persist, and distinguish 
     acknowledgeAnnouncement(target)
     assert.equal(hasAcknowledged(target), true)
     assert.equal(target.localStorage.getItem(ANNOUNCEMENT_KEY), ANNOUNCEMENT_VERSION)
-    assert.equal(hasAcknowledged(target, '0.9.2'), false)
+    assert.equal(hasAcknowledged(target, `${ANNOUNCEMENT_VERSION}-next`), false)
     const restarted = new JSDOM('', { url: 'http://localhost' })
     try {
       restarted.window.localStorage.setItem(ANNOUNCEMENT_KEY, '0.9.0')

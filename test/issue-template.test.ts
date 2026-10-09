@@ -51,6 +51,25 @@ test('issue #12 regression: complete external bug report without labels is accep
   assert.deepEqual(calls, [{ action: 'addLabels', args: { owner: 'owner', repo: 'repo', issue_number: 12, labels: ['bug'] } }])
 })
 
+test('#15: English headings and classification are accepted without a missing-section advisory', async () => {
+  const headings: Record<string, string> = {
+    '涉及模块': 'Affected module', 'Issue 类型': 'Issue type', '摘要': 'Summary',
+    '预期结果': 'Expected result', '详情 / 复现步骤': 'Details / reproduction steps',
+    '环境信息': 'Environment', '证据截图 / 日志': 'Evidence (logs)',
+  }
+  const body = report().replace(/^### (.+)$/gm, (_, heading: string) => `### ${headings[heading] ?? heading}`).replace('Bug 报告', 'Bug report')
+  assert.deepEqual(await execute({ number: 15, body, labels: ['bug'] }), [])
+  const calls = await execute({ number: 15, body })
+  assert.deepEqual(calls.map(call => [call.action, call.args.labels]), [['addLabels', ['bug']]])
+  const missing = await execute({ number: 15, body: body.replace('### Summary', '### Unrelated heading'), labels: ['bug'] })
+  assert.equal(missing[0]?.action, 'createComment')
+  assert.match(String(missing[0]?.args.body), /摘要/)
+  for (const [type, label] of [['Feature request', 'enhancement'], ['Documentation', 'documentation'], ['Question', 'question']]) {
+    const calls = await execute({ number: 15, body: body.replace('Bug report', type!) })
+    assert.deepEqual(calls.map(call => [call.action, call.args.labels]), [['addLabels', [label]]])
+  }
+})
+
 test('already labeled complete bug report has no redundant mutations', async () => {
   assert.deepEqual(await execute({ number: 12, body: report(), labels: [{ name: 'bug' }] }), [])
 })

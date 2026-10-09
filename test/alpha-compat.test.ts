@@ -17,15 +17,16 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>
 }
 
-test('v0.9.1 retains the DSH 0.2.0-rc.1 compatibility floor', () => {
-  assert.equal(packageJson.version, '0.9.1')
-  assert.equal(packageJson.dsh?.engines?.dsh, '>=0.2.0-rc.1 <0.3.0-0')
-  assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], '>=0.2.0-rc.1 <0.3.0-0')
-  assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-tools'], '>=0.2.0-rc.1 <0.3.0-0')
+test('v0.9.2 retains the rc.1 floor and explicitly admits the 0.2.1 alpha line', () => {
+  assert.equal(packageJson.version, '0.9.2')
+  const range = '>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1'
+  assert.equal(packageJson.dsh?.engines?.dsh, range)
+  assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], range)
+  assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-tools'], range)
   assert.equal(packageJson.dependencies, undefined, 'the published package keeps zero bundled runtime dependencies')
 })
 
-test('v0.9.1 injects native client providers and pins the 0.2.0-rc.1 baseline', () => {
+test('v0.9.2 injects native client providers and pins the 0.2.0-rc.1 baseline', () => {
   assert.deepEqual(packageJson.dsh?.client?.inject, [
     '@deepseek-ai/dsh-api-session-controller',
     '@deepseek-ai/dsh-client-ui-renderer',

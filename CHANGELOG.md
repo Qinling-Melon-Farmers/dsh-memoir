@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-09
+
+### 中文
+
+- 预适配官方 npm DSH `0.2.1-alpha.1`，保持 rc.1 SDK 构建基线与 `0.2.0-rc.1 / rc.2` 支持。manifest 和 peer 范围显式包含 `>=0.2.1-alpha.1 <0.2.1`，避免标准 semver 将不同补丁号的预发布版本排除；不宣称未来 alpha 已验证。
+- 修复 #15：跨项目查询不再将项目部分已经展示的匹配项误报为截断；仅将实际输出成功的项计入展示/去重，待全局部分完成后再判断剩余结果。保留真实 limit 与输出预算提示，覆盖中英德俄工具文案。
+- Issue 自动化识别中英文栏目及四种英文分类值，避免完整英文报告被误报为缺少信息；保留真实缺项检查与只提示、不自动关闭的约束。
+- 历史恢复工具预适配已审计的 `0.2.1-alpha.1` v4 格式和锁协议；仍只接受明确审计过的后端版本、只处理指定文件，升级不会自动改写旧日志。
+
+### English
+
+- Prepare support for official npm DSH `0.2.1-alpha.1`, retaining the rc.1 SDK build baseline and `0.2.0-rc.1 / rc.2` support. Manifest and peer ranges explicitly include `>=0.2.1-alpha.1 <0.2.1` so standard semver does not exclude prereleases on a different patch tuple; future alpha builds are not claimed as verified.
+- Fix #15: cross-project recall no longer counts already displayed project matches as truncated. Count/deduplicate only successfully rendered entries and defer pending-result accounting until the global pass. Preserve genuine limit/output-budget notices, with Chinese, English, German and Russian regression coverage.
+- Recognize Chinese/English issue headings and four English classification values, without false missing-information warnings for complete English reports. Retain genuine missing-field checks and advisory-only behavior; never auto-close issues.
+- Prepare the recovery utility for the reviewed `0.2.1-alpha.1` v4 format and lease protocol. It still accepts only explicitly reviewed backends and a named file; upgrading never rewrites historical logs automatically.
+
 ## [0.9.1] - 2026-09-30
 
 ### 中文

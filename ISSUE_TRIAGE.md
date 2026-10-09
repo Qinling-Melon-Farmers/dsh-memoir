@@ -75,6 +75,8 @@ Issue 自动化只提供分类与建议，不执行关闭，不覆盖维护者�
   仅留言提示，不关闭。自动补齐四类分类标签，标签 API 失败只告警。
   opened/edited/reopened 复核只维护同一条带标记的机器人建议，避免反复刷屏，
   补充完整后更新原建议；不修改用户正文、不修改人工状态；
+  支持中文与英文栏目，以及 Bug report / Feature request / Documentation /
+  Question 四种英文分类值；完整英文报告无需改回中文模板；
 - `.github/workflows/pr-contribution-rules.yml`：PR 描述缺 PR 类型勾选、
   最新 main 确认、本地验证命令 / 结果摘要，或外部贡献者的用户可见功能缺
   证据时评论提示（`synchronize` 事件仅失败不重复评论）；

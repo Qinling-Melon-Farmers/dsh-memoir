@@ -507,18 +507,19 @@ export function memoirReadTool(
             : []
           if (ranked.length > 0) {
             const entries = ranked.slice(0, limit).map((r) => r.entry)
-            for (const entry of entries) renderedIds.add(entry.id)
-            appendGrouped(budget, entries, renderEntry, language)
-            if (ranked.length > entries.length) budget.add(clippedNote(ranked.length, entries.length, language))
+            const shown = appendGrouped(budget, entries, renderEntry, language)
+            for (const entry of entries.slice(0, shown)) renderedIds.add(entry.id)
+            // In all scope the global pass can still display the remainder.
+            if (scope === 'project' && ranked.length > shown) budget.add(clippedNote(ranked.length, shown, language))
           } else {
             const matched = store.entries(cwd).filter(filterEntry)
             if (matched.length === 0) {
               budget.add(copy.projectEmpty(cwd, query !== '' || args.section !== undefined))
             } else {
               const entries = matched.slice(-limit)
-              for (const entry of entries) renderedIds.add(entry.id)
-              appendGrouped(budget, entries, renderEntry, language)
-              if (matched.length > entries.length) budget.add(clippedNote(matched.length, entries.length, language))
+              const shown = appendGrouped(budget, entries, renderEntry, language)
+              for (const entry of entries.slice(0, shown)) renderedIds.add(entry.id)
+              if (scope === 'project' && matched.length > shown) budget.add(clippedNote(matched.length, shown, language))
             }
           }
         }
@@ -531,7 +532,9 @@ export function memoirReadTool(
         if (ranked.length > 0) {
           // v0.4.2: the limit is a true global Top-K — slice first, then
           // group by project for rendering (never per-project × limit).
-          const top = ranked.filter((result) => !renderedIds.has(result.entry.id)).slice(0, limit)
+          const pending = ranked.filter((result) => !renderedIds.has(result.entry.id))
+          const top = pending.slice(0, limit)
+          let shown = 0
           const grouped = new Map<string, MemoirEntry[]>()
           for (const result of top) {
             const bucket = grouped.get(result.projectPath) ?? []
@@ -542,9 +545,10 @@ export function memoirReadTool(
             if (!budget.add(['### ' + projectTitle(path), copy.path + ': ' + path].join('\n'))) break
             for (const entry of entries) {
               if (!budget.add(renderEntry(entry))) break
+              shown++
             }
           }
-          if (ranked.length > top.length) budget.add(clippedNote(ranked.length, top.length, language))
+          if (pending.length > shown) budget.add(clippedNote(pending.length, shown, language))
         } else {
           const projects = store.listProjects()
           for (const project of projects) {
@@ -552,10 +556,12 @@ export function memoirReadTool(
             if (matched.length === 0) continue
             const entries = matched.slice(-Math.min(limit, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
             if (!budget.add(['### ' + (project.title || projectTitle(project.path)), copy.path + ': ' + project.path + '  ' + copy.updated + ': ' + formatTime(project.updatedAt)].join('\n'))) break
+            let shown = 0
             for (const entry of entries) {
               if (!budget.add(renderEntry(entry))) break
+              shown++
             }
-            if (matched.length > entries.length) budget.add(clippedNote(matched.length, entries.length, language))
+            if (matched.length > shown) budget.add(clippedNote(matched.length, shown, language))
           }
           if (budget.text === '') budget.add(copy.globalEmpty)
         }

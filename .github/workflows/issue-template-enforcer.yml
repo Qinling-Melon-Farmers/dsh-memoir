@@ -37,9 +37,18 @@ jobs:
             ];
 
             const body = issue.body || '';
+            const sectionAliases = new Map([
+              ['涉及模块', ['Affected module']],
+              ['Issue 类型', ['Issue type']],
+              ['摘要', ['Summary']],
+              ['预期结果', ['Expected result', 'Expected behavior']],
+              ['详情 / 复现步骤', ['Details / reproduction steps', 'Steps to reproduce']],
+              ['环境信息', ['Environment', 'Environment information']],
+              ['证据截图 / 日志', ['Evidence (logs)', 'Evidence', 'Screenshots / logs']],
+            ]);
             const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const readSection = (label) => {
-              const heading = escapeRegExp(label);
+              const heading = '(?:' + [label, ...(sectionAliases.get(label) || [])].map(escapeRegExp).join('|') + ')';
               const pattern = new RegExp(`^###[ \\t]+${heading}[ \\t]*\\r?\\n([\\s\\S]*?)(?=^###[ \\t]+|(?![\\s\\S]))`, 'im');
               const match = body.match(pattern);
               return match ? match[1].replace(/<!--[\s\S]*?-->/g, '').trim() : '';
@@ -59,6 +68,10 @@ jobs:
               ['功能请求', 'enhancement'],
               ['文档', 'documentation'],
               ['问题', 'question'],
+              ['bug report', 'bug'],
+              ['feature request', 'enhancement'],
+              ['documentation', 'documentation'],
+              ['question', 'question'],
             ]);
             const typeLabel = typeLabels.get(issueType);
             const isBug = typeLabel === 'bug' || labels.has('bug');
