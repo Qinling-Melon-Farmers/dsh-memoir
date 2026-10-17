@@ -10,10 +10,12 @@ import assert from 'node:assert/strict'
 import { rmSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { apply, MEMOIR_GUIDANCE, memoirSectionText } from '../lib/index.js'
+import { apply, MEMOIR_GUIDANCE, MEMOIR_SECTION_HEADING, memoirSectionText } from '../lib/index.js'
 import type { Config } from '../lib/index.js'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
-import { MemorySnapshotManager, sessionKeyOf } from '../lib/snapshot.js'
+import { MemorySnapshotManager, sessionKeyOf, snapshotHash } from '../lib/snapshot.js'
+import { MemorySnapshotStore } from '../lib/snapshot-store.js'
+import { DEFAULT_MEMORY_BUDGET, estimateTokens } from '../lib/selector.js'
 import { callRoute, makeExec, makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 import { emptyActivity } from '../lib/activity.js'
 import { turnActivity } from '../lib/autodistill.js'
@@ -368,6 +370,71 @@ test('prompt section provider injects bounded project memory', () => {
     assert.ok(rendered.includes('项目持久记忆（自动注入）'))
     assert.ok(rendered.includes('契约先行'))
   } finally {
+    ws.cleanup()
+  }
+})
+
+test('prompt section neutralizes template openers in memory without changing stored entries', () => {
+  const ws = makeTempWorkspace()
+  try {
+    const store = new MemoirStore(makeTempStorePath())
+    const title = 'Prompt template {{asr}}'
+    const content = 'JSON example {{"type","json_object"}} and triple {{{ braces ' + '{{'.repeat(5000)
+    store.record(ws.cwd, { section: 'lessons', title, content })
+    const manager = new MemorySnapshotManager()
+    const context = { agent: { id: 'template-session', session: { id: 'template-session', header: { cwd: ws.cwd } } } }
+    const key = sessionKeyOf(context)
+    assert.ok(key)
+
+    const rendered = memoirSectionText(store, context, manager)
+    assert.doesNotMatch(rendered, /\{\{/)
+    assert.match(rendered, /Prompt template \{\[asr\}\}/)
+    assert.match(rendered, /JSON example \{\["type","json_object"\}\}/)
+    assert.match(rendered, /triple \{\[\[ braces/)
+    assert.equal(store.entries(ws.cwd)[0]?.title, title)
+    assert.equal(store.entries(ws.cwd)[0]?.content, content)
+    const snapshotText = manager.peek(key)?.text
+    assert.ok(snapshotText)
+    assert.equal(snapshotText, rendered, 'new snapshots contain only safe prompt text')
+    const headingIndex = snapshotText.lastIndexOf(`${MEMOIR_SECTION_HEADING}\n`)
+    assert.ok(headingIndex >= 0)
+    const hotMemory = snapshotText.slice(headingIndex + MEMOIR_SECTION_HEADING.length + 1)
+    assert.ok(estimateTokens(hotMemory) <= DEFAULT_MEMORY_BUDGET.hardMaxTokens)
+    assert.equal(memoirSectionText(store, context, manager), rendered, 'same-session prompt stays stable')
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('prompt section neutralizes legacy double-brace text restored from a durable snapshot', () => {
+  const ws = makeTempWorkspace()
+  const storePath = makeTempStorePath()
+  const settingsPath = makeTempStorePath()
+  const options = { storePath, settingsPath, language: () => 'zh' as const }
+  const seed = new MemorySnapshotStore(options)
+  try {
+    const store = new MemoirStore(storePath)
+    const context = { agent: { id: 'legacy-session', session: { id: 'legacy-session', header: { cwd: ws.cwd } } } }
+    const key = sessionKeyOf(context)
+    assert.ok(key)
+    const legacyText = `${MEMOIR_GUIDANCE}\n\n${MEMOIR_SECTION_HEADING}\n[Project memory]\nLessons:\n- {{asr}}`
+    seed.getOrCreate(key, () => ({
+      sessionKey: key,
+      storeRevision: 0,
+      text: legacyText,
+      hash: snapshotHash(legacyText),
+      createdAt: Date.now(),
+    }))
+
+    const persistence = new MemorySnapshotStore(options)
+    const manager = new MemorySnapshotManager({ persistence })
+    const rendered = memoirSectionText(store, context, manager)
+    assert.equal(persistence.diagnostics().restored, 1)
+    assert.doesNotMatch(rendered, /\{\{/)
+    assert.match(rendered, /- \{\[asr\}\}/)
+    assert.equal(manager.peek(key)?.text, legacyText, 'restored snapshot remains immutable')
+  } finally {
+    rmSync(seed.directory, { recursive: true, force: true })
     ws.cleanup()
   }
 })

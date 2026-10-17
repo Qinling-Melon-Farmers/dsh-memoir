@@ -114,6 +114,11 @@ export function memoirSectionHeading(language: MemoirLanguage = DEFAULT_MEMOIR_L
 
 export const MEMOIR_SECTION_HEADING = memoirSectionHeading()
 
+function neutralizePromptTemplateOpeners(text: string): string {
+  // Replace only extra opener characters so the selector's token estimate stays stable.
+  return text.replace(/\{+/g, (braces) => `{${'['.repeat(braces.length - 1)}`)
+}
+
 /** Resolved runtime switches (schema defaults applied). */
 export interface ResolvedConfig {
   enabled: boolean
@@ -193,12 +198,12 @@ export function memoirSectionText(
     }
     return {
       storeRevision: store.currentRevision(),
-      text: guidance + '\n\n' + heading + '\n' + hot.text,
+      text: guidance + '\n\n' + heading + '\n' + neutralizePromptTemplateOpeners(hot.text),
     }
   }
   const key = sessionKeyOf(context)
   if (key === undefined || manager === undefined) return build().text
-  return manager.getOrCreate(key, build).text
+  return neutralizePromptTemplateOpeners(manager.getOrCreate(key, build).text)
 }
 
 /** Bridge the cordis context onto the autodistill wire contract. */
