@@ -2,9 +2,12 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 (format, zstd, lease and win32).
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2
+ * (format, zstd, lease, win32, generation selection and handle lifetime).
  * Use that installation's public format catalog, not a guessed JSONL schema.
- * Only the two canonical v4 filenames on a trusted local filesystem are supported.
+ * Only the active canonical v4 file in a header-matching project/session directory
+ * on a trusted local filesystem is supported. Inspect sibling names/metadata only;
+ * never migrate historical generations or discover other sessions/storage roots.
  * Keep every host stopped throughout apply; kernel leases exclude cooperating DSH
  * writers, while identity/content checks detect other observed changes. Node has
  * no portable compare-and-swap rename against a hostile filesystem writer.
@@ -27,7 +30,7 @@ const RECEIPT = 'dsh-memoir/written'
 const INSERTION = Buffer.from(',"ignorable":true')
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 const runtimeCache = new Map()
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2'])
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2'])
 const REVIEWED_BACKEND_TEXT = [...REVIEWED_BACKENDS].join(' / ')
 
 function refuse(code, message) {
@@ -57,11 +60,19 @@ async function runtimeFor(dshPackage) {
         if (!REVIEWED_BACKENDS.has(backend.version)) throw new Error()
         const require = createRequire(backendManifest)
         const load = name => import(pathToFileURL(require.resolve(name)).href)
-        const [catalog, session, llm] = await Promise.all([
+        // Mixed SDK trees are not one of the reviewed installations either.
+        for (const name of ['dsh-session', 'dsh-session-format', 'dsh-session-format-catalog', 'dsh-llm']) {
+          const pkg = JSON.parse(await fs.readFile(require.resolve(`@deepseek-ai/${name}/package.json`), 'utf8'))
+          if (pkg.version !== backend.version) throw new Error()
+        }
+        const [catalog, session, llm, format] = await Promise.all([
           load('@deepseek-ai/dsh-session-format-catalog'), load('@deepseek-ai/dsh-session'), load('@deepseek-ai/dsh-llm'),
+          load('@deepseek-ai/dsh-session-format'),
         ])
         if (session.SESSION_FORMAT_VERSION !== 4 || catalog.sessionFormatCatalog.currentVersion !== 4) throw new Error()
-        return { catalog: catalog.sessionFormatCatalog, known: session.KNOWN_SESSION_EVENT_TYPES, llm, load }
+        if (typeof format.parseSessionFormatLogFilename !== 'function') throw new Error()
+        return { catalog: catalog.sessionFormatCatalog, known: session.KNOWN_SESSION_EVENT_TYPES, llm, load,
+          parseFilename: format.parseSessionFormatLogFilename }
       } catch {
         refuse('DSH_UNSUPPORTED', `Cannot load the reviewed official v4 validators (JSONL backend ${REVIEWED_BACKEND_TEXT}); no files changed.`)
       }
@@ -191,7 +202,7 @@ function inspectBytes(bytes, compressed, runtime) {
   const plain = Buffer.concat(chunks)
   if (plain.at(-1) !== 10) refuse('JSON_TORN', 'Session has an unterminated record; tail recovery is not supported.')
   const edits = []
-  let start = 0, events = 0, receipts = 0, alreadyIgnorable = 0, restore
+  let start = 0, events = 0, receipts = 0, alreadyIgnorable = 0, restore, header
   for (let end = plain.indexOf(10); end !== -1; end = plain.indexOf(10, start)) {
     const line = plain.subarray(start, end)
     const row = parseRecord(line)
@@ -199,6 +210,7 @@ function inspectBytes(bytes, compressed, runtime) {
       if (row.type !== 'session' || row.version !== 4) refuse('HEADER_VERSION', 'Expected a native format-v4 session header.')
       try { restore = runtime.catalog.createRestore(row, { recovery: 'strict', validation: 'current' }) }
       catch { refuse('HEADER_INVALID', 'Official v4 header validation failed.') }
+      header = row
     } else {
       if (row.seq !== events || !Number.isSafeInteger(row.seq) || Object.is(row.seq, -0)) {
         refuse('SEQUENCE_INVALID', 'Expected dense event sequence numbers starting at zero.')
@@ -222,7 +234,7 @@ function inspectBytes(bytes, compressed, runtime) {
   }
   try { validateStreams(restore.finish(), runtime.llm) }
   catch { refuse('SESSION_INVALID', 'Official v4 session relationships, envelope or embedded stream validation failed.') }
-  return { chunks, ranges, edits, events, receipts, alreadyIgnorable }
+  return { chunks, ranges, edits, events, receipts, alreadyIgnorable, header }
 }
 
 function repairedBytes(original, plan, compressed) {
@@ -306,6 +318,57 @@ async function unchanged(path, original) {
   }
 }
 
+// Reviewed format.ts layout, shared by the supported releases. These helpers
+// are not public SDK exports. Escape UTF-16 code units (not Unicode codepoints),
+// including lone surrogates; the project's readable key is deliberately lossy.
+function encodeSegment(raw) {
+  if (!raw) refuse('LAYOUT_INVALID', 'Empty session identity cannot name a directory.')
+  if (raw === '.' || raw === '..') return raw.replaceAll('.', '~002E')
+  return raw.replace(/[^A-Za-z0-9._-]/g, ch => `~${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
+}
+function projectKey(cwd) {
+  if (cwd === undefined) return '_no-cwd'
+  const readable = cwd.replace(/[\\/:]+/g, '-').replace(/[^A-Za-z0-9._-]/g,
+    ch => `~${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`)
+  return `--${(readable.replace(/^-+/, '') || 'root').slice(0, 251)}--`
+}
+async function inspectLayout(path, header, runtime) {
+  const dir = dirname(path)
+  const expected = join(dirname(dirname(dir)), projectKey(header.cwd), encodeSegment(header.id), basename(path))
+  // Windows case aliases use the same semaphore, but short (8.3) path aliases
+  // hash differently. Refuse those instead of claiming a non-excluding lock.
+  const equalPath = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  if (!equalPath(path, expected) || !equalPath(path, await fs.realpath(path))) {
+    refuse('LAYOUT_INVALID', 'Expected the canonical project/session directory matching the stored header; path aliases are unsupported.')
+  }
+  const generations = []
+  const compressed = path.endsWith('.zstd')
+  // This bounded scope does not certify other projects in a configured root.
+  for (const name of (await fs.readdir(dir)).sort()) {
+    const isCompressed = name.endsWith('.zstd')
+    const version = runtime.parseFilename(isCompressed ? name.slice(0, -5) : name)
+    if (version === undefined) {
+      if (/^session(?:\..*)?\.jsonl(?:\.zstd)?$/i.test(name)) {
+        refuse('LAYOUT_INVALID', 'Noncanonical session generation name; resolve the layout before repairing.')
+      }
+      continue // SDK migration staging files and our backups are not generations.
+    }
+    if (isCompressed !== compressed) refuse('ENCODING_CONFLICT', 'Session directory mixes JSONL and Zstandard generations.')
+    if (version > 4) refuse('GENERATION_INACTIVE', 'A newer generation supersedes this v4 file; refusing to repair an inactive generation.')
+    const stat = await fs.lstat(join(dir, name), { bigint: true })
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) refuse('LAYOUT_INVALID', 'Unsafe generation entry in the session directory.')
+    generations.push({ name, stat })
+  }
+  if (!generations.some(item => item.name === basename(path))) refuse('LAYOUT_INVALID', 'Target is not the canonical active generation.')
+  return generations
+}
+async function unchangedLayout(path, header, runtime, original) {
+  const current = await inspectLayout(path, header, runtime)
+  if (current.length !== original.length || current.some((item, i) => item.name !== original[i].name || !sameStat(item.stat, original[i].stat))) {
+    refuse('CONCURRENT_CHANGE', 'Session generation namespace changed since audit; no replacement performed.')
+  }
+}
+
 async function lockSession(path, runtime) {
   const lockPath = join(dirname(path), 'session.lock')
   try {
@@ -386,7 +449,9 @@ export async function repairSessionReceipts(input, options = {}) {
     refuse('OWNER_MISMATCH', 'Source uid/gid must match the effective process uid/gid; atomic replacement would change ownership.')
   }
   const plan = inspectBytes(original.bytes, compressed, runtime)
+  const layout = await inspectLayout(path, plan.header, runtime)
   await unchanged(path, original)
+  await unchangedLayout(path, plan.header, runtime, layout)
   const result = {
     path, mode: apply ? 'apply' : 'audit', encoding: compressed ? 'zstd' : 'jsonl',
     frames: compressed ? plan.ranges.length : 0, events: plan.events, receipts: plan.receipts,
@@ -400,6 +465,7 @@ export async function repairSessionReceipts(input, options = {}) {
   try {
     await lease.check()
     await unchanged(path, original)
+    await unchangedLayout(path, plan.header, runtime, layout)
     if (!plan.edits.length) return result
     const output = repairedBytes(original.bytes, plan, compressed)
     const verified = inspectBytes(output, compressed, runtime)
@@ -422,6 +488,7 @@ export async function repairSessionReceipts(input, options = {}) {
     await unchanged(stagingPath, staged)
     await lease.check()
     await unchanged(path, original)
+    await unchangedLayout(path, plan.header, runtime, layout)
     // Same-directory atomic rename; no unlink/copy fallback on any platform.
     await fs.rename(stagingPath, path)
     committed = true
@@ -452,6 +519,7 @@ const ERROR_CODES = new Set([
   'ZSTD_INVALID', 'HEADER_FRAME', 'JSON_INVALID', 'JSON_TORN', 'HEADER_VERSION', 'HEADER_INVALID',
   'SEQUENCE_INVALID', 'RECEIPT_UNKNOWN', 'EVENT_UNKNOWN', 'EVENT_INVALID', 'SESSION_INVALID',
   'SYMLINK', 'PATH_INVALID', 'CONCURRENT_CHANGE', 'PATH_REQUIRED', 'FILENAME', 'FILE_TYPE',
+  'LAYOUT_INVALID', 'ENCODING_CONFLICT', 'GENERATION_INACTIVE',
   'LEASE_INVALID', 'LEASE_ACTIVE', 'LEASE_UNAVAILABLE', 'LEASE_RELEASE', 'HOST_CONFIRMATION',
   'VERIFY_FAILED', 'BACKUP_INVALID', 'OWNER_MISMATCH', 'ARGS', 'ENOENT', 'EACCES', 'EPERM', 'ENOSPC', 'EIO', 'EEXIST', 'EBUSY',
 ])
@@ -463,6 +531,7 @@ export async function main(argv = process.argv.slice(2)) {
       process.stdout.write([
         'Usage: node scripts/repair-session-receipts.mjs [--dsh-package <official-dsh-directory>] [--apply --host-stopped] <session.v4.jsonl[.zstd]>',
         'Default: read-only audit of exactly one file; no home scan. Uses local official SDK dependencies, or an explicitly supplied DSH installation. Native zstd requires a supported Node build (use Node 24).',
+        'Layout: active v4 only, in the header-matching project/session directory. Checks sibling generation names/metadata; rejects newer, mixed-encoding and noncanonical generations. Does not migrate old formats or certify other sessions/projects in a storage root.',
         `Apply: keep every host stopped; use a trusted local filesystem. Reviewed JSONL backends: ${REVIEWED_BACKEND_TEXT}. Linux requires its native flock addon and matching effective uid/gid; Windows uses its Koffi dependency for the host semaphore (same login session). No network/UNC filesystem support. Limit: 128 MiB stored/expanded. Backups and failed staging files remain beside the source.`,
         'Windows ACL boundary: backup/staging/replacement files inherit directory ACLs; a source file custom ACL is not preserved. Only apply where inherited directory permissions already protect all log data.',
         '',

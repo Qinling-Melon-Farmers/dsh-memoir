@@ -2,21 +2,33 @@
 
 本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
 
-## [Unreleased]
+## [0.9.3] - 2026-10-19
 
 ### 中文
 
-- 发布后补验 DSH `0.2.1-alpha.2`：现有工具、`tool/result.meta` 回执、独立蒸馏回合、冻结快照与原生 UI 挂载契约保持可用，不切换为新增的 `appendPluginRecord` 写入路径。
-- 历史恢复工具增加已审计的 alpha.2 后端：格式目录与锁协议仍兼容，保留新增的目录切换事件和可忽略插件记录；不迁移日志、不修改宿主源码。CLI 帮助与错误信息统一从支持名单生成，避免遗漏 alpha 版本。
-- 明确项目记忆始终绑定会话原始项目；alpha.2 的可变执行目录不改变记忆归属或已冻结注入。新增目录切换隔离和恢复保真测试。
-- 此节是本地后续适配，**未包含在 npm 0.9.2 中**；0.9.2 的恢复工具只支持至已审计的 alpha.1。
+- **存储失败时拒绝继续（[#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)）**：先检查 store 版本，再解释其结构；未来格式拒绝加载或覆盖，不能误当损坏文件重置。读取错误、损坏文件备份失败均向上传递，失效内存缓存，避免后续调用沿用旧状态覆盖原件。只有原始文件成功保留为唯一 `.corrupt.*` 备份后才允许建立空库。
+- **Windows rename 有界重试（#16）**：原子写入和损坏文件备份遇到临时 `EPERM` / `EBUSY` 时进行有限次数重试；其它错误或重试耗尽仍报错，不删除目标文件来强行替换。
+- **准确报告已提交写入（#16）**：以原子 rename 成功为提交点；随后用于刷新缓存的 `stat` 失败时，使缓存失效并在下次读取重试，不把已落盘的写入误报为未保存。
+- **Hot Memory 硬预算（#16）**：超出剩余硬预算的候选跳过后继续扫描，避免一条过大的记忆阻断后续较小条目。首条过大时按完整渲染块截短正文，必要时连标题一起缩短；最小块也无法容纳则跳过。长标题、标题与分组开销都纳入硬上限，保持既有分组优先级和 soft target 语义，不修改原始条目。
+- **关闭记忆 section 的变量插值（[#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)）**：使用官方 `PromptSection` 的 `interpolate: false` 按字面量输出该 section，防止未知、畸形及已注册变量形式的 `{{...}}` 记忆文本触发模板求值或阻断组装。新选择的记忆、进程内旧快照和磁盘恢复的旧快照均按原文进入 prompt，保留花括号与冻结前缀；原始记忆 JSON、`PROJECT_MEMORY.md` 和已存磁盘快照保持原样。**升级并重新加载插件即可，无需删除旧快照。** 感谢 [mikemikimike](https://github.com/mikemikimike) 在 [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18) 中的报告、输出边界分析及旧快照方案对问题定位的帮助。
+- **DSH `0.2.1-rc.2` 适配**：官方 npm SDK 统一固定到 rc.2，保留 `0.2.0-rc.1 / rc.2` 与 `0.2.1-alpha.1 / alpha.2` 兼容线；host/peer 范围仍为 `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`。适配 JSONL 后端的具名 `apply` 导出和 generation（日志代际）恢复协议。
+- **恢复 CLI 扩展至 alpha.2 / rc.2**：审计活动 generation 选择、格式目录、写锁与句柄生命周期，并覆盖真实 JSONL / Zstandard 写入、冷读取和锁竞争。仅支持 [恢复说明](./SESSION_RECOVERY.md) 列出的五个官方 SDK 版本；混合 SDK、被新格式取代的 v4、非规范目录、路径别名及混合编码拒绝操作。工具默认只读检查一个显式指定文件；#14 的旧回执恢复仍须停止相关宿主、独立备份后显式执行。#17 修复不重写历史日志，也不提供任意旧日志修复或格式迁移。
+- 纳入此前未发布的 alpha.2 适配：保留 `tool/result.meta` 回执与独立蒸馏回合，不切换到 `appendPluginRecord`。项目记忆继续绑定会话原始项目，可变执行目录不改变归属或已冻结基线；恢复时保留目录切换事件及可忽略插件记录，CLI 帮助与错误版本列表复用同一支持名单。
+- 新增 44 项存储安全回归及真实 prompt / 持久化测试；修复诊断将未实际渲染的第 4 条工作记忆计入已选数量的问题。rc.2、alpha.2、alpha.1 与 0.2.0-rc.2 通过类型检查和全套回归；0.2.0-rc.1 另通过 prompt、持久化及恢复专项回归。CI 增加 Windows / Linux 双平台矩阵；这些测试不代表任意未来 SDK 或任意损坏日志均受支持。
+- 同步双语 README、安装版本、兼容矩阵、SDK 基线与应用内更新摘要，明确区分 #17 升级重载生效和 #14 旧日志显式恢复。store v4 / settings v3 / snapshot v1 保持不变，无需迁移或清空记忆。
 
 ### English
 
-- Validate DSH `0.2.1-alpha.2` after the release: existing tools, `tool/result.meta` receipts, separate distillation turns, frozen snapshots and native UI contracts remain compatible. Keep the current receipt path instead of switching to the new `appendPluginRecord` API.
-- Add the reviewed alpha.2 backend to historical recovery. The format catalog and lease protocol remain compatible; preserve working-directory transitions and ignorable plugin records without migration or host-source changes. Generate CLI help/error version lists from the same allowlist.
-- Keep project memory anchored to the session's original project. Alpha.2's mutable execution directory does not redirect memory writes or replace frozen injection. Add directory-isolation and byte-preserving recovery regressions.
-- These local follow-up changes are **not included in npm 0.9.2**; that release's recovery utility supports reviewed backends only through alpha.1.
+- **Fail closed on store errors ([#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)):** check the store version before interpreting its shape. Refuse to load or overwrite future formats instead of treating them as corrupt and resetting them. Propagate read errors and failed corrupt-file backups, invalidating cached state so later calls cannot overwrite the original using a stale view. Allow a fresh store only after preserving the original as a unique `.corrupt.*` backup.
+- **Bound Windows rename retries (#16):** retry temporary `EPERM` / `EBUSY` failures during atomic writes and corrupt-file backups a limited number of times. Other errors and exhausted retries still fail; never delete the destination to force replacement.
+- **Report committed writes accurately (#16):** a successful atomic rename is the commit point. If the subsequent `stat` used to refresh the cache fails, invalidate the cache and retry on the next read without reporting the persisted write as unsaved.
+- **Enforce the Hot Memory ceiling (#16):** skip candidates that exceed the remaining hard budget and keep scanning so an oversized entry cannot block smaller ones. Shorten an oversized first entry's content and, if necessary, its title against the complete rendered block; skip it if even the minimum block cannot fit. Include long titles and heading/group overhead in the ceiling, retaining group priorities and soft-target behavior without mutating original entries.
+- **Disable variable interpolation for the memory section ([#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)):** use the official `PromptSection` option `interpolate: false` to emit this section literally, preventing unknown, malformed and registered-variable forms of `{{...}}` in memory from triggering template evaluation or breaking assembly. Newly selected memory, cached old snapshots and restored disk snapshots enter the prompt verbatim, preserving braces and the frozen prefix; original memory JSON, `PROJECT_MEMORY.md` and stored disk snapshots stay unchanged. **Upgrade and reload the plugin; old snapshots need no deletion.** Thanks to [mikemikimike](https://github.com/mikemikimike) for the report, output-boundary analysis and old-snapshot approach in [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18), which helped locate the problem.
+- **DSH `0.2.1-rc.2` compatibility:** pin official npm SDKs to rc.2, retaining the `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2` compatibility lines. Keep the host/peer range `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`. Adapt to the JSONL backend's named `apply` export and log-generation recovery protocol.
+- **Extend recovery to alpha.2 / rc.2:** audit active-generation selection, the format catalog, leases and handle lifetime, with real JSONL / Zstandard writes, cold reads and lease-contention coverage. Support only the five official SDK versions listed in [SESSION_RECOVERY.md](./SESSION_RECOVERY.md#english); reject mixed SDKs, superseded v4 generations, noncanonical directories, path aliases and mixed encodings. The utility defaults to auditing one explicitly named file. Repairing #14's legacy receipts still requires stopping related hosts, making an independent backup and explicitly applying recovery. #17's fix neither rewrites historical logs nor provides arbitrary old-log repair or format migration.
+- Include the previously unreleased alpha.2 adaptation: retain `tool/result.meta` receipts and separate distillation turns without switching to `appendPluginRecord`. Memory stays anchored to the session's original project; mutable execution directories do not redirect ownership or replace the frozen baseline. Preserve working-directory transitions and ignorable plugin records during recovery, and generate CLI help/error version lists from the same allowlist.
+- Add 44 store-safety regressions and real prompt/persistence tests; fix diagnostics counting a fourth work entry that was never rendered as selected. Typechecks and full regressions pass on rc.2, alpha.2, alpha.1 and 0.2.0-rc.2; separate prompt, persistence and recovery regressions pass on 0.2.0-rc.1. Add Windows / Linux CI coverage. These tests do not establish support for arbitrary future SDKs or damaged logs.
+- Update both READMEs, installation versions, compatibility tables, SDK baseline and in-app highlights, distinguishing #17's upgrade-and-reload protection from explicit recovery of #14's old logs. Store v4 / settings v3 / snapshot v1 remain unchanged; no memory migration or reset is required.
 
 ## [0.9.2] - 2026-10-09
 

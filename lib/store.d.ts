@@ -239,6 +239,8 @@ export declare class MemoirStore {
     currentRevision(): number;
     /** Stat the store file into the snapshot signature (null when absent). */
     private statNow;
+    /** Recovery is safe only after the original bytes have been preserved. */
+    private backupCorruptStore;
     /**
      * Load and normalize the store.
      *
@@ -247,7 +249,8 @@ export declare class MemoirStore {
      * touching disk. External file changes (another dsh process) are picked up
      * by a low-frequency mtime probe (mtimeCheckIntervalMs). Absence is
      * negatively cached the same way. Corrupt JSON is renamed to a
-     * `.corrupt.<timestamp>` backup before the store starts fresh.
+     * `.corrupt.<timestamp>.<unique>` backup before the store starts fresh.
+     * Unsupported future formats and IO/backup failures abort the load.
      */
     load(): MemoirStoreFile;
     /** Normalize a parsed store file: mint ids, coerce shapes, merge duplicate

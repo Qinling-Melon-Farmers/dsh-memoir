@@ -129,6 +129,10 @@ export interface StoreSnapshot {
   stat: { mtimeMs: number; size: number } | null
 }
 
+function sameFileStat(a: StoreSnapshot['stat'], b: StoreSnapshot['stat']): boolean {
+  return a === null ? b === null : b !== null && a.mtimeMs === b.mtimeMs && a.size === b.size
+}
+
 /** Cache/IO counters exposed for diagnostics and cache-hit-rate tests. */
 export interface CacheStats {
   /** Current write revision (bumped by record/remove). */
@@ -294,6 +298,21 @@ function tmpSuffix(): string {
   return `${process.pid}.${randomBytes(4).toString('hex')}`
 }
 
+/** Windows file scanners can briefly hold a rename target open. */
+function renameWithRetry(from: string, to: string): void {
+  const maxAttempts = 5
+  for (let attempt = 1; ; attempt++) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (process.platform !== 'win32' || (code !== 'EPERM' && code !== 'EBUSY') || attempt >= maxAttempts) throw error
+      sleepSync(25 * attempt)
+    }
+  }
+}
+
 /** Atomic write (unique tmp name + rename), creating the parent dir. */
 export function writeFileAtomic(path: string, content: string, mode = 0o644): void {
   const dir = dirname(path)
@@ -301,7 +320,7 @@ export function writeFileAtomic(path: string, content: string, mode = 0o644): vo
   const tmp = `${path}.tmp.${tmpSuffix()}`
   try {
     writeFileSync(tmp, content, { encoding: 'utf8', mode })
-    renameSync(tmp, path)
+    renameWithRetry(tmp, path)
   } catch (error) {
     try {
       if (existsSync(tmp)) renameSync(tmp, tmp + '.failed')
@@ -498,9 +517,23 @@ export class MemoirStore {
     try {
       const s = statSync(this.path)
       return { mtimeMs: s.mtimeMs, size: s.size }
-    } catch {
-      return null
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
     }
+  }
+
+  /** Recovery is safe only after the original bytes have been preserved. */
+  private backupCorruptStore(): void {
+    const backup = `${this.path}.corrupt.${Date.now()}.${tmpSuffix()}`
+    try {
+      renameWithRetry(this.path, backup)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`dsh-memoir: cannot back up corrupt store "${this.path}" to "${backup}"; refusing to replace it (${code ?? 'unknown'}: ${detail})`, { cause: error })
+    }
+    this.corruptBackupCount++
   }
 
   /**
@@ -511,68 +544,75 @@ export class MemoirStore {
    * touching disk. External file changes (another dsh process) are picked up
    * by a low-frequency mtime probe (mtimeCheckIntervalMs). Absence is
    * negatively cached the same way. Corrupt JSON is renamed to a
-   * `.corrupt.<timestamp>` backup before the store starts fresh.
+   * `.corrupt.<timestamp>.<unique>` backup before the store starts fresh.
+   * Unsupported future formats and IO/backup failures abort the load.
    */
   load(): MemoirStoreFile {
     this.loadCount++
     const started = Date.now()
 
-    // Warm path: serve the snapshot directly; probe mtime only at the
-    // configured frequency (or every call when the interval is 0).
-    if (this.snapshot !== null) {
-      const now = Date.now()
-      if (this.mtimeCheckIntervalMs === 0 || now - this.lastMtimeCheck >= this.mtimeCheckIntervalMs) {
-        this.lastMtimeCheck = now
-        this.statProbeCount++
-        const stat = this.statNow()
-        const same =
-          this.snapshot.stat === null
-            ? stat === null
-            : stat !== null && stat.mtimeMs === this.snapshot.stat.mtimeMs && stat.size === this.snapshot.stat.size
-        if (same) {
+    try {
+      // Warm path: serve the snapshot directly; probe mtime only at the
+      // configured frequency (or every call when the interval is 0).
+      if (this.snapshot !== null) {
+        const now = Date.now()
+        if (this.mtimeCheckIntervalMs === 0 || now - this.lastMtimeCheck >= this.mtimeCheckIntervalMs) {
+          this.statProbeCount++
+          const stat = this.statNow()
+          this.lastMtimeCheck = now
+          if (sameFileStat(this.snapshot.stat, stat)) {
+            this.hitCount++
+            return this.snapshot.file
+          }
+          // File changed underneath us: fall through to a rebuild.
+        } else {
           this.hitCount++
           return this.snapshot.file
         }
-        // File changed underneath us: fall through to a rebuild.
-      } else {
-        this.hitCount++
-        return this.snapshot.file
       }
-    }
 
-    // Cold path: stat + read + parse (+ corrupt backup) + normalize.
-    let stat = this.statNow()
-    let parsed: Partial<MemoirStoreFile> = { version: FORMAT_VERSION, projects: {} }
-    if (stat !== null) {
-      try {
-        const raw: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
-        if (typeof raw === 'object' && raw !== null && typeof (raw as MemoirStoreFile).projects === 'object' && (raw as MemoirStoreFile).projects !== null) {
+      // IO failures (including disappearance after stat) must not be
+      // mistaken for corrupt JSON or authorize replacing an unread file.
+      let stat = this.statNow()
+      let parsed: Partial<MemoirStoreFile> = { version: FORMAT_VERSION, projects: {} }
+      if (stat !== null) {
+        const content = readFileSync(this.path, 'utf8')
+        this.fileReadCount++
+        let raw: unknown
+        try {
+          raw = JSON.parse(content)
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error
+        }
+        // Check the version before interpreting the shape: a newer format
+        // may no longer have the projects object understood by this build.
+        if (typeof raw === 'object' && raw !== null) {
+          const version = (raw as Partial<MemoirStoreFile>).version
+          if (version !== undefined && (typeof version !== 'number' || !Number.isInteger(version) || version < 1 || version > FORMAT_VERSION)) {
+            throw new Error(`dsh-memoir: unsupported store version ${JSON.stringify(version)} in "${this.path}" (maximum supported: ${FORMAT_VERSION}; expected a positive integer); refusing to load or overwrite it`)
+          }
+        }
+        if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && typeof (raw as MemoirStoreFile).projects === 'object' && (raw as MemoirStoreFile).projects !== null && !Array.isArray((raw as MemoirStoreFile).projects)) {
           parsed = raw as Partial<MemoirStoreFile>
         } else {
-          throw new Error('store shape invalid')
-        }
-      } catch {
-        // Corrupt store: preserve it as a backup, then start fresh (the
-        // project markdown files remain as human-readable history).
-        this.corruptBackupCount++
-        try {
-          renameSync(this.path, `${this.path}.corrupt.${Date.now()}`)
+          this.backupCorruptStore()
           stat = null
-        } catch {
-          // Backup failed (permissions?): keep serving fresh in-memory; the
-          // next save will still overwrite the corrupt file.
         }
       }
-      this.fileReadCount++
+      const file = this.normalize(parsed)
+      this.epoch++
+      this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat }
+      this.lastMtimeCheck = Date.now()
+      this.lastLoadMs = Date.now() - started
+      // Entry shapes may have changed underneath us: drop the render cache.
+      this.renderCache.clear()
+      return file
+    } catch (error) {
+      // A failed external-change probe/reload must not leave a warm snapshot
+      // that the next call could serve without checking the file again.
+      this.invalidate()
+      throw error
     }
-    const file = this.normalize(parsed)
-    this.epoch++
-    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat }
-    this.lastMtimeCheck = Date.now()
-    this.lastLoadMs = Date.now() - started
-    // Entry shapes may have changed underneath us: drop the render cache.
-    this.renderCache.clear()
-    return file
   }
 
   /** Normalize a parsed store file: mint ids, coerce shapes, merge duplicate
@@ -625,21 +665,34 @@ export class MemoirStore {
   /** Persist the store atomically (0600 — may contain user's notes). */
   save(file: MemoirStoreFile): void {
     try {
+      // Direct saves also check external changes, without the warm-read
+      // throttle; a missing/failed load must never authorize an overwrite.
+      if (this.snapshot === null || !sameFileStat(this.snapshot.stat, this.statNow())) {
+        this.invalidate()
+        this.load()
+      }
       writeFileAtomic(this.path, JSON.stringify(file, null, 2) + '\n', 0o600)
     } catch (error) {
       // The in-memory snapshot may already carry the mutation; drop it so the
       // next load() re-reads the on-disk truth instead of serving a stale hit.
-      this.snapshot = null
+      this.invalidate()
       throw error
     }
-    // Bump the revision and refresh the snapshot signature from the file we
-    // just wrote: subsequent reads hit the cache without re-parsing.
+    // The atomic rename is the commit point. Callers use the revision to
+    // distinguish a committed write from a later projection/cache failure.
     this.revision++
     this.epoch++
-    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat: this.statNow() }
-    this.lastMtimeCheck = Date.now()
-    // Entry shapes changed under a mutation: drop all render-cache entries.
-    this.renderCache.clear()
+    this.invalidate()
+    try {
+      const stat = this.statNow()
+      if (stat !== null) {
+        this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat }
+        this.lastMtimeCheck = Date.now()
+      }
+    } catch {
+      // Persistence already succeeded. Leave the cache invalid so the next
+      // read retries, but never report the committed write as failed.
+    }
   }
 
   /** Drop the snapshot so the next load() re-reads and re-parses the file. */

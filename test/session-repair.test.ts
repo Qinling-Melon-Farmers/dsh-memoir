@@ -9,7 +9,9 @@ import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
-import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type {} from '../lib/activity.js' // legacy receipt's SessionEventMap augmentation
+import { mountJsonlPersistence, onlySessionLog, sessionSdk } from './session-sdk-helper.ts'
 
 // The standalone script deliberately has no package/runtime dependency on the
 // plugin. Integration tests default to the official JSONL devDependency (SDK
@@ -19,18 +21,27 @@ const script = fileURLToPath(new URL('../scripts/repair-session-receipts.mjs', i
 const { auditSessionReceipts, repairSessionReceipts } = await import(pathToFileURL(script).href)
 const run = promisify(execFile)
 const localRequire = createRequire(import.meta.url)
-const dshPackage = process.env.DSH_TEST_PACKAGE ?? (() => {
-  try { return dirname(localRequire.resolve('@deepseek-ai/dsh/package.json')) } catch { return undefined }
-})()
+// Never auto-discover a globally installed host: it can silently replace the
+// SDK version under test (Node's Windows global module search does find it).
+const dshPackage = process.env.DSH_TEST_PACKAGE
 // Fail CI when its declared SDK devDependency is missing; never skip repair tests.
 localRequire.resolve('@deepseek-ai/dsh-session-persistence-jsonl')
+const sdk = sessionSdk(dshPackage)
+const { KNOWN_SESSION_EVENT_TYPES, SessionId, SessionSeq } = await sdk.load('@deepseek-ai/dsh-session') as typeof import('@deepseek-ai/dsh-session')
+const { createUserMessage } = await sdk.load('@deepseek-ai/dsh-llm') as typeof import('@deepseek-ai/dsh-llm')
 const sdkArgs = dshPackage ? ['--dsh-package', dshPackage] : []
 const options = { dshPackage }
 const applying = { ...options, apply: true, hostStopped: true }
 const secret = 'SENSITIVE-CONTENT-AND-API-KEY-DO-NOT-PRINT'
-const header = { type: 'session', version: 4, id: 'session-test', createdAt: 1790662700000, isSeeded: false, delegationDepth: 0 }
-const title = (seq: number) => ({ type: 'session/title', seq, time: 1790662733587, data: { title: secret, source: { kind: 'user' }, messageSeqs: [] } })
-const receipt = (seq: number) => ({ type: 'dsh-memoir/written', seq, time: 1790662733587, data: { turn: 1, callId: 'call-秘密-01' } })
+const header = { type: 'session', version: 4, id: SessionId('session-test'), createdAt: 1790662700000, isSeeded: false, delegationDepth: 0 } satisfies SessionHeader & { type: 'session' }
+// Raw on-disk title fixture: its schema is checked by the selected SDK catalog,
+// without depending on the optional session-title package's TS augmentation.
+const title = (seq: number) => ({ type: 'session/title', seq: SessionSeq(seq), time: 1790662733587, data: { title: secret, source: { kind: 'user' }, messageSeqs: [] } })
+const receipt = (seq: number): SessionEvent<'dsh-memoir/written'> => ({ type: 'dsh-memoir/written', seq: SessionSeq(seq), time: 1790662733587, data: { turn: 1, callId: 'call-秘密-01' } })
+const userMessage = (seq: number): SessionEvent<'user/message'> => ({
+  type: 'user/message', seq: SessionSeq(seq), time: 1790662733587, surfaceOp: 'append',
+  data: createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: secret }] }),
+})
 const line = (value: unknown) => JSON.stringify(value) + '\n'
 const headerLine = line(header)
 // Preserve spellings, field order, exponent notation, CRLF and whitespace.
@@ -41,8 +52,10 @@ const patchedText = originalText.replace('"type":"dsh-memoir/written" }', '"type
 const compress = (value: string | Buffer, checksum = true) => zlib.zstdCompressSync(value, { params: { [zlib.constants.ZSTD_c_checksumFlag]: checksum ? 1 : 0 } })
 
 async function fixture(t: TestContext, content: Buffer | string = originalText, compressed = false) {
-  const root = await fs.mkdtemp(join(await fs.realpath(tmpdir()), 'memoir-session-repair-'))
-  t.after(async () => { await fs.rm(root, { recursive: true, force: true }) })
+  const scratch = await fs.mkdtemp(join(await fs.realpath(tmpdir()), 'memoir-session-repair-'))
+  t.after(async () => { await fs.rm(scratch, { recursive: true, force: true }) })
+  const root = join(scratch, '_no-cwd', header.id)
+  await fs.mkdir(root, { recursive: true })
   const path = join(root, compressed ? 'session.v4.jsonl.zstd' : 'session.v4.jsonl')
   await fs.writeFile(path, content)
   return { root, path }
@@ -138,9 +151,9 @@ test('default CLI and API audit are byte-preserving and report only counts/paths
   assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
 })
 
-test('repair help lists every reviewed backend, including both alpha builds', async () => {
+test('repair help lists every reviewed backend, including alpha builds and rc2', async () => {
   const { stdout } = await run(process.execPath, [script, '--help'])
-  for (const version of ['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2']) assert.ok(stdout.includes(version))
+  for (const version of ['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2']) assert.ok(stdout.includes(version))
 })
 
 test('alpha.2 repair preserves working-directory transitions and ignorable plugin records', async t => {
@@ -174,6 +187,89 @@ test('plaintext apply makes an exact verified backup and changes only the one in
   assert.deepEqual(await fs.readdir(f.root), names)
 })
 
+test('active v4 repair leaves historical generations and migration staging bytes untouched', async t => {
+  const f = await fixture(t)
+  const siblings = ['session.jsonl', 'session.v3.jsonl', 'session.v5.jsonl.migration.tmp']
+  for (const name of siblings) await fs.writeFile(join(f.root, name), `opaque historical/staging bytes: ${name}`)
+  const before = await Promise.all(siblings.map(name => fs.readFile(join(f.root, name))))
+  const result = await repairSessionReceipts(f.path, applying)
+  assert.equal(result.changed, 1)
+  assert.equal(await fs.readFile(result.backupPath, 'utf8'), originalText)
+  assert.deepEqual(await Promise.all(siblings.map(name => fs.readFile(join(f.root, name)))), before)
+})
+
+test('inactive, mixed-encoding, noncanonical and unsafe generations fail closed before backup or lock', async t => {
+  const cases = [
+    ['session.v5.jsonl', 'GENERATION_INACTIVE'], ['session.v10.jsonl', 'GENERATION_INACTIVE'],
+    ['session.v4.jsonl.zstd', 'ENCODING_CONFLICT'], ['session.v3.jsonl.zstd', 'ENCODING_CONFLICT'],
+    ['session.jsonl.zstd', 'ENCODING_CONFLICT'], ['session.v04.jsonl', 'LAYOUT_INVALID'],
+    ['session.v0.jsonl', 'LAYOUT_INVALID'], ['SESSION.V5.JSONL', 'LAYOUT_INVALID'],
+    ['session.v9007199254740992.jsonl', 'LAYOUT_INVALID'],
+  ]
+  for (const [name, code] of cases) {
+    const f = await fixture(t)
+    const sibling = join(f.root, name!)
+    await fs.writeFile(sibling, 'do not inspect or change this generation')
+    const names = await fs.readdir(f.root)
+    await assert.rejects(auditSessionReceipts(f.path, options), { code })
+    await assert.rejects(repairSessionReceipts(f.path, applying), { code })
+    assert.deepEqual(await fs.readdir(f.root), names)
+    assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+    assert.equal(await fs.readFile(sibling, 'utf8'), 'do not inspect or change this generation')
+  }
+  for (const kind of ['directory', 'hardlink', 'junction']) {
+    const f = await fixture(t)
+    const sibling = join(f.root, 'session.v3.jsonl')
+    if (kind === 'directory') await fs.mkdir(sibling)
+    else if (kind === 'hardlink') {
+      const separate = join(f.root, 'history')
+      await fs.writeFile(separate, 'history')
+      await fs.link(separate, sibling)
+    } else await fs.symlink(f.root, sibling, process.platform === 'win32' ? 'junction' : 'dir')
+    await assert.rejects(repairSessionReceipts(f.path, applying), { code: 'LAYOUT_INVALID' })
+    assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+  }
+})
+
+test('header identity and project directory must match the selected file', async t => {
+  for (const changes of [{ id: 'another-session' }, { cwd: process.cwd() }]) {
+    const content = originalText.replace(headerLine, line({ ...header, ...changes }))
+    const f = await fixture(t, content)
+    await assert.rejects(repairSessionReceipts(f.path, applying), { code: 'LAYOUT_INVALID' })
+    assert.equal(await fs.readFile(f.path, 'utf8'), content)
+    assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
+  }
+})
+
+test('generation published during backup prevents replacement and retains the exact backup', async t => {
+  for (const name of ['session.v5.jsonl', 'session.v3.jsonl.zstd', 'session.v3.jsonl']) {
+    const f = await fixture(t)
+    const open = fs.open.bind(fs)
+    let triggered = false
+    t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+      const handle = await open(...args)
+      if (String(args[0]).endsWith('.bak') && !triggered) {
+        triggered = true
+        await fs.writeFile(join(f.root, name), 'concurrent generation')
+      }
+      return handle
+    })
+    await assert.rejects(repairSessionReceipts(f.path, applying), (error: any) => {
+      assert.ok(['GENERATION_INACTIVE', 'ENCODING_CONFLICT', 'CONCURRENT_CHANGE'].includes(error.code))
+      assert.equal(error.committed, false)
+      assert.ok(error.backupPath)
+      return true
+    })
+    t.mock.restoreAll()
+    assert.ok(triggered)
+    assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+    assert.equal(await fs.readFile(join(f.root, name), 'utf8'), 'concurrent generation')
+    const backups = (await fs.readdir(f.root)).filter(name => name.endsWith('.bak'))
+    assert.equal(backups.length, 1)
+    assert.equal(await fs.readFile(join(f.root, backups[0]!), 'utf8'), originalText)
+  }
+})
+
 test('real multi-frame zstd checksums, split UTF-8 rows, untouched frames, CLI backup and idempotence', async t => {
   const { bytes, frames } = compressedFixture()
   const f = await fixture(t, bytes, true)
@@ -202,44 +298,66 @@ test('real multi-frame zstd checksums, split UTF-8 rows, untouched frames, CLI b
   assert.deepEqual(await fs.readFile(f.path), fixed)
 })
 
-test('the official writer creates the fixture, its real lease blocks apply, and its reader accepts the repaired file', async t => {
+for (const compression of ['none', 'zstd'] as const) test(`official ${compression} writer, cross-process lease, repair and cold reader`, async t => {
   const root = await fs.mkdtemp(join(await fs.realpath(tmpdir()), 'memoir-official-session-'))
-  const require = dshPackage ? createRequire(join(dshPackage, 'package.json')) : localRequire
-  const load = (name: string) => import(pathToFileURL(require.resolve(name)).href)
-  const [{ default: Backend }, { Context }] = await Promise.all([load('@deepseek-ai/dsh-session-persistence-jsonl'), load('@deepseek-ai/cordis')])
+  const { Context } = await sdk.load('@deepseek-ai/cordis')
   const context = new Context()
-  const backend = new Backend(context, { root, compression: 'zstd' })
+  const backend = await mountJsonlPersistence(context, { root, compression }, sdk.load)
   const { type: _type, ...logicalHeader } = header
+  const id = header.id
   const writer = await backend.create(logicalHeader)
+  const coldContext = new Context()
   t.after(async () => {
     try { await writer.close() }
     finally {
-      try { await context.fiber.dispose() }
+      try { await coldContext.fiber.dispose(); await context.fiber.dispose() }
       finally { await fs.rm(root, { recursive: true, force: true }) }
     }
   })
-  await writer.append([title(0)])
+  assert.deepEqual(await fs.readdir(root), [], 'create remains pending with no disk footprint')
+  const first = userMessage(0), second = userMessage(2), last = userMessage(3)
+  await writer.append([first])
   await writer.append([receipt(1)])
-  await writer.append([title(2)])
-  const path = await backend.resolveCurrentLog(header.id)
-  assert.equal(typeof path, 'string')
+  await writer.append([second])
+  await writer.flush()
+  const path = await onlySessionLog(root, compression)
   const before = await fs.readFile(path)
-  assert.equal((await auditSessionReceipts(path, options)).frames, 4)
+  assert.equal((await auditSessionReceipts(path, options)).frames, compression === 'zstd' ? 4 : 0)
   await assert.rejects(repairSessionReceipts(path, applying), { code: 'LEASE_ACTIVE' })
+  // A separate Node process must contend with the host's real native lease.
+  // Windows case aliases must derive the same named semaphore as the writer.
+  const cliPath = process.platform === 'win32' ? path.toUpperCase().replace(/SESSION\.V4\.JSONL(\.ZSTD)?$/, match => match.toLowerCase()) : path
+  await assert.rejects(run(process.execPath, [script, ...sdkArgs, '--apply', '--host-stopped', cliPath]), (error: any) => {
+    assert.match(error.stderr, /LEASE_ACTIVE/)
+    assert.equal(error.stdout, '')
+    return true
+  })
   assert.deepEqual(await fs.readFile(path), before)
   assert.equal((await fs.readdir(dirname(path))).filter(name => name.includes('memoir-repair')).length, 0)
   await writer.close()
-  await assert.rejects(backend.readStoredLog(path, header.id), /unknown.*(?:event type|harness)/)
+  await assert.rejects(backend.open(id, 'read'), /unknown.*(?:event type|harness)/)
   const result = await repairSessionReceipts(path, applying)
   assert.deepEqual(await fs.readFile(result.backupPath), before)
-  const coldContext = new Context()
-  const coldBackend = new Backend(coldContext, { root, compression: 'zstd' })
-  t.after(() => coldContext.fiber.dispose())
-  const reader = await coldBackend.open(header.id, 'read')
+  const coldBackend = await mountJsonlPersistence(coldContext, { root, compression }, sdk.load)
+  const reader = await coldBackend.open(id, 'read')
   const restored = await reader.read()
   await reader.close()
   assert.equal(restored.events.length, 3)
   assert.deepEqual(restored.events[1], { ...receipt(1), ignorable: true })
+  const reopened = await coldBackend.open(id, 'write')
+  try {
+    // Even an idempotent apply must respect a write-open lease.
+    await assert.rejects(repairSessionReceipts(path, applying), { code: 'LEASE_ACTIVE' })
+    const liveReader = await backend.open(id, 'read')
+    try { assert.deepEqual((await liveReader.read()).events, restored.events) }
+    finally { await liveReader.close() }
+    await reopened.append([last])
+    await reopened.flush()
+  } finally { await reopened.close() }
+  assert.equal((await repairSessionReceipts(path, applying)).changed, 0)
+  const finalReader = await backend.open(id, 'read')
+  try { assert.deepEqual((await finalReader.read()).events, [...restored.events, last]) }
+  finally { await finalReader.close() }
 })
 
 test('rejects torn/corrupt/unchecked/foreign zstd, including a bad checksum in an untouched frame', async t => {
@@ -428,4 +546,16 @@ test('missing/wrong official installation and error diagnostics never expose ses
     assert.match(error.stderr, /DSH_UNSUPPORTED/)
     return true
   })
+})
+
+test('unknown backend versions refuse without importing backend code or modifying the session', async t => {
+  const f = await fixture(t)
+  const installation = join(f.root, 'unsupported-installation')
+  const backend = join(installation, 'node_modules', '@deepseek-ai', 'dsh-session-persistence-jsonl')
+  await fs.mkdir(backend, { recursive: true })
+  await fs.writeFile(join(installation, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.2.1-rc.99' }))
+  await fs.writeFile(join(backend, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-session-persistence-jsonl', version: '0.2.1-rc.99' }))
+  await assert.rejects(repairSessionReceipts(f.path, { ...applying, dshPackage: installation }), { code: 'DSH_UNSUPPORTED' })
+  assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+  assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl', 'unsupported-installation'])
 })

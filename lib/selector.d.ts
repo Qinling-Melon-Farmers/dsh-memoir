@@ -2,7 +2,7 @@
  * Hot memory selector (roadmap §2.3) — picks the highest-value memory for
  * system-prompt injection under a token budget, and renders it compactly.
  *
- * Deterministic: fixed entries + budget always produce the same text (a
+ * Deterministic: fixed entries + budget + clock + language produce the same text (a
  * requirement for stable prompt prefixes). No ids / sessionIds / timestamps /
  * repeated section labels in the injected text — those burn tokens without
  * changing behavior.
@@ -40,7 +40,9 @@ interface ScoredEntry {
 }
 /**
  * Score + order candidates deterministically:
- * section weight + recency decay; ties break by newer time, then id.
+ * section weight + recency decay + importance + pinned bonus;
+ * ties break by newer time, then id. The selector applies these scores
+ * within actions/lessons; its work quota stays ordered by time, then id.
  * note entries are excluded by default (roadmap §1.2 B: notes never enter
  * hot memory in v0.4).
  */
@@ -66,21 +68,24 @@ export interface HotMemoryResult {
     estimatedTokens: number;
 }
 /**
- * Truncate one entry's content so the rendered single-entry block fits the
- * hard token ceiling. Binary-searches the largest fitting code-point length
- * (monotone in the token estimate). Used only for the degenerate case of an
- * oversized FIRST candidate — normal selection never exceeds hardMax.
+ * Fit the first selected entry to the hard ceiling without mutating it.
+ * Shorten content first, and shorten the title only if it still prevents
+ * the block from fitting. Prefixes end on code-point boundaries and carry
+ * an ellipsis. Return undefined if even the localized header, section and
+ * a title-free ellipsis cannot fit; the caller must skip that candidate.
  */
-export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry;
+export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry | undefined;
 /**
  * Select hot memory under the budget. v0.4.2 quota-based order:
  *   1. newest work entries (Recent-state floor, 1~RECENT_WORK_COUNT)
  *   2. ranked actions
  *   3. ranked lessons
  *   4. remaining work entries, newest first
- * Each candidate is added while the rendered estimate stays below
- * targetTokens; hardMaxTokens is never exceeded (an oversized first
- * candidate is truncated into place via truncateEntryToBudget).
+ * Pinned/importance scores apply within actions/lessons, not across these
+ * groups or ahead of the recent-work floor. Skip candidates that exceed
+ * the remaining hard budget and keep scanning for smaller entries. Stop
+ * once an accepted entry reaches the soft target. An oversized first
+ * selection is truncated if its minimal block fits; otherwise skip it.
  *
  * @param entries - one project's entries.
  * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).

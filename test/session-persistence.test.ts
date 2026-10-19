@@ -7,7 +7,6 @@ import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
 import { Session, SessionStore, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { LlmAdapter, LlmRuntime, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -16,9 +15,10 @@ import { apply } from '../lib/index.js'
 import { ACTIVITY_KEY } from '../lib/activity.js'
 import { MemoirStore } from '../lib/store.js'
 import { makeTempWorkspace } from './helpers.ts'
+import { mountJsonlPersistence } from './session-sdk-helper.ts'
 
-for (const outcome of ['record', 'update', 'unresolved', 'failed'] as const) {
-  test(`official tool results survive JSONL cold reopen: ${outcome}`, { timeout: 15_000 }, async () => {
+for (const compression of ['none', 'zstd'] as const) for (const outcome of ['record', 'update', 'unresolved', 'failed'] as const) {
+  test(`official tool results survive live JSONL ${compression} persistence and cold reopen: ${outcome}`, { timeout: 15_000 }, async () => {
     const ws = makeTempWorkspace()
     const ctx = new Context(), coldCtx = new Context()
     try {
@@ -28,6 +28,8 @@ for (const outcome of ['record', 'update', 'unresolved', 'failed'] as const) {
       new LlmRuntime(ctx)
       new SystemPrompt(ctx, {})
       new ToolRuntime(ctx)
+      const root = join(ws.cwd, 'sessions')
+      const backend = await mountJsonlPersistence(ctx, { root, compression })
       const storePath = join(ws.cwd, 'memory.json')
       const payload = { section: 'actions', title: 'Release protocol', content: 'Always run tests before publishing a package.' }
       const seed = outcome === 'unresolved' || outcome === 'update'
@@ -72,19 +74,44 @@ for (const outcome of ['record', 'update', 'unresolved', 'failed'] as const) {
       if (outcome !== 'failed') assert.deepEqual(result.data.meta, { memoir: { version: 1, persisted: committed } })
       assert.equal(ctx.sessionProjections.stateOf(agent.session, ACTIVITY_KEY)?.recorded, committed)
 
-      const root = join(ws.cwd, 'sessions')
-      const backend = new JsonlSessionPersistence(ctx, { root, compression: 'none' })
-      const writer = await backend.create(agent.session.header)
-      try { await writer.append(events); await writer.flush() } finally { await writer.close() }
-      const coldBackend = new JsonlSessionPersistence(coldCtx, { root, compression: 'none' })
+      // AgentLoop owns the write handle; real session/event routing must persist
+      // every tool result. Never manually append snapshotEvents to fake routing.
+      await backend.flush()
+      const coldBackend = await mountJsonlPersistence(coldCtx, { root, compression })
       const reader = await coldBackend.open(agent.session.id, 'read')
       try {
         const read = await reader.read()
         assert.deepEqual(read.events, events, 'cold reader accepts the entire history unchanged')
-        const cold = Session.create(reader.id, read.events, reader.header)
+        const cold = Session.fromRestore(reader.id, read.events, reader.header, reader.inheritedEventCount, read.eventState)
         assert.equal(ctx.sessionProjections.stateOf(cold, ACTIVITY_KEY)?.recorded, committed)
         assert.ok(JSON.stringify(read.events).includes('Original task answer remains readable.'))
       } finally { await reader.close() }
+    } finally { await ctx.fiber.dispose(); await coldCtx.fiber.dispose(); ws.cleanup() }
+  })
+}
+
+for (const compression of ['none', 'zstd'] as const) {
+  test(`JSONL ${compression} teardown drains routed events and releases write ownership`, async () => {
+    const ws = makeTempWorkspace()
+    const ctx = new Context(), coldCtx = new Context()
+    try {
+      new SessionProjectionRegistry(ctx)
+      const sessions = new SessionStore(ctx)
+      const root = join(ws.cwd, 'sessions')
+      const backend = await mountJsonlPersistence(ctx, { root, compression })
+      const session = sessions.create(SessionId('teardown'), { meta: { cwd: ws.cwd } })
+      const writer = await backend.create(session.header)
+      await writer.flush() // materialize an empty session and acquire its native lease
+      session.append('user/message', createUserMessage({ source: { kind: 'user' },
+        content: [{ type: 'text', text: 'Buffered before teardown' }] }), { surfaceOp: 'append' })
+      const events = session.snapshotEvents()
+      assert.equal(events.length, 1)
+      // No explicit flush after the append: disposal must drain the live buffer.
+      await ctx.fiber.dispose()
+      const cold = await mountJsonlPersistence(coldCtx, { root, compression })
+      const successor = await cold.open(session.id, 'write')
+      try { assert.deepEqual((await successor.read()).events, events) }
+      finally { await successor.close() }
     } finally { await ctx.fiber.dispose(); await coldCtx.fiber.dispose(); ws.cleanup() }
   })
 }

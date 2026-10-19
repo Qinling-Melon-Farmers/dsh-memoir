@@ -1,6 +1,6 @@
 # dsh-memoir
 
-> **0.9.2 已发布**：支持官方 npm DSH `0.2.1-alpha.1`，保留 `0.2.0-rc.1 / rc.2` 支持，修复 #15 的跨项目召回截断提示及英文 Issue 模板误判。发布后已核验 alpha.2 的记忆运行接口；本地后续适配另增加 alpha.2 历史恢复支持，**尚未发布**。下面的 npm 命令安装 0.9.2，其恢复工具不接受 alpha.2 后端。项目记忆始终绑定会话原始项目，切换执行目录不会转移记忆归属。
+> **0.9.3**：适配官方 npm DSH `0.2.1-rc.2`，保留 `0.2.0-rc.1 / rc.2` 与 `0.2.1-alpha.1 / alpha.2` 支持。修复 #16 的存储保护与 Hot Memory 预算边界，以及 #17 的记忆模板字面量阻断 prompt 组装问题。升级并重新加载插件即可保护旧快照，无需删除快照或改写原始记忆；#14 的旧日志故障仍须单独恢复。
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
@@ -13,20 +13,27 @@
 无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主环境提供；Zod 用于验证宿主会话投影，不捆绑进插件。
 
 > [!WARNING]
-> **0.9.2 修复会话恢复问题 #14：0.8.1–0.9.0 写入的旧回执可能导致会话重新打开失败。** 升级阻止新增异常，但不自动重写旧日志；npm 包已内置 `dsh-memoir-repair` 命令。旧会话仍打不开时，按[恢复说明](./SESSION_RECOVERY.md)先只读检查、停机备份后再显式恢复；不要删除日志或降级数据格式。恢复前停止旧插件写入，仅关闭自动蒸馏不能阻止手动工具写入。
-> 修复已覆盖官方 DSH `0.2.0-rc.1` / `0.2.0-rc.2`；仅升级 DSH 不会修复旧插件或已有异常日志。
+> **#14 旧日志恢复边界：0.8.1–0.9.0 写入的旧回执可能导致会话重新打开失败。** 0.9.3 保留 0.9.1 起阻止新增异常回执的修复，但升级不自动重写旧日志；npm 包内置 `dsh-memoir-repair` 命令。旧会话仍打不开时，按[恢复说明](./SESSION_RECOVERY.md)先只读检查、停机备份后再显式恢复；不要删除日志或降级数据格式。恢复前停止旧插件写入，仅关闭自动蒸馏不能阻止手动工具写入。
+> #17 的 prompt 输出防护不修复任意旧日志。恢复 CLI 的后端与格式支持须以恢复说明列出的已审计范围为准；仅升级 DSH 也不会修复已有异常日志。
 
 > [!IMPORTANT]
-> **0.9.2 要求 DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**，已验证官方 `0.2.0-rc.1` / `rc.2` / `0.2.1-alpha.1`（不是无后缀正式 0.2.0）。保留首屏导引、原生设置、四种 Agent 语言、独立蒸馏回合与冻结快照。**DSH 0.1.7 兼容线为 `0.8.2`，但仍受 #14 影响；使用本修复须先升级宿主，再安装 0.9.2。**
+> **0.9.3 要求 DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**，开发 SDK 基线为 `0.2.1-rc.2`；保留官方 `0.2.0-rc.1 / rc.2` 与 `0.2.1-alpha.1 / alpha.2` 兼容线。版本范围不代表其中所有版本均已验证。保留首屏导引、原生设置、四种 Agent 语言、独立蒸馏回合与冻结快照。**DSH 0.1.7 兼容线为 `0.8.2`，但仍受 #14 影响；使用本版修复须先升级宿主，再安装 0.9.3。**
 >
 > `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
 
 ```bash
-npm install --global @deepseek-ai/dsh@0.2.0-rc.2
-dsh plugin --profile web add dsh-memoir@0.9.2
+npm install --global @deepseek-ai/dsh@0.2.1-rc.2
+dsh plugin --profile web add dsh-memoir@0.9.3
 ```
 
-重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
+升级后重新加载插件，或重启 `dsh web`。#17 防护会在后续 prompt 组装时生效；无需手工删除旧快照。记忆不会随插件升级或卸载自动删除。
+
+## 0.9.3 更新摘要
+
+- **存储保护（[#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)）**：遇到未来 store 格式、读取错误或损坏文件备份失败时，报错并拒绝继续加载或覆盖（fail closed）。只有成功保留损坏原文件后才允许建立空库；Windows 临时占用导致的 rename 失败采用有界重试，耗尽后仍报错。
+- **Hot Memory 预算（#16）**：候选超出剩余硬预算时跳过并继续寻找较小条目；首条过大时按渲染后的完整块缩短正文，必要时缩短标题。连最小块也放不下则跳过，长标题不能突破 `hotMemoryMaxTokens`。
+- **模板字面量（[#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)）**：通过官方 `PromptSection` 的 `interpolate: false` 关闭记忆 section 的变量插值，使 `{{...}}` 等字面量按原文进入 system prompt，避免被求值或导致组装失败。新记忆、进程内旧快照与磁盘恢复的旧快照均按原文输出；花括号、原始记忆 JSON、`PROJECT_MEMORY.md` 与磁盘快照保持原样。感谢 [mikemikimike](https://github.com/mikemikimike) 在 [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18) 中的报告、输出边界分析及旧快照方案对问题定位的帮助。
+- **DSH rc.2 适配**：SDK 基线更新至 `0.2.1-rc.2`，适配 JSONL 后端的具名 `apply` 导出及 generation（日志代际）恢复协议。项目记忆仍绑定会话原始项目，切换执行目录不转移归属。恢复 CLI 支持的五个官方 SDK 版本和安全边界见[恢复说明](./SESSION_RECOVERY.md)；运行时兼容不等于任意历史日志均可恢复。
 
 ## 为什么选择 dsh-memoir
 
@@ -68,9 +75,11 @@ memoir_record / memoir_update
 
 - **Full Memory** 保留全部记录，用于 GUI、人工审阅、Markdown 投影和排序检索。
 - **Hot Memory** 只选择预算内的 actions、lessons 与 recent state；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
-- **Session Snapshot** 按会话持久化冻结注入文本，重启恢复与内存淘汰后仍复用原文。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新；恢复失败会显式报告降级。
+- **Session Snapshot** 按会话持久化冻结注入基线，重启恢复与内存淘汰后继续复用原文。0.9.3 通过关闭记忆 section 的变量插值保护旧基线，注入文本与已存快照均保持原样。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新；恢复失败会显式报告降级。
 
 ### 快照恢复与清理（0.7.1）
+
+**0.9.3 升级提示：** #17 防护同时覆盖进程内缓存和磁盘恢复的旧快照，升级并重新加载插件即可，无需按下面的磁盘清理步骤删除它们。记忆 section 关闭变量插值后，含模板字面量的旧基线仍按原文输出，花括号与冻结前缀保持不变；这不等于修复 #14 的异常回执或其它旧日志故障。
 
 - 默认目录：`$DSH_HOME/dsh-memoir.json.snapshots/`；自定义 storePath 时为 `<storePath>.snapshots/`。记录按数据源/设置文件的哈希、语言和会话哈希分开保存；按需读取，不在启动时加载全部文件。
 - `sessionSnapshotMax` 只限制内存 LRU。磁盘记录无自动 TTL，不随缩容、卸载或清理内存删除；备份记忆时请一起备份该目录。需要回收磁盘时先停止相关 DSH 进程并备份，再人工删除确定不再恢复的记录。删除后再次访问会建立新基线。
@@ -184,26 +193,28 @@ memoir_record / memoir_update
 
 | 渠道 | DSH 基线 | 安装方式 | 状态 |
 | --- | --- | --- | --- |
-| npm `latest`（`0.9.2`） | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.2` | 实测 0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1；修复 #14 |
+| npm 固定版 `0.9.3` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.3` | SDK 0.2.1-rc.2；兼容 0.2.0-rc.1 / rc.2、0.2.1-alpha.1 / alpha.2 |
 | npm 固定版 `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | 旧 0.1.7 兼容线，仍受 #14 影响 |
 | npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
 | npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
 | npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| 源码 `v0.9.2` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | 本地构建 + `link:` | 开发调试，不兼容旧 0.1.x |
+| 源码 `v0.9.3` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | 本地构建 + `link:` | SDK 0.2.1-rc.2；开发调试，不兼容旧 0.1.x |
+
+本版开发 SDK 统一固定为 `0.2.1-rc.2`。兼容矩阵中的宿主支持与 #14 恢复 CLI 的后端、文件格式及 generation 限制是不同边界；恢复范围见 [SESSION_RECOVERY.md](./SESSION_RECOVERY.md)。
 
 需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
 
 <details>
 <summary>从源码安装</summary>
 
-0.9.2 源码（DSH 0.2.0-rc.1 / rc.2）：
+0.9.3 源码（开发 SDK / 示例宿主 DSH 0.2.1-rc.2）：
 
 ```bash
-git clone --branch v0.9.2 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+git clone --branch v0.9.3 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@0.2.0-rc.2
+npm install --global @deepseek-ai/dsh@0.2.1-rc.2
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
@@ -228,7 +239,7 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 ## 离线更新公告
 
-首次打开记忆会话页时展示 0.9.2 更新摘要，提示 alpha.1 兼容、召回计数修复与旧日志恢复边界，不阻塞对话；点击“知道了”后，同一浏览器 origin 的本版本不再自动展示。“关于与帮助 → 查看本版更新”可随时重看。设置页和右侧栏不会自动弹出公告。下图保留为已标注版本的 0.9.0 历史预览。
+首次打开记忆会话页时展示 0.9.3 更新摘要，提示 DSH 0.2.1-rc.2 适配、#16 存储与预算保护、#17 模板字面量防护，以及旧快照无需删除、#14 旧日志仍须单独恢复的边界，不阻塞对话；点击“知道了”后，同一浏览器 origin 的本版本不再自动展示。“关于与帮助 → 查看本版更新”可随时重看。设置页和右侧栏不会自动弹出公告。下图保留为已标注版本的 0.9.0 历史预览。
 
 公告随包内置、中英双语，不联网、不上传信息、不改变记忆或对话。仅在 UI 本地存储记录已确认版本；存储不可用时退化为当前页面去重，Web/桌面端或不同 origin 的确认状态不承诺同步。
 
@@ -314,6 +325,6 @@ pnpm test
 npm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前版本是 [v0.9.2](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.9.2)，面向 DSH 0.2.0-rc.1 / rc.2；旧兼容线与风险见上方兼容性表。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。0.9.3 版本变化见 [CHANGELOG.md](./CHANGELOG.md)，开发 SDK 基线为 DSH 0.2.1-rc.2；旧兼容线与风险见上方兼容性表。正式包由 tag 工作流通过 npm OIDC 发布，发布状态以 [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) 与 npm 为准。
 
 Apache-2.0
