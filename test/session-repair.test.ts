@@ -72,19 +72,14 @@ function compressedFixture() {
   return { frames, bytes: Buffer.concat(frames) }
 }
 
-function independentlyDecodeFrames(bytes: Buffer) {
-  const frames: Buffer[] = []
-  const decoded: Buffer[] = []
-  let offset = 0
-  while (offset < bytes.length) {
-    const result = zlib.zstdDecompressSync(bytes.subarray(offset), { info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } }
-    const consumed = result.engine.bytesWritten
-    assert.ok(consumed > 0 && consumed <= bytes.length - offset)
-    frames.push(bytes.subarray(offset, offset + consumed))
-    decoded.push(result.buffer)
-    offset += consumed
-  }
-  return { frames, plain: Buffer.concat(decoded) }
+// The previous walk relied on zstdDecompressSync({ info: true })
+// .engine.bytesWritten stopping at frame boundaries; newer Node 24 patch
+// releases drain all frames at once, so frame boundaries now come from the
+// byte-verified fixture instead of zlib byte accounting.
+const ZSTD_FRAME_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+function assertZstdFrame(buffer: Buffer, label: string) {
+  assert.ok(buffer.length >= 5 && buffer.subarray(0, 4).equals(ZSTD_FRAME_MAGIC), label + ' starts with the zstd frame magic')
+  assert.ok(buffer[4]! & 4, label + ' declares a content checksum')
 }
 
 test('CLI requires an explicit file, never scans HOME, and exposes help without DSH', async t => {
@@ -286,14 +281,21 @@ test('real multi-frame zstd checksums, split UTF-8 rows, untouched frames, CLI b
   const prefix = Buffer.concat(frames.slice(0, 3))
   assert.deepEqual(fixed.subarray(0, prefix.length), prefix, 'untouched header/title/partial-record frames are byte-identical')
   assert.deepEqual(fixed.subarray(-frames[4]!.length), frames[4], 'untouched final batch is byte-identical')
-  // An independent native bytesWritten walk verifies every frame, without using
-  // the script's structural parser or assuming the changed frame's boundaries.
-  const decoded = independentlyDecodeFrames(fixed)
-  assert.equal(decoded.frames.length, 5)
-  assert.equal(decoded.plain.toString(), patchedText)
-  for (const frame of decoded.frames) {
-    assert.ok(frame[4]! & 4, 'every output frame retains its checksum')
-    const damaged = Buffer.from(frame)
+  // Independent decode of the five fixture frames. Frames 0-2 and 4 are
+  // byte-identical to the untouched fixture frames (asserted above); the
+  // rewritten middle frame is whatever the script left between them. Each
+  // segment is exactly one zstd frame whose checksum zlib must enforce; this
+  // never uses the script's structural parser or zlib byte accounting.
+  const tail = frames[4]!
+  const middle = fixed.subarray(prefix.length, fixed.length - tail.length)
+  const segments = [frames[0]!, frames[1]!, frames[2]!, middle, tail]
+  assert.ok(middle.length >= 5, 'the rewritten middle frame is present')
+  const plain = Buffer.concat(segments.map((segment) => zlib.zstdDecompressSync(segment)))
+  assert.equal(plain.toString(), patchedText)
+  const labels = ['untouched header frame', 'untouched title frame', 'untouched split frame', 'rewritten middle frame', 'untouched final frame']
+  for (const [index, segment] of segments.entries()) {
+    assertZstdFrame(segment, labels[index]!)
+    const damaged = Buffer.from(segment)
     damaged[damaged.length - 1] = damaged[damaged.length - 1]! ^ 1
     assert.throws(() => zlib.zstdDecompressSync(damaged), 'checksum must actually be verified')
   }
