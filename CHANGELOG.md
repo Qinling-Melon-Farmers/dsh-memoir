@@ -2,6 +2,26 @@
 
 本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
 
+## [0.9.4] - 2026-11-01
+
+### 中文
+
+- **DSH `0.2.1-rc.5` 基线**：开发与验证 SDK 统一固定到 rc.5，全量回归在 rc.5 基线通过。`session-persistence-jsonl` 的库代码在 rc.2 → rc.3 → rc.4 → rc.5 之间逐字节一致（2026-11-01 审计），运行时兼容与此一致。宿主/peer 范围保持 `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1` 不变；0.2.2 稳定版发布时将自动被第一条款覆盖。
+- **恢复 CLI 扩展至 rc.3 / rc.4 / rc.5**：基于零差异审计，`dsh-memoir-repair` 的已审计后端白名单从五个官方 SDK 版本扩展到八个；格式、Zstandard、租约与 generation 安全边界不变，仍只处理显式指定文件，执行恢复仍须停止全部宿主并独立备份后 `--apply --host-stopped`。[恢复说明](./SESSION_RECOVERY.md)同步更新。
+- **兼容基线一致性回归**：新增 `test/compat-baseline.test.ts`，防住三类已实际发生的脱节——JSONL devDependency 必须在恢复白名单内、`dsh.engines` 与 peer 范围必须放行编译基线（含自实现的零依赖 semver 预发布匹配器及 npm 预发布判定自检）、双语恢复文档必须列全白名单版本。`session-repair` 帮助文本测试改为从脚本动态解析白名单，不再硬编码版本列表。
+- **CI SDK 兼容矩阵**：新增 `compat` job——基线 rc.5 作为硬门禁，`0.2.2-alpha.2` 作为 advisory 预警；新增 `scripts/compat-swap.mjs` 供本地与 CI 切换 SDK 基线（探测运行通过 `DSH_COMPAT_SWAP` 跳过基线锁定测试）。
+- **0.2.2 预发布预检（未放行）**：`0.2.2-alpha.2` 将 Node 最低要求抬到 `>=24.9.0`（移除 Node 22）、cordis 升至 4.0.6-alpha.1，并包含公开契约变化：`PromptAssembly` 拆分出 `PromptPresentation` 且 `system-prompt/assemble` 回调签名变化、Session 创建公告协议加严、`AgentLoop` 构造签名重构并删除 `turnBoundaryProjectionDefinition`、`ProjectionDefinition` 需要两个类型参数（memoir 现用单参形式失效）、`session-persistence-jsonl` 弃用 Node 22 解码器。memoir 的 10 个直接导入符号中 9 个不受影响；未通过门禁前不扩大 engine 范围，待 0.2.2 beta/rc 再适配。
+- store v4 / settings v3 / snapshot v1 保持不变，无需迁移或清空记忆。双语 README、应用内更新公告与兼容矩阵同步；应用内 SDK 基线显示随构建自动更新。
+
+### English
+
+- **DSH `0.2.1-rc.5` baseline:** development and verification SDKs are uniformly pinned to rc.5, and the full regression suite passes on it. The `session-persistence-jsonl` lib is byte-for-byte identical across rc.2 → rc.3 → rc.4 → rc.5 (audited 2026-11-01); runtime compatibility follows. Host/peer ranges stay `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`; a stable 0.2.2 will be covered by the first clause automatically.
+- **Recovery CLI extended to rc.3 / rc.4 / rc.5:** based on the byte-for-byte audit, the `dsh-memoir-repair` reviewed-backend allowlist grows from five to eight official SDK versions. Format, Zstandard, lease and generation safety boundaries are unchanged; the utility still processes one explicitly named file, and applying recovery still requires stopping every host, backing up independently, then `--apply --host-stopped`. [SESSION_RECOVERY.md](./SESSION_RECOVERY.md#english) is updated accordingly.
+- **Compatibility-baseline regressions:** new `test/compat-baseline.test.ts` prevents three drift classes that actually occurred — the JSONL devDependency must stay inside the recovery allowlist, `dsh.engines` and peer ranges must admit the compile baseline (with a self-contained zero-dependency semver prerelease matcher and self-checks of npm's prerelease decisions), and both recovery documents must list every allowlisted version. The `session-repair` help test now parses the allowlist from the script instead of hardcoding versions.
+- **CI SDK compat matrix:** a new `compat` job runs the pinned rc.5 baseline as a hard gate and `0.2.2-alpha.2` as an advisory signal; `scripts/compat-swap.mjs` switches SDK baselines locally and in CI (probe runs export `DSH_COMPAT_SWAP` so the baseline-pinning tests skip themselves).
+- **0.2.2 prerelease reconnaissance (not admitted):** `0.2.2-alpha.2` raises the Node floor to `>=24.9.0` (dropping Node 22) and moves cordis to 4.0.6-alpha.1, with public-contract changes: `PromptAssembly` splits out `PromptPresentation` and the `system-prompt/assemble` callback signature changes, the Session creation-announcement protocol tightens, the `AgentLoop` constructor is restructured and `turnBoundaryProjectionDefinition` is removed, `ProjectionDefinition` now requires two type arguments (Memoir's single-argument form stops compiling), and `session-persistence-jsonl` drops its Node 22 decoder. Nine of Memoir's ten direct imports are unaffected. Engine ranges stay unchanged until the gates pass; adaptation follows at 0.2.2 beta/rc.
+- Store v4 / settings v3 / snapshot v1 remain unchanged; no memory migration or reset is required. Both READMEs, the in-app release notice and the compatibility table are synchronized; the in-app SDK baseline readout follows the build automatically.
+
 ## [0.9.3] - 2026-10-19
 
 ### 中文

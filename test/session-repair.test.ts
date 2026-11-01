@@ -151,9 +151,12 @@ test('default CLI and API audit are byte-preserving and report only counts/paths
   assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
 })
 
-test('repair help lists every reviewed backend, including alpha builds and rc2', async () => {
+test('repair help lists every reviewed backend from the script allowlist', async () => {
   const { stdout } = await run(process.execPath, [script, '--help'])
-  for (const version of ['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2']) assert.ok(stdout.includes(version))
+  const source = await fs.readFile(script, 'utf8')
+  const match = source.match(/REVIEWED_BACKENDS = new Set\(\[([^\]]+)\]\)/)
+  assert.ok(match, 'the repair script must declare a REVIEWED_BACKENDS set literal')
+  for (const version of [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1])) assert.ok(stdout.includes(version))
 })
 
 test('alpha.2 repair preserves working-directory transitions and ignorable plugin records', async t => {

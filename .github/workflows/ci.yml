@@ -104,3 +104,52 @@ jobs:
               sys.exit(1)
           print('emoji rule passed')
           PY
+
+
+  # Typecheck and test against other official SDK baselines. The pinned
+  # baseline reruns in the main job; future prereleases run as an advisory
+  # signal so upstream breaking changes surface before an adaptation release.
+  compat:
+    name: SDK compat (${{ matrix.sdk }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: 0.2.1-rc.5
+            advisory: false
+          - sdk: 0.2.2-alpha.2
+            advisory: true
+    continue-on-error: ${{ matrix.advisory }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Swap SDK baseline
+        run: node scripts/compat-swap.mjs ${{ matrix.sdk }}
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        env:
+          DSH_COMPAT_SWAP: ${{ matrix.sdk }}
+        run: pnpm test

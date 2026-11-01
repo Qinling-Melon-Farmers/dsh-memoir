@@ -2,7 +2,7 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5
  * (format, zstd, lease, win32, generation selection and handle lifetime).
  * Use that installation's public format catalog, not a guessed JSONL schema.
  * Only the active canonical v4 file in a header-matching project/session directory
@@ -30,7 +30,8 @@ const RECEIPT = 'dsh-memoir/written'
 const INSERTION = Buffer.from(',"ignorable":true')
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 const runtimeCache = new Map()
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2'])
+// 0.2.1-rc.3/rc.4/rc.5 ship the identical session-persistence-jsonl lib as 0.2.1-rc.2 (byte-for-byte lib audit, 2026-11-01).
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5'])
 const REVIEWED_BACKEND_TEXT = [...REVIEWED_BACKENDS].join(' / ')
 
 function refuse(code, message) {

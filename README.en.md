@@ -1,6 +1,6 @@
 # dsh-memoir
 
-> **0.9.3** targets official npm DSH `0.2.1-rc.2`, retaining `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2` support. It fixes #16's store protection and Hot Memory budget boundaries, plus #17's memory template literals breaking prompt assembly. Upgrade and reload the plugin to protect old snapshots without deleting them or rewriting original memories; #14's affected historical logs still need separate recovery.
+> **0.9.4** moves the development and verification SDK baseline to official npm DSH `0.2.1-rc.5`, retaining `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2 / rc.2` support; the #14 recovery CLI allowlist is extended to rc.3 / rc.4 / rc.5 after a byte-for-byte audit. All 0.9.3 fixes (#16 store protection, #17 template-literal protection) are retained. Upgrade and reload the plugin without deleting snapshots or rewriting original memories; #14's affected historical logs still need separate recovery.
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
@@ -18,23 +18,29 @@ No embeddings, vector database, or cloud memory service. The npm package has zer
 > #17's prompt output protection does not repair arbitrary old logs. Recovery CLI support is limited to the reviewed backends and formats listed in the recovery guide; upgrading DSH alone does not repair affected logs either.
 
 > [!IMPORTANT]
-> **0.9.3 requires DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**, with development SDKs pinned to `0.2.1-rc.2`; it retains the official `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2` compatibility lines. The version range does not mean every included version has been verified. Retains the visible guide, native settings, four agent languages, separate distillation turns and frozen snapshots. **The DSH 0.1.7 line is Memoir `0.8.2`, but it remains affected by #14; upgrade the host before installing the fixes in 0.9.3.**
+> **0.9.4 requires DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**, with development SDKs pinned to `0.2.1-rc.5`; it retains the official `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2 / rc.2` compatibility lines, and the rc.3 / rc.4 / rc.5 backend lib is byte-for-byte identical to rc.2. The version range does not mean every included version has been verified; `0.2.2` prereleases have not passed the gates and stay outside the range (see the highlights). Retains the visible guide, native settings, four agent languages, separate distillation turns and frozen snapshots. **The DSH 0.1.7 line is Memoir `0.8.2`, but it remains affected by #14; upgrade the host before installing the fixes in 0.9.4.**
 >
 > `dsh-memoir@0.7.1` fixes lost session snapshots after restart or RAM eviction (#10), supporting DSH **0.1.5-rc.1 / rc.2**. It requires `>=0.1.5-rc.1 <0.1.6-0`; check your host first. Keep `0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2; those older lines do not include this fix.
 
 ```bash
-npm install --global @deepseek-ai/dsh@0.2.1-rc.2
-dsh plugin --profile web add dsh-memoir@0.9.3
+npm install --global @deepseek-ai/dsh@0.2.1-rc.5
+dsh plugin --profile web add dsh-memoir@0.9.4
 ```
 
 After upgrading, reload the plugin or restart `dsh web`. #17's protection takes effect on subsequent prompt assembly; no manual deletion of old snapshots is needed. Updating or removing the plugin does not automatically delete memories.
 
-## 0.9.3 highlights
+## 0.9.4 highlights
+
+- **DSH rc.5 baseline:** development and verification SDKs are uniformly pinned to `0.2.1-rc.5`. The `session-persistence-jsonl` lib is byte-for-byte identical across rc.2 → rc.3 → rc.4 → rc.5 (audited 2026-11-01) and the full regression suite passes on the rc.5 baseline; host/peer ranges are unchanged, and a stable 0.2.2 will be covered by the first clause automatically.
+- **Recovery CLI extended to rc.3 / rc.4 / rc.5:** the allowlist grows from five to eight official SDK versions with unchanged safety boundaries: audit first, stop every host and back up independently, then apply with `--apply --host-stopped`.
+- **Compatibility-baseline regressions:** new tests prevent three drift classes — the JSONL devDependency must stay inside the recovery allowlist, the engines/peer ranges must admit the compile baseline, and both recovery documents must list every allowlisted version; the repair help test now parses the allowlist from the script.
+- **CI SDK compat matrix:** a new compat job runs the pinned rc.5 baseline as a hard gate and `0.2.2-alpha.2` as an advisory signal; `scripts/compat-swap.mjs` switches baselines locally and in CI.
+- **0.2.2 prerelease reconnaissance (not admitted):** `0.2.2-alpha.2` requires Node `>=24.9.0` (dropping Node 22) and changes public contracts such as a two-argument `ProjectionDefinition` and the `PromptAssembly` split; engine ranges stay unchanged until the gates pass.
 
 - **Store protection ([#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)):** future store formats, read errors and failed backups of corrupt files fail closed, refusing further loading or overwriting. A fresh store is allowed only after the damaged original has been preserved. Windows rename failures caused by temporary file contention receive bounded retries and still surface as errors when retries are exhausted.
 - **Hot Memory budgets (#16):** skip candidates that exceed the remaining hard budget and continue looking for smaller entries. If the first entry is oversized, shorten its content and, if necessary, its title against the complete rendered block. Skip it if even the minimum block cannot fit; long titles cannot bypass `hotMemoryMaxTokens`.
 - **Template literals ([#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)):** set the official `PromptSection` option `interpolate: false` to disable variable interpolation for the memory section. Literals such as `{{...}}` enter the system prompt verbatim, preventing evaluation or assembly failures. New memories, cached old snapshots and restored disk snapshots all retain their original output; braces, original memory JSON, `PROJECT_MEMORY.md` and disk snapshots stay unchanged. Thanks to [mikemikimike](https://github.com/mikemikimike) for the report, output-boundary analysis and old-snapshot approach in [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18), which helped locate the problem.
-- **DSH rc.2 compatibility:** update the SDK baseline to `0.2.1-rc.2`, adapting to the JSONL backend's named `apply` export and log-generation recovery protocol. Project memory remains anchored to the original session project when the execution directory changes. See the [recovery guide](./SESSION_RECOVERY.md#english) for the five supported official SDK versions and safety boundaries. Runtime compatibility does not imply recovery of arbitrary historical logs.
+- **All 0.9.3 fixes are retained:** see [CHANGELOG.md](./CHANGELOG.md) for #16 store protection, Hot Memory budget boundaries and #17 template-literal protection. Project memory remains anchored to the original session project when the execution directory changes. See the [recovery guide](./SESSION_RECOVERY.md#english) for the eight supported official SDK versions and safety boundaries. Runtime compatibility does not imply recovery of arbitrary historical logs.
 
 ## Why dsh-memoir
 
@@ -194,28 +200,28 @@ Choose German agent-facing copy independently of the English GUI; settings and m
 
 | Channel | DSH baseline | Installation | Status |
 | --- | --- | --- | --- |
-| pinned npm `0.9.3` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.3` | SDK 0.2.1-rc.2; compatible with 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 |
+| pinned npm `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.4` | SDK 0.2.1-rc.5; compatible with 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 |
 | pinned npm `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | Legacy 0.1.7 line; still affected by #14 |
 | pinned npm `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | Legacy 0.1.5 line |
 | pinned npm `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | Legacy 0.1.2 line |
 | pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| Source `v0.9.3` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | local build + `link:` | SDK 0.2.1-rc.2; development, not compatible with legacy 0.1.x |
+| Source `v0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | local build + `link:` | SDK 0.2.1-rc.5; development, not compatible with legacy 0.1.x |
 
-Development SDKs are uniformly pinned to `0.2.1-rc.2`. Host compatibility in this table is separate from #14 recovery CLI restrictions on backends, file formats and log generations; see [SESSION_RECOVERY.md](./SESSION_RECOVERY.md#english) for recovery scope.
+Development SDKs are uniformly pinned to `0.2.1-rc.5`. Host compatibility in this table is separate from #14 recovery CLI restrictions on backends, file formats and log generations; see [SESSION_RECOVERY.md](./SESSION_RECOVERY.md#english) for recovery scope.
 
 Node.js `^22.19.0 || >=24.0.0` is required. 0.7.1 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
 
 <details>
 <summary>Install from source</summary>
 
-0.9.3 source (development SDKs / example host: DSH 0.2.1-rc.2):
+0.9.4 source (development SDKs / example host: DSH 0.2.1-rc.5):
 
 ```bash
-git clone --branch v0.9.3 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
+git clone --branch v0.9.4 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
 cd dsh-memoir
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@0.2.1-rc.2
+npm install --global @deepseek-ai/dsh@0.2.1-rc.5
 dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 ```
 
@@ -240,7 +246,7 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 ## Offline release highlights
 
-The first Memory Conversation opening shows the 0.9.3 highlights without blocking chat: DSH 0.2.1-rc.2 compatibility, #16's store and budget protection, and #17's template-literal protection. It explains that old snapshots need no deletion while #14's affected logs still need separate recovery. Choose “Got it” to stop automatic display for this version in the same browser origin. Reopen anytime from “About & help → View release highlights”. Settings and sidebar panels never open the notice automatically. The image below is explicitly retained as a historical 0.9.0 preview.
+The first Memory Conversation opening shows the 0.9.4 highlights without blocking chat: the DSH 0.2.1-rc.5 baseline, the recovery CLI extended to rc.3 / rc.4 / rc.5, and the new compatibility-baseline regressions. It explains that formats are unchanged with no migration needed while #14's affected logs still need separate recovery. Choose “Got it” to stop automatic display for this version in the same browser origin. Reopen anytime from “About & help → View release highlights”. Settings and sidebar panels never open the notice automatically. The image below is explicitly retained as a historical 0.9.0 preview.
 
 The Chinese/English notice is offline: no network requests, uploads, memory changes or conversation edits. Only the acknowledged version is stored locally by the UI. If storage is unavailable, acknowledgment lasts for the current page; Web/Desktop and different origins are not guaranteed to share it.
 
@@ -326,6 +332,6 @@ pnpm test
 npm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for 0.9.3 changes; the development SDK baseline is DSH 0.2.1-rc.2. See the compatibility table above for older lines and risks. Formal packages are published by the tag workflow through npm OIDC; consult [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) and npm for publication status.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for 0.9.4 changes; the development SDK baseline is DSH 0.2.1-rc.5. See the compatibility table above for older lines and risks. Formal packages are published by the tag workflow through npm OIDC; consult [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) and npm for publication status.
 
 Apache-2.0

@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+// compat-swap probes compile other SDK baselines; only release runs pin devDeps.
+const swapProbe = process.env.DSH_COMPAT_SWAP !== undefined
 const clientSource = readFileSync(join(ROOT, 'src', 'client', 'index.tsx'), 'utf8')
 const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
   version: string
@@ -17,8 +19,8 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>
 }
 
-test('v0.9.3 retains the 0.2.0 floor and admits 0.2.1 prereleases', () => {
-  assert.equal(packageJson.version, '0.9.3')
+test('v0.9.4 retains the 0.2.0 floor and admits 0.2.1 prereleases', { skip: swapProbe && 'non-baseline compat probe' }, () => {
+  assert.equal(packageJson.version, '0.9.4')
   const range = '>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1'
   assert.equal(packageJson.dsh?.engines?.dsh, range)
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], range)
@@ -26,7 +28,7 @@ test('v0.9.3 retains the 0.2.0 floor and admits 0.2.1 prereleases', () => {
   assert.equal(packageJson.dependencies, undefined, 'the published package keeps zero bundled runtime dependencies')
 })
 
-test('v0.9.3 injects native client providers and pins the 0.2.1-rc.2 baseline', () => {
+test('v0.9.4 injects native client providers and pins the 0.2.1-rc.5 baseline', { skip: swapProbe && 'non-baseline compat probe' }, () => {
   assert.deepEqual(packageJson.dsh?.client?.inject, [
     '@deepseek-ai/dsh-api-session-controller',
     '@deepseek-ai/dsh-client-ui-renderer',
@@ -37,15 +39,15 @@ test('v0.9.3 injects native client providers and pins the 0.2.1-rc.2 baseline', 
     '@deepseek-ai/dsh-client-ui-settings-general',
   ])
   assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-runtime'], undefined)
-  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.2.1-rc.2')
+  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.2.1-rc.5')
   for (const [name, version] of Object.entries(packageJson.devDependencies ?? {})) {
     if (name.startsWith('@deepseek-ai/dsh-') && version.includes('rc')) {
-      assert.equal(version, '0.2.1-rc.2', `${name} must compile against the current rc baseline`)
+      assert.equal(version, '0.2.1-rc.5', `${name} must compile against the current rc baseline`)
     }
   }
 })
 
-test('native client adapter source uses official 0.2.1-rc.2 contracts', () => {
+test('native client adapter source uses official 0.2.1-rc.5 contracts', () => {
   assert.match(clientSource, /import type \{ ConvViewProps \} from '@deepseek-ai\/dsh-client-ui-conversation\/client'/)
   assert.match(clientSource, /PropsRuntime<'settings\.section'>/)
   assert.match(clientSource, /SessionListState/)

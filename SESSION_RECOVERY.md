@@ -17,7 +17,7 @@ npm exec --yes --package=dsh-memoir@0.9.3 -- dsh-memoir-repair --dsh-package "/p
 ```
 
 - Windows 全局路径可用 `npm root -g` 查出，再附加 `@deepseek-ai/dsh`；WSL 使用自己的 Linux 安装。桌面内置依赖不可直接供 Node 加载时，使用单独安装的官方 npm DSH 作为校验器，不修改桌面文件。
-- npm 0.9.3 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1` / `0.2.1-alpha.2` / `0.2.1-rc.2`。其它版本及混合 SDK 依赖树拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
+- npm 0.9.4 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1` / `0.2.1-alpha.2` / `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5`；rc.3 / rc.4 / rc.5 的后端库与 rc.2 逐字节一致（2026-11-01 审计）。其它版本及混合 SDK 依赖树拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
 - 文件必须位于与日志头部匹配的官方项目/会话目录内；请传实际路径，而不是照抄示例占位符或把单个文件复制到任意目录。只读取该会话目录的同级日志代次名称/元数据，拒绝已被更新格式取代的 v4、混合压缩编码、非规范文件名及路径别名；不会扫描其它项目，也不保证整个存储根目录没有其它问题。应用前、取得写锁后及替换前均复核代次状态。
 - 支持 `session.v4.jsonl` / `session.v4.jsonl.zstd`，存储和解压后均最多 128 MiB；Zstandard 每帧必须带校验和。日志截断、损坏、其它未知且不可忽略事件、符号链接/目录联接、硬链接等均拒绝修改。
 - 默认不改文件，不递归扫描用户目录；输出只有路径、计数和固定错误码，不输出正文或密钥。`candidates` 是待修复回执数量。
@@ -50,7 +50,7 @@ Stop memory writes from affected builds and upgrade to a fixed version supportin
 npm exec --yes --package=dsh-memoir@0.9.3 -- dsh-memoir-repair --dsh-package "/path/to/node_modules/@deepseek-ai/dsh" "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
 ```
 
-The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **npm 0.9.3 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1 / 0.2.1-alpha.2 / 0.2.1-rc.2**. Other versions and mixed SDK dependency trees are rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
+The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **npm 0.9.4 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1 / 0.2.1-alpha.2 / 0.2.1-rc.2 / 0.2.1-rc.3 / 0.2.1-rc.4 / 0.2.1-rc.5** (rc.3 / rc.4 / rc.5 ship the identical backend lib as rc.2, audited 2026-11-01). Other versions and mixed SDK dependency trees are rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
 
 The file must remain in the official project/session directory matching its header. Use the actual path, not the example placeholders or an arbitrarily relocated single file. The tool checks sibling generation names/metadata only within that session: newer superseding formats, mixed encodings, noncanonical filenames and path aliases are rejected. It does not scan other projects or certify the whole storage root. Generation state is rechecked after taking the lease and immediately before replacement.
 
