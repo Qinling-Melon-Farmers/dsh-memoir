@@ -30,12 +30,22 @@ const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 if (target === 'restore') {
   const committed = JSON.parse(execFileSync('git', ['show', 'HEAD:package.json'], { cwd: root, encoding: 'utf8' }))
   for (const [name, version] of Object.entries(committed.devDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) manifest.devDependencies[name] = version
+    if (name.startsWith('@deepseek-ai/')) manifest.devDependencies[name] = version
+  }
+  for (const name of Object.keys(manifest.devDependencies)) {
+    if (name.startsWith('@deepseek-ai/') && !(name in committed.devDependencies)) delete manifest.devDependencies[name]
   }
 } else {
   for (const name of Object.keys(manifest.devDependencies)) {
     if (name.startsWith('@deepseek-ai/dsh-')) manifest.devDependencies[name] = target
   }
+  // The executor was split out with the 0.2.2 SDK. Older fixtures use the
+  // executor built into AgentLoop and must not install an incompatible peer tree.
+  const [, major, minor, patch] = /^(\d+)\.(\d+)\.(\d+)/.exec(target)
+  const modern = Number(major) > 0 || Number(minor) > 2 || (Number(minor) === 2 && Number(patch) >= 2)
+  manifest.devDependencies['@deepseek-ai/cordis'] = modern ? '~4.1.0' : '~4.0.5'
+  if (modern) manifest.devDependencies['@deepseek-ai/dsh-tool-executor-native'] = target
+  else delete manifest.devDependencies['@deepseek-ai/dsh-tool-executor-native']
 }
 
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')

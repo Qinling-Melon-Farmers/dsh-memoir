@@ -1,6 +1,7 @@
 /** Bounded, replayable activity projection. No synchronous Session log reads. */
 import { z } from 'zod';
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection';
+import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection';
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session';
 export declare const ACTIVITY_KEY = "dsh-memoir/activity";
 export declare const CALL_LIMIT = 4096;
 declare const schema: z.ZodObject<{
@@ -37,5 +38,28 @@ declare module '@deepseek-ai/dsh-session/types' {
         };
     }
 }
-export declare const activityProjection: ProjectionDefinition<typeof ACTIVITY_KEY>;
+export declare const activityProjection: {
+    key: typeof ACTIVITY_KEY;
+    stateVersion: number;
+    stateSchema: z.ZodObject<{
+        turn: z.ZodNumber;
+        toolCalls: z.ZodNumber;
+        calls: z.ZodArray<z.ZodString>;
+        memoirCalls: z.ZodArray<z.ZodString>;
+        recorded: z.ZodBoolean;
+        reminded: z.ZodBoolean;
+        distilling: z.ZodBoolean;
+        originTurn: z.ZodNullable<z.ZodNumber>;
+    }, z.core.$strip>;
+    init: () => MemoirActivity;
+    apply(previous: MemoirActivity, event: SessionEvent): MemoirActivity;
+};
+/** Public handle shape shared by the modern SDK and our legacy adapter. */
+export interface ActivityHandle {
+    /** Read while the owning registration is active; legacy SDKs cannot read after final release. */
+    stateOf(session: Session): MemoirActivity;
+    dispose(): void | Promise<void>;
+}
+/** Await readiness before exposing tools or turn listeners. Registration owns its effect. */
+export declare function registerActivity(registry: SessionProjectionRegistry): Promise<ActivityHandle>;
 export {};

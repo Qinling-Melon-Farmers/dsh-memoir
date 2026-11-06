@@ -2,16 +2,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
-import { AgentRegistry } from '@deepseek-ai/dsh-agent'
-import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
 import { SessionStore, SessionId, Session } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { LlmAdapter, LlmRuntime, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk, GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
-import { ACTIVITY_KEY, activityProjection } from '../lib/activity.js'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import { registerActivity } from '../lib/activity.js'
 import { DistillDiagnostics, installAutoDistill } from '../lib/autodistill.js'
+import { mountAgentLoop, mountAgentRegistry, mountNativeTools } from './agent-sdk-helper.ts'
 
 const answer = 'Original task answer: verified findings, caveats and next steps.\n'.repeat(30)
 const text = (value: string): ContentBlock[] => value ? [{ type: 'text', text: value }] : []
@@ -36,10 +35,10 @@ for (const ending of ['receipt', 'empty', 'failed-tool', 'canceled'] as const) {
     }
     new SessionProjectionRegistry(ctx)
     new SessionStore(ctx)
-    new AgentRegistry(ctx)
+    await mountAgentRegistry(ctx)
     new LlmRuntime(ctx)
     new SystemPrompt(ctx, {})
-    new ToolRuntime(ctx)
+    await mountNativeTools(ctx)
     ctx.llm.registerAdapter(['fixture'], new Adapter())
     ctx.tools.register(defineTool({
       name: 'probe', description: 'Deterministic test work', parameters: {},
@@ -49,12 +48,12 @@ for (const ending of ['receipt', 'empty', 'failed-tool', 'canceled'] as const) {
         return 'done'
       },
     }))
-    const loop = new AgentLoop(ctx, AgentLoop.Config({ agents: [], maxParallelToolCalls: 1 }))
-    ctx.sessionProjections.register(activityProjection)
+    const loop = await mountAgentLoop(ctx, 1)
+    const activity = await registerActivity(ctx.sessionProjections)
     const diagnostics = new DistillDiagnostics()
     const dispose = installAutoDistill({ on: (_name, fn) => ctx.on('agent/turn-stopping', payload => fn(payload)) }, {
       enabled: () => true, diagnostics,
-      activity: agent => ctx.sessionProjections.stateOf(agent.session as Session, ACTIVITY_KEY),
+      activity: agent => activity.stateOf(agent.session as Session),
     })
     try {
       const agent = await loop.create(SessionId(`compact-${ending}`), { provider: 'fixture', model: 'fixture' })
@@ -78,10 +77,10 @@ for (const ending of ['receipt', 'empty', 'failed-tool', 'canceled'] as const) {
       assert.equal(diagnostics.snapshot().workedTurns, 1)
       if (ending !== 'canceled') {
         assert.equal(diagnostics.snapshot().counts.distillation, 1)
-        assert.equal(ctx.sessionProjections.stateOf(agent.session, ACTIVITY_KEY)?.distilling, true)
+        assert.equal(activity.stateOf(agent.session).distilling, true)
         // Cold restore/remount uses durable source identity, not in-memory gates.
         const cold = Session.create(agent.session.id, events, agent.session.header)
-        assert.equal(ctx.sessionProjections.stateOf(cold, ACTIVITY_KEY)?.distilling, true)
+        assert.equal(activity.stateOf(cold).distilling, true)
       }
       assert.equal(calls, ending === 'canceled' ? 2 : replies.length)
     } finally { dispose(); await ctx.fiber.dispose() }

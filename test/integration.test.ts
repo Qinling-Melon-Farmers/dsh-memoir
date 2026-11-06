@@ -73,17 +73,17 @@ function makeCtx() {
 }
 
 /** Keep full apply() tests isolated from the developer's real ~/.dsh files. */
-function applyTest(ctx: ReturnType<typeof makeCtx>, config: Config = {}): void {
-  apply(ctx as unknown as Context, {
+async function applyTest(ctx: ReturnType<typeof makeCtx>, config: Config = {}): Promise<void> {
+  await apply(ctx as unknown as Context, {
     ...config,
     storePath: makeTempStorePath(),
     settingsPath: makeTempStorePath(),
   })
 }
 
-test('apply mounts lifecycle tools, one prefix route, one prompt section, and the auto-distill listener', () => {
+test('apply mounts lifecycle tools, one prefix route, one prompt section, and the auto-distill listener', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: true })
+  await applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: true })
   assert.deepEqual(ctx.registeredTools.map((t) => t.name), ['memoir_record', 'memoir_update', 'memoir_read'])
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.registeredRoutes[0]?.path, '/api/dsh-memoir')
@@ -94,6 +94,31 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping', 'agent/disposed', 'tools/result'])
 })
 
+test('apply waits for projection readiness and uses its handle instead of deprecated registry reads', async () => {
+  const ctx = makeCtx()
+  let ready!: (handle: { stateOf(): ReturnType<typeof emptyActivity>; dispose(): void }) => void
+  Object.assign(ctx.sessionProjections, {
+    register: () => new Promise(resolve => { ready = resolve }),
+    stateOf: () => assert.fail('modern hosts must use the ready handle'),
+  })
+  const activation = applyTest(ctx)
+  assert.equal(ctx.registeredTools.length + ctx.sections.length + ctx.listeners.length, 0)
+  ready({ stateOf: emptyActivity, dispose() {} })
+  await activation
+  assert.equal(ctx.registeredTools.length, 3)
+  ctx.listeners.find(item => item.name === 'agent/turn-stopping')!.listener({
+    agent: { id: 'ready', session: { header: {} }, followup: () => assert.fail('empty turn') },
+    turn: 0, signal: new AbortController().signal,
+  })
+})
+
+test('failed projection registration does not publish partial plugin surfaces', async () => {
+  const ctx = makeCtx()
+  Object.assign(ctx.sessionProjections, { register: () => Promise.reject(new Error('projection unavailable')) })
+  await assert.rejects(applyTest(ctx), /projection unavailable/)
+  assert.equal(ctx.registeredTools.length + ctx.registeredRoutes.length + ctx.sections.length + ctx.listeners.length, 0)
+})
+
 test('wrap-up writes link to the work turn without appending foreign session events', async () => {
   const ws = makeTempWorkspace()
   try {
@@ -101,7 +126,7 @@ test('wrap-up writes link to the work turn without appending foreign session eve
     const state = { ...emptyActivity(), turn: 2, originTurn: 1, distilling: true, reminded: true, toolCalls: 1, worked: true, calls: ['call-test-2'] }
     ctx.sessionProjections.stateOf = () => state
     const storePath = ws.cwd + '/memory.json'
-    apply(ctx as unknown as Context, { storePath, settingsPath: ws.cwd + '/settings.json' })
+    await apply(ctx as unknown as Context, { storePath, settingsPath: ws.cwd + '/settings.json' })
     const receipts: unknown[] = []
     const exec = makeExec(ws.cwd, 'origin-session', 2)
     Object.assign(exec.agent!.session, { append: (type: string, data: unknown) => { receipts.push({ type, data }) } })
@@ -113,9 +138,9 @@ test('wrap-up writes link to the work turn without appending foreign session eve
   } finally { ws.cleanup() }
 })
 
-test('apply with enabled=false mounts nothing', () => {
+test('apply with enabled=false mounts nothing', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, { enabled: false })
+  await applyTest(ctx, { enabled: false })
   assert.equal(ctx.registeredTools.length, 0)
   assert.equal(ctx.registeredRoutes.length, 0)
   assert.equal(ctx.sections.length, 0)
@@ -130,7 +155,7 @@ for (const mode of ['direct', 'nested', 'markdown-failure'] as const) {
       let state = { ...emptyActivity(), turn: 1, calls: ['call-test-1'], toolCalls: 1 }
       ctx.sessionProjections.stateOf = () => ({ ...state, worked: true })
       const storePath = join(ws.cwd, 'memory.json')
-      apply(ctx as unknown as Context, { storePath, settingsPath: join(ws.cwd, 'settings.json') })
+      await apply(ctx as unknown as Context, { storePath, settingsPath: join(ws.cwd, 'settings.json') })
       const exec = makeExec(ws.cwd, `live-${mode}`, 1)
       Object.assign(exec.agent!.session, { append: () => assert.fail('plugin must never append an event') })
       if (mode === 'nested') Object.assign(exec, { callId: 'nested-call', rootCallId: 'call-test-1' })
@@ -153,7 +178,7 @@ for (const mode of ['direct', 'nested', 'markdown-failure'] as const) {
 
 test('final write diagnostics distinguish failures, cancellation and unresolved similarity without duplicate counting', async () => {
   const ctx = makeCtx()
-  applyTest(ctx)
+  await applyTest(ctx)
   const observe = ctx.listeners.find(item => item.name === 'tools/result')!.listener
   const failed = { name: 'memoir_record', token: Symbol('failure') }
   const error = { isError: true, error: { info: { code: 'IO_ERROR' } } }
@@ -167,9 +192,9 @@ test('final write diagnostics distinguish failures, cancellation and unresolved 
   assert.deepEqual(writes, { persisted: 0, afterReminder: 0, failed: 1, canceled: 1, needsResolution: 1, receiptFailed: 0 })
 })
 
-test('apply with announceToAgent=false keeps workspace tracking but emits no prompt content', () => {
+test('apply with announceToAgent=false keeps workspace tracking but emits no prompt content', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, { enabled: true, announceToAgent: false, autoDistill: true })
+  await applyTest(ctx, { enabled: true, announceToAgent: false, autoDistill: true })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
@@ -179,9 +204,9 @@ test('apply with announceToAgent=false keeps workspace tracking but emits no pro
   assert.equal(ctx.listeners.length, 3)
 })
 
-test('apply with autoDistill=false keeps an inert listener for live Web enablement', () => {
+test('apply with autoDistill=false keeps an inert listener for live Web enablement', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: false })
+  await applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: false })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
@@ -195,9 +220,9 @@ test('apply with autoDistill=false keeps an inert listener for live Web enableme
   assert.equal(messages.length, 0)
 })
 
-test('defaults: enabled and autoDistill are on when config is absent', () => {
+test('defaults: enabled and autoDistill are on when config is absent', async () => {
   const ctx = makeCtx()
-  applyTest(ctx)
+  await applyTest(ctx)
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
   assert.equal(ctx.listeners.length, 3)
@@ -205,7 +230,7 @@ test('defaults: enabled and autoDistill are on when config is absent', () => {
 
 test('agent language switches tools, prompt guidance, and auto-distill live', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, { language: 'zh' })
+  await applyTest(ctx, { language: 'zh' })
   assert.match(ctx.registeredTools[0]!.description, /记忆/)
 
   const updated = await callRoute(ctx.registeredRoutes[0]!.handler, {
@@ -237,9 +262,9 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
   assert.doesNotMatch(messages[0]!.content![0]!.text!, /[\u3400-\u9fff]/u)
 })
 
-test('apply forwards auto-distill frequency config to the turn-end listener', () => {
+test('apply forwards auto-distill frequency config to the turn-end listener', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, {
+  await applyTest(ctx, {
     enabled: true,
     announceToAgent: false,
     autoDistill: true,
@@ -273,7 +298,7 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
   const storePath = makeTempStorePath()
   const settingsPath = makeTempStorePath()
   try {
-    apply(ctx as unknown as Context, {
+    await apply(ctx as unknown as Context, {
       enabled: true,
       announceToAgent: false,
       autoDistill: true,
@@ -337,7 +362,7 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
 
 test('auto-distill config clamps invalid values in diagnostics', async () => {
   const ctx = makeCtx()
-  applyTest(ctx, {
+  await applyTest(ctx, {
     autoDistillEvery: 0,
     autoDistillCooldownMin: -5,
     autoDistillMinTools: 0,
@@ -352,13 +377,13 @@ test('auto-distill config clamps invalid values in diagnostics', async () => {
   assert.equal(config.autoDistillMinTools, 1)
 })
 
-test('prompt section provider: guidance only without agent cwd', () => {
+test('prompt section provider: guidance only without agent cwd', async () => {
   const store = new MemoirStore(makeTempStorePath())
   assert.equal(memoirSectionText(store, {}), MEMOIR_GUIDANCE)
   assert.equal(memoirSectionText(store, { agent: { session: { header: {} } } }), MEMOIR_GUIDANCE)
 })
 
-test('prompt section provider injects bounded project memory', () => {
+test('prompt section provider injects bounded project memory', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
@@ -372,7 +397,7 @@ test('prompt section provider injects bounded project memory', () => {
   }
 })
 
-test('prompt section provider stays guidance-only for empty projects', () => {
+test('prompt section provider stays guidance-only for empty projects', async () => {
   const store = new MemoirStore(makeTempStorePath())
   const rendered = memoirSectionText(store, { agent: { session: { header: { cwd: 'C:\\fresh' } } } })
   assert.equal(rendered, MEMOIR_GUIDANCE)
@@ -382,7 +407,7 @@ test('record through a tool and read through the panel route agree', async () =>
   const ws = makeTempWorkspace()
   try {
     const ctx = makeCtx()
-    applyTest(ctx, { enabled: true, announceToAgent: true })
+    await applyTest(ctx, { enabled: true, announceToAgent: true })
     const record = ctx.registeredTools.find((t) => t.name === 'memoir_record')
     assert.ok(record)
     const value = await record.execute({ section: 'lessons', content: '端到端一致' } as never, makeExec(ws.cwd))
@@ -402,7 +427,7 @@ test('record through a tool and read through the panel route agree', async () =>
   }
 })
 
-test('prompt stability: same session keeps its frozen snapshot, new session sees new memory', () => {
+test('prompt stability: same session keeps its frozen snapshot, new session sees new memory', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
@@ -434,7 +459,7 @@ test('prompt stability: same session keeps its frozen snapshot, new session sees
   }
 })
 
-test('no snapshot manager: every assembly builds fresh (compat)', () => {
+test('no snapshot manager: every assembly builds fresh (compat)', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())

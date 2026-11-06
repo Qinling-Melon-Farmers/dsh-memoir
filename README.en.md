@@ -1,337 +1,178 @@
 # dsh-memoir
 
-> **0.9.4** moves the development and verification SDK baseline to official npm DSH `0.2.1-rc.5`, retaining `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2 / rc.2` support; the #14 recovery CLI allowlist is extended to rc.3 / rc.4 / rc.5 after a byte-for-byte audit. All 0.9.3 fixes (#16 store protection, #17 template-literal protection) are retained. Upgrade and reload the plugin without deleting snapshots or rewriting original memories; #14's affected historical logs still need separate recovery.
+**Help each new agent session pick up your project.** dsh-memoir is a local-first project-memory plugin for DeepSeek Harness (DSH). It persists confirmed work, lessons and next actions, injects bounded Hot Memory into new sessions, and recalls complete history on demand with BM25.
+
+No embeddings, vector database or cloud memory service. The npm package bundles no runtime dependencies; the host supplies DSH and Zod 4 peers. It fits personal and local development workflows, rather than raw chat backups or multi-user cloud sync.
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
-[![CI](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/dsh-memoir.svg)](./LICENSE)
 
 [中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
-**A local-first, cross-session project-memory plugin for DeepSeek Harness (DSH).** It persists an agent's confirmed work, lessons, and next actions, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through local BM25 ranking.
+## Quick installation
 
-No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH and Zod 4 peers are supplied by the host environment; Zod validates session projections and is not bundled.
+Current release: **0.9.5 (2026-11-06)**, supporting **DSH `0.2.2-rc.1` / Node.js `>=24.9.0`**. This release does not migrate memory, settings or snapshots. Back up DSH_HOME before upgrading; affected historical logs require separate recovery below.
 
-> [!WARNING]
-> **Historical recovery boundary (#14): receipts written by 0.8.1–0.9.0 can prevent sessions from reopening.** 0.9.3 retains the prevention introduced in 0.9.1, but upgrading does not rewrite old logs. The npm package includes `dsh-memoir-repair`. If an old session still fails, follow the [recovery guide](./SESSION_RECOVERY.md#english): audit first, stop every host and back up, then explicitly apply repair. Preserve the logs; do not downgrade their format. Stop old plugin writes before recovery; disabling auto-distillation alone does not stop manual write tools.
-> #17's prompt output protection does not repair arbitrary old logs. Recovery CLI support is limited to the reviewed backends and formats listed in the recovery guide; upgrading DSH alone does not repair affected logs either.
+**Web:** install or update the CLI, then add the plugin to the `web` profile:
 
-> [!IMPORTANT]
-> **0.9.4 requires DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**, with development SDKs pinned to `0.2.1-rc.5`; it retains the official `0.2.0-rc.1 / rc.2` and `0.2.1-alpha.1 / alpha.2 / rc.2` compatibility lines, and the rc.3 / rc.4 / rc.5 backend lib is byte-for-byte identical to rc.2. The version range does not mean every included version has been verified; `0.2.2` prereleases have not passed the gates and stay outside the range (see the highlights). Retains the visible guide, native settings, four agent languages, separate distillation turns and frozen snapshots. **The DSH 0.1.7 line is Memoir `0.8.2`, but it remains affected by #14; upgrade the host before installing the fixes in 0.9.4.**
->
-> `dsh-memoir@0.7.1` fixes lost session snapshots after restart or RAM eviction (#10), supporting DSH **0.1.5-rc.1 / rc.2**. It requires `>=0.1.5-rc.1 <0.1.6-0`; check your host first. Keep `0.6.2` on DSH 0.1.2, or `0.5.6` on DSH 0.1.1-rc.2; those older lines do not include this fix.
-
-```bash
-npm install --global @deepseek-ai/dsh@0.2.1-rc.5
-dsh plugin --profile web add dsh-memoir@0.9.4
+```sh
+npm install --global @deepseek-ai/dsh@0.2.2-rc.1
+dsh plugin --profile web add dsh-memoir@0.9.5
 ```
 
-After upgrading, reload the plugin or restart `dsh web`. #17's protection takes effect on subsequent prompt assembly; no manual deletion of old snapshots is needed. Updating or removing the plugin does not automatically delete memories.
+**Desktop:** check the desktop application's bundled DSH host version first; updating the global CLI does not replace that host. Add the npm package `dsh-memoir@0.9.5` through Desktop's native Plugins manager, or use a CLI pointing to the same DSH_HOME to add it to the `desktop` profile:
 
-## 0.9.4 highlights
-
-- **DSH rc.5 baseline:** development and verification SDKs are uniformly pinned to `0.2.1-rc.5`. The `session-persistence-jsonl` lib is byte-for-byte identical across rc.2 → rc.3 → rc.4 → rc.5 (audited 2026-11-01) and the full regression suite passes on the rc.5 baseline; host/peer ranges are unchanged, and a stable 0.2.2 will be covered by the first clause automatically.
-- **Recovery CLI extended to rc.3 / rc.4 / rc.5:** the allowlist grows from five to eight official SDK versions with unchanged safety boundaries: audit first, stop every host and back up independently, then apply with `--apply --host-stopped`.
-- **Compatibility-baseline regressions:** new tests prevent three drift classes — the JSONL devDependency must stay inside the recovery allowlist, the engines/peer ranges must admit the compile baseline, and both recovery documents must list every allowlisted version; the repair help test now parses the allowlist from the script.
-- **CI SDK compat matrix:** a new compat job runs the pinned rc.5 baseline as a hard gate and `0.2.2-alpha.2` as an advisory signal; `scripts/compat-swap.mjs` switches baselines locally and in CI.
-- **0.2.2 prerelease reconnaissance (not admitted):** `0.2.2-alpha.2` requires Node `>=24.9.0` (dropping Node 22) and changes public contracts such as a two-argument `ProjectionDefinition` and the `PromptAssembly` split; engine ranges stay unchanged until the gates pass.
-
-- **Store protection ([#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)):** future store formats, read errors and failed backups of corrupt files fail closed, refusing further loading or overwriting. A fresh store is allowed only after the damaged original has been preserved. Windows rename failures caused by temporary file contention receive bounded retries and still surface as errors when retries are exhausted.
-- **Hot Memory budgets (#16):** skip candidates that exceed the remaining hard budget and continue looking for smaller entries. If the first entry is oversized, shorten its content and, if necessary, its title against the complete rendered block. Skip it if even the minimum block cannot fit; long titles cannot bypass `hotMemoryMaxTokens`.
-- **Template literals ([#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)):** set the official `PromptSection` option `interpolate: false` to disable variable interpolation for the memory section. Literals such as `{{...}}` enter the system prompt verbatim, preventing evaluation or assembly failures. New memories, cached old snapshots and restored disk snapshots all retain their original output; braces, original memory JSON, `PROJECT_MEMORY.md` and disk snapshots stay unchanged. Thanks to [mikemikimike](https://github.com/mikemikimike) for the report, output-boundary analysis and old-snapshot approach in [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18), which helped locate the problem.
-- **All 0.9.3 fixes are retained:** see [CHANGELOG.md](./CHANGELOG.md) for #16 store protection, Hot Memory budget boundaries and #17 template-literal protection. Project memory remains anchored to the original session project when the execution directory changes. See the [recovery guide](./SESSION_RECOVERY.md#english) for the eight supported official SDK versions and safety boundaries. Runtime compatibility does not imply recovery of arbitrary historical logs.
-
-## Why dsh-memoir
-
-| Capability | What you get |
-| --- | --- |
-| Local-first storage | A JSON single source of truth plus per-project `PROJECT_MEMORY.md`; no memory upload or external service |
-| Automatic distill reminder | Reminds the top-level agent after a worked turn, then persists transparently through `memoir_record`; skips idle, aborted, subagent, and already-recorded turns |
-| Bounded Hot Memory | Only high-value memory enters the system prompt under a hard token limit; a frozen session prefix improves prompt-prefix cache hits |
-| BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
-| Governable memory | Importance, pinning, tags, archive/restore, and supersede lifecycle; similar writes require an explicit update, replacement, or keep-both decision |
-| Provenance | Agent writes retain trusted session/turn sources; the Web panel can copy and make a best-effort jump to the original session |
-| Complete Web GUI | Bilingual project/global browsing, ranked search, editing, Hot Memory inspection, diagnostics, and live settings, with an independent agent-facing language choice |
-
-It fits personal and local development workflows where a new agent should continue understanding a project. It is not a raw chat backup, multi-user cloud sync service, or vector-semantic knowledge base.
-
-### UI preview
-
-**0.9.0 component preview with demonstration data.** Plugin identity, GitHub, documentation and memory settings stay at the top, before long lists.
-
-![0.9.0 UI preview: visible plugin guide and memory browsing](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
-
-## How it works
-
-```text
-worked turn
-    │  automatic distill reminder
-    ▼
-memoir_record / memoir_update
-    │
-    ├── ~/.dsh/dsh-memoir.json       complete structured history (SSOT)
-    ├── <project>/PROJECT_MEMORY.md   readable, committable projection
-    └── Retrieval Index              inverted index + BM25 + query cache
-              │
-              ├── Hot Memory Selector ──> bounded system-prompt injection
-              └── memoir_read / Web ────> on-demand long-tail recall
+```sh
+dsh plugin --profile desktop add dsh-memoir@0.9.5
 ```
 
-Complete history and Hot Memory are separate layers:
+Web and Desktop manage plugin installation and activation separately. They share memory and settings files when using the same DSH_HOME and data paths; different homes or machines do not sync automatically. Reload the plugin after installation or upgrade, restarting the relevant `dsh web` or desktop application if needed. Refreshing a page alone does not reload host plugins. If the UI is missing, check the profile and host version first.
 
-- **Full Memory** retains every record for the GUI, human review, Markdown projection, and ranked retrieval.
-- **Hot Memory** selects only budgeted actions, lessons, and recent state; the full `PROJECT_MEMORY.md` is never injected.
-- **Session Snapshot** durably freezes each session's injection baseline and reuses the original text after restart or RAM eviction. 0.9.3 protects old baselines by disabling variable interpolation for the memory section; injected text and stored snapshots remain unchanged. New writes remain immediately readable by tools and the GUI; automatic injection refreshes in the next new session. Recovery failures explicitly report degraded persistence.
+## UI preview
 
-### Snapshot recovery and cleanup (0.7.1)
+These are **historical 0.9.0 previews**, not new 0.9.5 screenshots. Component previews use demonstration data. Plugin information, documentation and memory settings stay at the top.
 
-**Upgrading to 0.9.3:** #17's protection covers both cached and restored disk snapshots. Upgrade and reload the plugin; the disk cleanup steps below are not required for this fix. With variable interpolation disabled for the memory section, old baselines containing template literals are still emitted verbatim, preserving braces and the frozen prefix. This does not repair #14's invalid receipts or other historical log failures.
+![0.9.0 component preview: plugin guide and memory browsing (demonstration data)](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
 
-- Default directory: `$DSH_HOME/dsh-memoir.json.snapshots/`, or `<storePath>.snapshots/` with a custom store. Records are partitioned by data-source/settings hash, language, and session hash. They load on demand without scanning the whole directory at startup.
-- `sessionSnapshotMax` bounds RAM only. Disk records have no automatic TTL and survive shrinking, uninstalling, or clearing RAM. Include them in backups. To reclaim disk, stop the relevant DSH processes, back up first, and manually remove records you no longer need to resume. Access after removal establishes a new baseline.
-- Languages use separate namespaces; switching back restores the original baseline for that language. Budget changes affect new baselines only. Forks/new session IDs do not inherit the parent's frozen record.
-- Old sessions whose snapshots were lost before upgrading establish a baseline from current memory once. Memoir does not guess or slice original text out of historical system prompts. Corrupt, inaccessible, or locked records remain unchanged; fallback freezes only in the current process, with diagnostics and a log warning.
-- Text is capped at 256 KiB and each record at 2 MiB; exceeding either reports the same degradation. New POSIX directories/files use 0700/0600; Windows access remains governed by directory ACLs. Snapshot files contain memory text and are user data.
-- This fix prevents rebuilding recoverable snapshots; it cannot guarantee provider KV-cache retention or hit rates.
+<details>
+<summary>More UI and historical screenshots (original versions retained)</summary>
 
-## Agent tools and memory lifecycle
+The native plugin detail page reuses Memory settings. The first image shows the actual DSH 0.2.0-rc.1 host UI; the second is a component preview with German agent copy selected in the English GUI.
+
+![0.9.0 native plugin configuration (DSH 0.2.0-rc.1)](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-host-plugin-zh.png)
+![0.9.0 component preview: English GUI and German agent copy (demonstration data)](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-settings-en.png)
+
+Historical sources: [0.9.0 offline notice (demonstration data)](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-announcement-zh.png) · [0.7.1 snapshot diagnostics](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png) · [0.7.0 native settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png) · [0.6.2 distillation diagnostics](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png).
+
+Earlier sources: [0.6.1 global project groups](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png) · [0.6.1 settings navigation](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png) · [0.6.1 scrolling layout](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png) · [0.6.0 native view](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png) · [0.5.6 memory governance preview](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png) · [0.5.6 settings card](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png) · [0.5.6 sidebar preview](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.5-sidebar-parity-zh.png). Link tags identify the release source; filenames retain the original component version.
+
+</details>
+
+## Usage, capabilities and boundaries
+
+1. Open Memory in a project conversation or the right sidebar; memory settings are also available from native plugin details or Settings. The sidebar never opens automatically or replaces another panel; other entries remain available without the sidebar service.
+2. After working, ask the agent to record conclusions, lessons and next steps, or wait for an eligible distillation reminder. You can also add, edit, pin, archive, restore or supersede entries manually in the panel.
+3. Search project or global history in Browse, inspect injection candidates for new sessions in Hot Memory, and check the index, query cache, snapshots and write outcomes in Diagnostics.
+
+### Tools and memory governance
 
 | Tool | Purpose |
 | --- | --- |
-| `memoir_record` | Write work / lessons / actions / note entries; returns explainable similar/conflicting candidates before mutation |
-| `memoir_update` | Preserve id and creation time while updating content, section, importance, tags, and lifecycle |
-| `memoir_read` | Local ranked recall across project (default) / global / all with compact or full output |
+| `memoir_record` | Record work / lessons / actions / note; return similar or conflicting candidates before writing |
+| `memoir_update` | Keep the id and creation time while changing content, section, importance, tags and lifecycle |
+| `memoir_read` | Ranked recall within project (default) / global / all, with compact / full output |
 
-Each entry has importance 1–5. The default, **3**, is neutral; pinning adds separate Hot Memory weight. Recall defaults to `active`. Archived or superseded history remains inspectable and restorable and is never deleted automatically.
+Importance ranges from 1–5, with **3** as the neutral default; pinning adds separate Hot Memory weight. Recall defaults to `active`. Archived and superseded history remains inspectable and restorable, without automatic deletion. Similarity does not establish truth: explicitly choose `update`, history-preserving `supersede`, or `force-record` to keep both. Nothing is merged or deleted automatically.
 
-Similar-memory governance starts with BM25 candidates, then combines title similarity and Token Jaccard. The plugin surfaces suspected duplicates or conflicts but does not decide truth on its own. The caller must choose:
+Project memory stays anchored to the original session project when the execution directory changes. Agent writes retain trusted session/turn provenance, degrading to session-only when necessary. The panel copies identifiers and makes a best-effort jump to the source session, without promising navigation to the exact turn. Manual GUI entries cannot spoof trusted provenance.
 
-- `update`: update an existing record in place;
-- `supersede`: retain old history and mark it as replaced by the new record;
-- `force-record`: explicitly keep both.
+### Automatic distillation and language
 
-## Automatic distillation
+Automatic distillation is observable, cancelable model work, rather than silent chat scraping or a free background task. Defaults are `1 / 0 / 1`: each eligible worked turn, no extra cooldown, at least one tool call. All three cadence conditions use AND semantics and are isolated per agent. Idle, aborted, subagent and successfully recorded turns are skipped; cooldown advances only after a successful reminder.
 
-0.8.2 diagnostics distinguish reminders, persistence, failures, cancellation, unresolved similarity, and unavailable receipts. Only persisted `memoir_record` / `memoir_update` operations suppress reminders; failed calls or unresolved candidates do not count as saves. Host cancellation may follow persistence, so counters can overlap. Correlation with a reminder proves neither causation nor semantic correctness. GUI writes are excluded from Agent-tool counters.
+Reminders queue a separate wrap-up turn with provenance pointing to the source work turn. They preserve the original task answer's turn boundary, neither advance worked-turn cadence nor trigger recursive distillation, and may increase the displayed turn count. Only persisted `memoir_record` / `memoir_update` calls suppress that turn's reminder; failed calls or unresolved similarity do not count. Turning off `autoDistill` leaves manual write tools available.
 
-0.8.2 uses public `sessionProjections` to reconstruct current-turn activity from logs and checkpoints without deprecated `snapshotEvents()` reads. Each session retains at most 4096 current-turn call IDs, without arguments or content; evicted IDs degrade to session-only provenance. Gate state is capped at 1024 agents and cleared on disposal. Legacy writes have no receipts: a historical call alone cannot prove persistence. BM25 remains lexical retrieval, not guaranteed cross-language semantic matching.
+Diagnostics distinguish reminders, actual saves, failures, cancellation and unavailable receipts. The host may cancel a result after saving, so counts can overlap. A reminder's correlation with a later save proves neither causation nor content correctness. Manual GUI writes are excluded from Agent-tool counts. Upgrading does not rewrite old folded answers: expand the process disclosure or use `normal` mode to view them. See the [changelog](./CHANGELOG.md) for the fix history.
 
-Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
+`language` supports `zh` / `en` / `de` / `ru`, controlling tool descriptions, parameter help, distillation prompts, tool results, validation errors and Hot Memory / Markdown headings. Tool names, parameter keys and enums stay unchanged. It is independent of the Chinese/English GUI, does not infer language or translate existing memories, and affects subsequent prompts immediately without restarting. Switching alone does not rewrite JSON/Markdown; later writes use the selected language for projection headings.
 
-> **0.8.2 fixes distillation-induced answer folding for new turns ([#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)):** The public `followup` API queues a separate memory wrap-up turn instead of using same-turn `steer`. A short receipt, empty output or failed wrap-up tool cannot change the original task answer’s turn boundary. Memory provenance still points to the source work turn. Wrap-up turns neither advance the worked-turn cadence nor recursively trigger distillation. This is still visible, cancelable model work—not a free background task—and may increase the displayed turn count.
->
-> Upgrading does not rewrite history. For same-turn folding already recorded by 0.8.0 / 0.8.1, expand the process disclosure or use Normal (`normal`) transcript mode. This fix does not change DSH’s answer selection for arbitrary same-turn continuations from other producers, and does not rely on a “remain silent” prompt.
+### Hot Memory, recall and the interface
 
-`autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
+Complete history stays local. Only budgeted actions, lessons and recent state enter the system prompt automatically; the whole Markdown file is never injected. Each session freezes its Hot Memory prefix. New writes are immediately visible to tools and the GUI, while automatic injection refreshes in the next new session. Budget changes do not rewrite existing snapshots. Languages have separate snapshot namespaces, switching back reuses the old baseline, and forks/new session ids do not inherit parent snapshots.
 
-`language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. Released 0.8.2 supports `zh` / `en`, defaulting to `zh`. Tool descriptions and subsequent prompts update live without restarting DSH.
+Candidates exceeding the remaining hard budget are skipped in favor of smaller entries. An oversized first entry has its content and, if needed, title shortened against the complete rendered block. If even the minimum block cannot fit, it is skipped; long titles cannot bypass the hard ceiling.
 
-**0.9.0 adds `de` (Deutsch) and `ru` (Русский)**, explicitly selected in Memory settings rather than inferred from the agent or user messages. Tool names, parameter keys and enums remain unchanged. The GUI remains Chinese/English and existing memory content is not automatically translated. Switching language alone does not rewrite JSON or Markdown; projection headings use the current language on subsequent normal writes. Each of the four languages has its own frozen-snapshot namespace; switching back reuses the previous baseline. Select `zh` or `en` before downgrading to 0.8.2.
+Template literals such as `{{...}}` are emitted verbatim for new memories, cached old snapshots and restored disk snapshots. No snapshot deletion or original-memory rewrite is needed. Frozen prefixes can help caching but do not guarantee provider KV-cache retention, hit rates or billing savings.
 
-## Local recall and caching
+BM25 supports Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers, with NFC normalization, true term frequency, title boosting and phrase/section/recency weights. The GUI and tools share deduplicated cross-project Top-K and an LRU query cache aware of data updates; different `limit` and output detail values share rankings. Retrieval is lexical, without automatic translation, stemming or cross-language semantic matching.
 
-- Chinese 2/3-grams, English words, and code/path identifier tokenization;
-- document-side BM25 keeps true term frequency, with a 2.5× title boost plus exact-phrase, section, and recency weighting;
-- separate title/body length normalization;
-- deduplicated global Top-K shared by project / global / all;
-- epoch-aware LRU query cache with one-hour time buckets; `limit` and output detail stay outside the key so output shapes share rankings;
-- the GUI and `memoir_read` use the same RetrievalEngine and expose hits, misses, evictions, hit rate, and last-query latency.
+The UI provides project/global groups, status/section/keyword filters and BM25 scores. It shows batches of 20 entries or projects, with expandable six-line body previews. Browse, Settings, Hot Memory and Diagnostics preserve separate scroll positions, and the final list item stays above the composer. Arrow keys, Home/End, project disclosures and visible focus states are supported. GUI language follows the host's Chinese/English setting.
 
-0.9.0 extends word splitting to Unicode letters, combining marks and numbers with NFC normalization, preserving German umlauts and Russian Cyrillic. Original content and existing Chinese/code-identifier rules are preserved. This remains lexical retrieval, not automatic translation, stemming or cross-language semantic search.
+The first Memory Conversation opening shows offline release highlights without blocking chat. Acknowledging suppresses automatic display for that version in the same UI storage context; reopen from About & help. Settings and sidebar panels do not open it automatically. Without storage, deduplication lasts only for the current page; Web/Desktop acknowledgment need not be shared. Notices make no network requests or memory changes, and the plugin does not automatically check for or install updates.
 
-Top-5 recall on the fixed quality set is 100%; the repository gate requires at least 90%.
+About & help shows the plugin version, host range, SDK baseline and maintainer. Its links belong to the plugin project, rather than the current workspace repository; it does not inspect workspace Git remotes. Update through the host plugin manager after checking the target package's host requirements and prerelease channel.
 
-## Web GUI
-
-Installing into a compatible DSH `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
-
-- Project memory and all-project global memory, with project groups collapsed by default and complete lifecycle totals;
-- status, section, and keyword filters with BM25 scores;
-- add, edit, pin, archive, restore, and supersede;
-- copy and best-effort navigation for session/turn provenance;
-- Hot Memory Inspector: what the next session will inherit;
-- Retrieval Diagnostics: index, query cache, last query, and session snapshot;
-- permanent `Browse / Settings / Hot Memory / Diagnostics` navigation with an independent bounded scroll position per surface;
-- progressive batches of 20 entries or projects, plus a controlled six-line preview for long memory bodies;
-- the native DSH composer-overlay contract, keeping the final memory visible above the conversation composer while the list scrolls fully;
-- arrow-key, Home, and End navigation for surface tabs, plus `aria-expanded` project disclosures and visible focus states;
-- live GUI Chinese/English switching from `<html lang>`, with a separate `language` setting for agent-facing copy.
-
-<details>
-<summary>0.9.0 UI previews: native plugin configuration and language settings</summary>
-
-The native plugin detail page reuses Memory settings directly, without opening the memory list. Shown below is the native plugin detail page in DSH 0.2.0-rc.1.
-
-![0.9.0 native plugin detail configuration](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-host-plugin-zh.png)
-
-Choose German agent-facing copy independently of the English GUI; settings and memory browsing scroll separately.
-
-![0.9.0 UI preview: German agent copy selected in the English GUI](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-settings-en.png)
-
-</details>
-
-<details>
-<summary>GUI screenshots from previous releases</summary>
-
-![v0.6.1 global memory grouped by project](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png)
-
-![v0.7.1 durable snapshot diagnostics on DSH rc.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png)
-
-![v0.7.0 native memory settings on DSH 0.1.5-rc.1](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png)
-
-![v0.6.2 automatic distillation lifecycle diagnostics](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
-
-![v0.6.1 permanent surface navigation and live settings](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png)
-
-![v0.6.1 conversation view scrolled to the end above the composer](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png)
-
-![Native Memory Conversation view on DSH alpha.2](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png)
-
-![Memory lifecycle and similar-memory governance](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png)
-
-![Settings card](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
-
-![Sidebar parity](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.5-sidebar-parity-zh.png)
-
-</details>
-
-## Installation and compatibility
-
-| Channel | DSH baseline | Installation | Status |
-| --- | --- | --- | --- |
-| pinned npm `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.4` | SDK 0.2.1-rc.5; compatible with 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 |
-| pinned npm `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | Legacy 0.1.7 line; still affected by #14 |
-| pinned npm `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | Legacy 0.1.5 line |
-| pinned npm `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | Legacy 0.1.2 line |
-| pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| Source `v0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | local build + `link:` | SDK 0.2.1-rc.5; development, not compatible with legacy 0.1.x |
-
-Development SDKs are uniformly pinned to `0.2.1-rc.5`. Host compatibility in this table is separate from #14 recovery CLI restrictions on backends, file formats and log generations; see [SESSION_RECOVERY.md](./SESSION_RECOVERY.md#english) for recovery scope.
-
-Node.js `^22.19.0 || >=24.0.0` is required. 0.7.1 keeps the native `conversation.view` / `settings.section` slots and `snapshotEvents()`. DSH 0.1.5 uses Session log V3, independent of Memoir store v4 / settings v3. Back up DSH_HOME before upgrading DSH; migrated sessions are not guaranteed readable by older hosts. This Memoir release neither migrates nor resets memory and retains frozen session snapshots without enabling new dynamic-prompt behavior.
-
-<details>
-<summary>Install from source</summary>
-
-0.9.4 source (development SDKs / example host: DSH 0.2.1-rc.5):
-
-```bash
-git clone --branch v0.9.4 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
-pnpm install --frozen-lockfile
-pnpm run build
-npm install --global @deepseek-ai/dsh@0.2.1-rc.5
-dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
-```
-
-</details>
-
-0.8.2 uses native `uiWorkspace`, `conversation.view` / `settings.section`, and the Session V4 producer-owned distillation source. Links open sessions and turn IDs remain copyable; no global DOM turn scrolling is used. Settings inherit the host background and cards use theme layers while preserving skins and independent scrolling. Store v4 / settings v3 / snapshot v1 are unchanged. Back up DSH_HOME before upgrading: host session migration is separate from plugin memory storage.
-
-## Native sidebar and help
-
-**Released 0.8.2:**
-
-- Existing Conversation and Settings entries stay unchanged. The right-sidebar guide now offers Memory for browsing project memory, Hot Memory and diagnostics alongside chat; it never opens automatically or replaces another panel.
-- Each sidebar instance follows its own session workspace and reuses the same data layer, with independent active surfaces and scroll state. Conversation and Settings remain available when the optional sidebar service is absent.
-- Under Memory settings, the collapsed About & help card shows the plugin version, host range, SDK baseline, maintainer, repository, bilingual documentation, releases and issue links. The plugin repository is explicitly distinct from the current workspace.
-- No background update requests, workspace Git-remote inspection or path/memory uploads. Use the host plugin manager to update, after checking the target package’s DSH requirements and prerelease channel. The panel does not auto-upgrade.
-
-**0.9.0:**
-
-- Plugin identity, version, GitHub project, documentation and Open memory settings move to the top of Conversation, Settings and sidebar panels, before any long memory or configuration list. Detailed compatibility information stays collapsed; no forced navigation or Star prompt.
-- Open `dsh-memoir` on the native Plugins page to use the same memory-settings form. No duplicate configuration store or registration pretending to be an official plugin; existing entries still work without this host page.
-- Develop and validate against official npm `0.2.0-rc.1`. Check the host version before installation. Memoir 0.8.2 for DSH 0.1.7 is also affected by #14; back up and upgrade both host and plugin, following the compatibility and recovery warning above.
-
-## Offline release highlights
-
-The first Memory Conversation opening shows the 0.9.4 highlights without blocking chat: the DSH 0.2.1-rc.5 baseline, the recovery CLI extended to rc.3 / rc.4 / rc.5, and the new compatibility-baseline regressions. It explains that formats are unchanged with no migration needed while #14's affected logs still need separate recovery. Choose “Got it” to stop automatic display for this version in the same browser origin. Reopen anytime from “About & help → View release highlights”. Settings and sidebar panels never open the notice automatically. The image below is explicitly retained as a historical 0.9.0 preview.
-
-The Chinese/English notice is offline: no network requests, uploads, memory changes or conversation edits. Only the acknowledged version is stored locally by the UI. If storage is unavailable, acknowledgment lasts for the current page; Web/Desktop and different origins are not guaranteed to share it.
-
-![0.9.0 offline announcement component preview with demonstration data](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-announcement-zh.png)
-
-## Storage, privacy, and security boundaries
-
-```text
-~/.dsh/dsh-memoir.json          structured JSON v4 (single source of truth)
-~/.dsh/dsh-memoir.settings.json live GUI setting overrides
-<project>/PROJECT_MEMORY.md      human-readable projection generated from JSON
-```
-
-- No cloud memory database, embedding API, or vector database;
-- an arbitrary absolute path submitted by the browser does not grant write access; panel writes accept only a trusted active workspace or an existing project bucket;
-- manual browser records cannot spoof trusted session/turn provenance;
-- cross-process writes use an exclusive lock and reread disk inside the critical section, with conservative dead-owner recovery;
-- Windows path keys are case-normalized while display paths retain their original form;
-- `PROJECT_MEMORY.md` may be committed by you, so the user decides whether sensitive content enters Git.
-
-Back up the JSON and project Markdown according to your own policy before upgrades. Removing the plugin does not actively delete them.
+See the historical [benchmark report](./bench/report.md). Results vary with corpus and environment and do not guarantee current-version performance, semantic accuracy or billing savings.
 
 ## Configuration
 
-Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for `enabled`, each is also live-editable and persisted from the Memory panel or Settings card.
+Set these parameters in the memoir `config` row of your profile composition; see [cordis.patch.yml](./cordis.patch.yml) for the mounting example. All except `enabled` are also live-editable from the memory panel, Settings or native plugin details, and persist in DSH_HOME.
 
-| Field | Default | Purpose |
+| Parameter | Default | Purpose |
 | --- | ---: | --- |
-| `enabled` | `true` | master switch for tools, routes, and prompt injection |
-| `language` | `zh` | agent-facing copy; `zh` / `en` in 0.8.2, plus `de` / `ru` in 0.9.0; independent of GUI language |
-| `announceToAgent` | `true` | announce memory tools and rules to the agent |
-| `autoDistill` | `true` | enable top-level worked-turn reminders |
-| `autoDistillEvery` | `1` | remind at most once per N worked turns |
-| `autoDistillCooldownMin` | `0` | minimum minutes between successful reminders |
-| `autoDistillMinTools` | `1` | minimum tool calls required in a triggering turn |
-| `hotMemoryTokens` | `900` | normal Hot Memory target budget |
-| `hotMemoryMaxTokens` | `1200` | hard ceiling that no session exceeds |
-| `readDefaultLimit` | `8` | default `memoir_read` result count |
-| `readMaxLimit` | `30` | live upper bound per recall |
-| `sessionSnapshotMax` | `128` | resident LRU capacity; durable records are not deleted |
+| `enabled` | `true` | Master switch for tools, routes and prompt injection |
+| `language` | `zh` | Agent language: `zh` / `en` / `de` / `ru`, independent of the GUI |
+| `announceToAgent` | `true` | Inject memory guidance and Hot Memory; tools and GUI remain available when off |
+| `autoDistill` | `true` | Enable top-level worked-turn wrap-up reminders |
+| `autoDistillEvery` | `1` | Remind at most once per N eligible worked turns |
+| `autoDistillCooldownMin` | `0` | Minimum minutes between successful reminders |
+| `autoDistillMinTools` | `1` | Minimum tool calls in the triggering turn |
+| `hotMemoryTokens` | `900` | Target Hot Memory token budget for new sessions |
+| `hotMemoryMaxTokens` | `1200` | Hard budget ceiling for newly created session snapshots |
+| `readDefaultLimit` | `8` | Default `memoir_read` result count |
+| `readMaxLimit` | `30` | Live maximum result count per recall |
+| `sessionSnapshotMax` | `128` | In-memory snapshot LRU capacity; does not delete disk snapshots |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |
 
-Shrinking a cache evicts the oldest entries immediately. Existing frozen sessions are not rewritten after budget changes, preserving prompt-prefix stability. “Restore startup configuration” removes Web overrides and returns to profile startup values.
+Integer parameters are at least 1, with cooldown at least 0; a hard budget/recall maximum cannot be below its target/default. Shrinking caches immediately evicts the oldest entries. Budget changes affect new snapshots only. Restore startup configuration removes persistent overrides and returns to profile startup values without clearing memory.
 
-## Performance and verification
+## Data safety and recovery
 
-v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report.md`](./bench/report.md)):
+### Files, privacy and backups
 
-| Entries | Index build | Uncached query | Cached query | Injection reduction vs full Markdown |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 10.5 ms | 1.190 ms | 4.07 µs | 97.6% |
-| 10,000 | 126.9 ms | 11.011 ms | 1.45 µs | 99.8% |
-| 100,000 | 1.68 s | 126.933 ms | 1.42 µs | about 100% |
+DSH_HOME defaults to `~/.dsh`; use the actual configured paths when customized.
 
-Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
+| File | Contents |
+| --- | --- |
+| `$DSH_HOME/dsh-memoir.json` | Complete structured history, JSON store v4, single source of truth |
+| `$DSH_HOME/dsh-memoir.settings.json` | Persistent GUI setting overrides, settings v3 |
+| `$DSH_HOME/dsh-memoir.json.snapshots/` | Session snapshots loaded on demand, snapshot v1; `<storePath>.snapshots/` when customized |
+| `<project>/PROJECT_MEMORY.md` | Readable JSON projection that you may commit to Git |
 
-Automated regressions cover session projection recovery, cross-process snapshots, writes and cancellation, lifecycle cleanup, BM25 recall, Hot Memory budgets, caching, corrections and project isolation. Curated lexical Top-5 recall is 41/41; fixture results do not measure real-model semantic accuracy, and prefix equality does not guarantee actual billing savings.
+- The plugin has no separate cloud memory service and makes no additional memory or workspace-path uploads. Content read through tools or injected into prompts enters the current model's context. You decide whether sensitive Markdown belongs in Git.
+- Panel writes require a trusted active workspace or existing project bucket; submitting an arbitrary absolute path grants no write access. Cross-process writes take an exclusive lock and reread disk inside it, with conservative dead-writer lock recovery. Windows path keys are case-normalized while display paths stay unchanged.
+- Future store formats, read errors and failed corrupt-file backups fail closed, refusing further loading/overwriting. A fresh store is allowed only after preserving the damaged original. Temporary Windows rename failures receive bounded retries and still surface when exhausted.
+- Before upgrades, back up memory JSON, settings, snapshots and project Markdown. Plugin upgrades or removal do not delete them automatically; 0.9.5 does not migrate their formats. DSH session migration is separate: back up all of DSH_HOME, as older hosts may not read migrated sessions.
 
-## FAQ
+### Snapshot retention and cleanup
 
-**Does it automatically summarize every chat?**<br>
-It does not silently scrape every conversation. At the end of an eligible turn it reminds the current agent to distill, and the agent writes through a public tool, keeping the process observable and reviewable.
+`sessionSnapshotMax` bounds RAM LRU only. Disk snapshots are partitioned by data-source/settings-file hash, language and session hash. They have no automatic TTL and survive shrinking, uninstalling or clearing RAM. To reclaim space, stop relevant DSH processes, back up, then manually remove records you no longer need to resume. Access after deletion establishes a new baseline.
 
-**Why does every new memory start at importance 3?**<br>
-Three is the neutral default on a 1–5 scale, so unscored content is neither demoted nor treated as highest priority. Change it through tool arguments or the GUI; pinning has separate weight.
+Old sessions whose snapshots are already lost can only establish a baseline from current memory; the plugin never guesses original text from historical system prompts. Corrupt, inaccessible, locked or oversized records remain unchanged, with a process-local frozen fallback and degraded restart stability reported in diagnostics/logs. Text is capped at 256 KiB and each record at 2 MiB. New POSIX directories/files use 0700/0600; Windows uses directory ACLs. Snapshots contain memory text and are user data.
 
-**Why is a new write not reinjected immediately in the current session?**<br>
-The session Hot Memory snapshot is deliberately frozen for prompt-prefix caching. The write is immediately visible to `memoir_read` and the GUI, and the next session rebuilds automatic injection.
+### When an old session will not reopen (#14)
 
-**Does it inject all stored memory into context?**<br>
-No. Only Hot Memory bounded by `hotMemoryMaxTokens` is injected automatically. Complete history is recalled on demand.
+**Invalid receipts written by 0.8.1–0.9.0 can prevent reopening; upgrading Memoir or DSH does not repair historical logs automatically.** Prevention starts in 0.9.1 and is retained in 0.9.5. Template-literal protection does not repair arbitrary old logs either.
 
-**Why is the UI missing after installation?**<br>
-Confirm the command used `--profile web`, then fully restart `dsh web`. Refreshing the browser alone is not enough.
+Follow the [session recovery guide](./SESSION_RECOVERY.md#english) using the bundled npm `dsh-memoir-repair` command. Stop writes from the affected old plugin and upgrade to a compatible fixed version first. Audit one explicitly named file read-only; only after every Web/CLI/Desktop/background host exits and an independent backup exists, apply explicitly with `--apply --host-stopped`. Disabling automatic distillation alone does not stop manual writes.
+
+Only matching official host/backend/SDK versions in the guide's allowlist are accepted, including `0.2.2-rc.1`. The tool handles active native `session.v4.jsonl[.zstd]` files in header-matching directories only, without home scans or generation migration. It rejects superseded v4, mixed versions, path aliases/links, corruption, mixed encodings and zstd frames without checksums. Stored and expanded size are each capped at 128 MiB.
+
+Apply holds the official session lease with hosts stopped throughout: a same-login-session Windows semaphore or POSIX flock on a stable `session.lock` inode. Use trusted local filesystems, not network drives or cross-login sharing. Only matching legacy receipts gain `ignorable: true`; events, content and order are preserved. Exact original bytes are backed up to `.bak` before same-directory atomic replacement, and repeating makes no change. Windows replacement inherits directory ACLs without preserving custom source-file ACLs. Follow the guide for errors, remaining `.tmp`/`.bak`, `committed: true` and rollback; never delete raw logs, downgrade formats or bulk-delete unknown caches.
+
+## Older-version compatibility
+
+<details>
+<summary>Expand host ranges, older plugin lines and upgrade limits</summary>
+
+0.9.5's host/peer range is `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.2-rc.1 <0.2.2`. It retains official 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 lines. The range does not verify every included or future build and does not admit 0.2.2-alpha. Runtime compatibility does not imply recovery of arbitrary historical logs.
+
+| Pinned Memoir | DSH range | Notes |
+| --- | --- | --- |
+| `0.9.5` | Range above; development baseline `0.2.2-rc.1` | Current release; memory/settings/snapshot formats unchanged |
+| `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | Historical SDK baseline `0.2.1-rc.5`; no 0.2.2-rc.1 adaptation |
+| `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | Older 0.1.7 line, still affected by #14 |
+| `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | Older 0.1.5 line; fixes snapshots after restart/RAM eviction |
+| `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | Older 0.1.2 line |
+| `0.5.6` | `0.1.1-rc.2` | Older rc.2 line |
+
+Match the plugin version to an older host. Older lines lack all current fixes; back up and upgrade both host and plugin where possible. Select `zh` or `en` before downgrading to 0.8.2. The plugin's Node engine remains `^22.19.0 || >=24.0.0` for older hosts; the current development SDK and DSH 0.2.2-rc.1 still require Node `>=24.9.0`. See the [changelog](./CHANGELOG.md) for full compatibility and fix history.
+
+</details>
 
 ## Development and contributing
 
-```bash
-pnpm install --frozen-lockfile
-pnpm run build
-pnpm run typecheck
-pnpm test
-npm run bench
-```
+Development uses official npm DSH SDK `0.2.2-rc.1`, Node `>=24.9.0` and pnpm. See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, builds and contribution rules, and [cordis.patch.yml](./cordis.patch.yml) for the composition mounting example.
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for 0.9.4 changes; the development SDK baseline is DSH 0.2.1-rc.5. See the compatibility table above for older lines and risks. Formal packages are published by the tag workflow through npm OIDC; consult [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) and npm for publication status.
-
-Apache-2.0
+[Source and feedback](https://github.com/Qinling-Melon-Farmers/dsh-memoir) · [Issues](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues) · [Changelog](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) · [Apache-2.0](./LICENSE)

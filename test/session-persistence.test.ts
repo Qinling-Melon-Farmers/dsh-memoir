@@ -3,19 +3,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { AgentRegistry } from '@deepseek-ai/dsh-agent'
-import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
 import { Session, SessionStore, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { LlmAdapter, LlmRuntime, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { apply } from '../lib/index.js'
-import { ACTIVITY_KEY } from '../lib/activity.js'
+import { registerActivity } from '../lib/activity.js'
 import { MemoirStore } from '../lib/store.js'
 import { makeTempWorkspace } from './helpers.ts'
 import { mountJsonlPersistence } from './session-sdk-helper.ts'
+import { mountAgentLoop, mountAgentRegistry, mountNativeTools } from './agent-sdk-helper.ts'
 
 for (const compression of ['none', 'zstd'] as const) for (const outcome of ['record', 'update', 'unresolved', 'failed'] as const) {
   test(`official tool results survive live JSONL ${compression} persistence and cold reopen: ${outcome}`, { timeout: 15_000 }, async () => {
@@ -24,10 +22,10 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
     try {
       new SessionProjectionRegistry(ctx)
       new SessionStore(ctx)
-      new AgentRegistry(ctx)
+      await mountAgentRegistry(ctx)
       new LlmRuntime(ctx)
       new SystemPrompt(ctx, {})
-      new ToolRuntime(ctx)
+      await mountNativeTools(ctx)
       const root = join(ws.cwd, 'sessions')
       const backend = await mountJsonlPersistence(ctx, { root, compression })
       const storePath = join(ws.cwd, 'memory.json')
@@ -52,7 +50,7 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
         }
       }
       ctx.llm.registerAdapter(['fixture'], new Adapter())
-      const loop = new AgentLoop(ctx, AgentLoop.Config({ agents: [], maxParallelToolCalls: 1 }))
+      const loop = await mountAgentLoop(ctx, 1)
       // Only the HTTP server is replaced: the plugin, event subscriptions,
       // tools, session, projection and agent execution use the real SDK.
       const pluginCtx = {
@@ -60,7 +58,8 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
         on: ctx.on.bind(ctx), effect: ctx.effect.bind(ctx),
         webServer: { register: () => () => {} },
       } as unknown as Context
-      apply(pluginCtx, { storePath, settingsPath: join(ws.cwd, 'settings.json'), autoDistill: false })
+      await apply(pluginCtx, { storePath, settingsPath: join(ws.cwd, 'settings.json'), autoDistill: false })
+      const activity = await registerActivity(ctx.sessionProjections)
       const agent = await loop.create(SessionId(`persistence-${outcome}`), { provider: 'fixture', model: 'fixture' }, { cwd: ws.cwd })
       agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Save the verified memory.' }] }))
       await agent.whenIdle()
@@ -72,7 +71,7 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
       const committed = outcome === 'record' || outcome === 'update'
       assert.equal(result.data.message.isError, outcome === 'failed')
       if (outcome !== 'failed') assert.deepEqual(result.data.meta, { memoir: { version: 1, persisted: committed } })
-      assert.equal(ctx.sessionProjections.stateOf(agent.session, ACTIVITY_KEY)?.recorded, committed)
+      assert.equal(activity.stateOf(agent.session).recorded, committed)
 
       // AgentLoop owns the write handle; real session/event routing must persist
       // every tool result. Never manually append snapshotEvents to fake routing.
@@ -83,7 +82,7 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
         const read = await reader.read()
         assert.deepEqual(read.events, events, 'cold reader accepts the entire history unchanged')
         const cold = Session.fromRestore(reader.id, read.events, reader.header, reader.inheritedEventCount, read.eventState)
-        assert.equal(ctx.sessionProjections.stateOf(cold, ACTIVITY_KEY)?.recorded, committed)
+        assert.equal(activity.stateOf(cold).recorded, committed)
         assert.ok(JSON.stringify(read.events).includes('Original task answer remains readable.'))
       } finally { await reader.close() }
     } finally { await ctx.fiber.dispose(); await coldCtx.fiber.dispose(); ws.cleanup() }

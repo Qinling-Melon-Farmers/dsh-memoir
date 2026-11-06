@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { apply } from '../lib/index.js'
+import { emptyActivity, registerActivity } from '../lib/activity.js'
+import type { ActivityHandle, activityProjection } from '../lib/activity.js'
 import { makeTempWorkspace } from './helpers.ts'
 import { join } from 'node:path'
 
@@ -27,14 +30,89 @@ test('real Cordis lifecycle releases host registrations across three remounts', 
       const fork = root.plugin({ apply }, {
         storePath: join(ws.cwd, 'memoir.json'), settingsPath: join(ws.cwd, 'settings.json'),
       })
-      await new Promise(resolve => setImmediate(resolve))
+      await fork
       assert.equal(tools.size, 3)
       assert.equal(routes.size, 1)
       assert.equal(sections.size, 1)
+      assert.equal(root.sessionProjections.restoreFloor({}), 0, 'the plugin owns a live projection')
       await fork.dispose()
       assert.equal(tools.size + routes.size + sections.size, 0)
+      assert.equal(root.sessionProjections.restoreFloor({}), undefined, 'unloading releases the projection too')
     }
-  } finally { ws.cleanup() }
+  } finally { await root.fiber.dispose(); ws.cleanup() }
+})
+
+test('activity registration belongs to each calling fiber and releases one reference exactly once', async () => {
+  const root = new Context()
+  new SessionProjectionRegistry(root)
+  const session = Session.create(SessionId('activity-owners'), [], {
+    id: SessionId('activity-owners'), version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false,
+  })
+  let first!: ActivityHandle, second!: ActivityHandle
+  try {
+    const firstOwner = root.plugin(async ctx => { first = await registerActivity(ctx.sessionProjections) })
+    const secondOwner = root.plugin(async ctx => { second = await registerActivity(ctx.sessionProjections) })
+    await Promise.all([firstOwner, secondOwner])
+    assert.deepEqual(first.stateOf(session), emptyActivity())
+    assert.deepEqual(second.stateOf(session), emptyActivity())
+    await firstOwner.dispose()
+    await first.dispose() // an already-released owner must not release its sibling
+    assert.equal(root.sessionProjections.restoreFloor({}), 0)
+    assert.deepEqual(second.stateOf(session), emptyActivity())
+    await secondOwner.dispose()
+    assert.equal(root.sessionProjections.restoreFloor({}), undefined)
+    await second.dispose()
+    assert.equal(root.sessionProjections.restoreFloor({}), undefined)
+  } finally { await root.fiber.dispose() }
+})
+
+test('unloading async apply during registration readiness leaves no projection or host surfaces', { timeout: 5_000 }, async () => {
+  const ws = makeTempWorkspace()
+  const root = new Context()
+  const registry = new SessionProjectionRegistry(root)
+  let entered!: () => void, release!: () => void
+  const registered = new Promise<void>(resolve => { entered = resolve })
+  const ready = new Promise<void>(resolve => { release = resolve })
+  const registerProjection = registry.register
+  // Keep real SDK acquisition and caller ownership; delay only its handoff.
+  Object.assign(registry, {
+    async register(this: SessionProjectionRegistry, definition: typeof activityProjection) {
+      const registration = registerProjection.call(this, definition)
+      entered()
+      await ready
+      return registration
+    },
+  })
+  let published = 0, active = 0
+  const registerSurface = () => { published++; active++; return () => { active-- } }
+  Object.assign(root, {
+    tools: { register: registerSurface },
+    webServer: { register: registerSurface },
+    systemPrompt: { section: registerSurface },
+  })
+  try {
+    const fork = root.plugin({ apply }, {
+      storePath: join(ws.cwd, 'memoir.json'), settingsPath: join(ws.cwd, 'settings.json'),
+    })
+    const startup = Promise.resolve(fork)
+    // Attach a rejection observer before starting the cancellation race.
+    const settledStartup = Promise.allSettled([startup])
+    await registered
+    assert.equal(root.sessionProjections.restoreFloor({}), 0)
+    assert.equal(published, 0, 'consumers must wait for the ready activity handle')
+    const disposal = fork.dispose()
+    release()
+    await disposal
+    await settledStartup
+    assert.equal(active, 0)
+    assert.equal(published, 0, 'an unloaded activation must not publish consumers')
+    assert.equal(root.sessionProjections.restoreFloor({}), undefined, 'no acquisition survives cancellation')
+    // The registry remains usable after the canceled owner has drained.
+    const handle = await registerActivity(root.sessionProjections)
+    assert.equal(root.sessionProjections.restoreFloor({}), 0)
+    await handle.dispose()
+    assert.equal(root.sessionProjections.restoreFloor({}), undefined)
+  } finally { release(); await root.fiber.dispose(); ws.cleanup() }
 })
 
 test('shipped client mounts, relocalizes and disposes native slots/styles three times', async () => {

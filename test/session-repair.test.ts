@@ -27,6 +27,8 @@ const dshPackage = process.env.DSH_TEST_PACKAGE
 // Fail CI when its declared SDK devDependency is missing; never skip repair tests.
 localRequire.resolve('@deepseek-ai/dsh-session-persistence-jsonl')
 const sdk = sessionSdk(dshPackage)
+const backendRequire = createRequire(sdk.require.resolve('@deepseek-ai/dsh-session-persistence-jsonl/package.json'))
+const backendVersion = JSON.parse(await fs.readFile(sdk.require.resolve('@deepseek-ai/dsh-session-persistence-jsonl/package.json'), 'utf8')).version
 const { KNOWN_SESSION_EVENT_TYPES, SessionId, SessionSeq } = await sdk.load('@deepseek-ai/dsh-session') as typeof import('@deepseek-ai/dsh-session')
 const { createUserMessage } = await sdk.load('@deepseek-ai/dsh-llm') as typeof import('@deepseek-ai/dsh-llm')
 const sdkArgs = dshPackage ? ['--dsh-package', dshPackage] : []
@@ -166,6 +168,39 @@ test('alpha.2 repair preserves working-directory transitions and ignorable plugi
   assert.equal(result.changed, 1)
   assert.equal(await fs.readFile(f.path, 'utf8'), patchedText + tail)
   assert.equal(await fs.readFile(result.backupPath, 'utf8'), originalText + tail)
+})
+
+test('rc1 catalog preserves independent seeded deliveries but rejects foreign active-tail ownership', async t => {
+  if (backendVersion !== '0.2.2-rc.1') {
+    t.skip('the independent seeded delivery policy was introduced in 0.2.2-rc.1')
+    return
+  }
+  const { sessionFormatCatalog } = await import(pathToFileURL(backendRequire.resolve('@deepseek-ai/dsh-session-format-catalog')).href)
+  const { type: _type, ...logicalHeader } = header
+  const physicalHeader = sessionFormatCatalog.encodeCurrentHeader({ ...logicalHeader, isSeeded: true }, 2)
+  const delivery = (seq: number) => ({
+    type: 'session-log-deepseek/delivery-accepted', seq, time: 1790662733587,
+    data: { sessionFormatVersion: 4, sessionId: 'original-session', throughSeq: 0 },
+  })
+  const inherited = line(title(0)) + line(delivery(1))
+    + line({ type: 'session/end-seed', seq: 2, time: 1790662733587, data: { inherited: true } })
+  const text = line(physicalHeader) + inherited + line(receipt(3))
+  const f = await fixture(t, text)
+  const before = await fs.stat(f.path, { bigint: true })
+  assert.equal((await auditSessionReceipts(f.path, options)).candidates, 1)
+  assert.equal(await fs.readFile(f.path, 'utf8'), text)
+  assert.equal((await fs.stat(f.path, { bigint: true })).mtimeNs, before.mtimeNs)
+  assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl'])
+  const result = await repairSessionReceipts(f.path, applying)
+  assert.equal(await fs.readFile(result.backupPath, 'utf8'), text)
+  assert.equal(await fs.readFile(f.path, 'utf8'), line(physicalHeader) + inherited + line({ ...receipt(3), ignorable: true }))
+  assert.equal((await repairSessionReceipts(f.path, applying)).changed, 0)
+  for (const invalid of [text + line(delivery(4)), text.replace('"throughSeq":0', '"throughSeq":1')]) {
+    const bad = await fixture(t, invalid)
+    await assert.rejects(repairSessionReceipts(bad.path, applying), { code: 'SESSION_INVALID' })
+    assert.equal(await fs.readFile(bad.path, 'utf8'), invalid)
+    assert.deepEqual(await fs.readdir(bad.root), ['session.v4.jsonl'])
+  }
 })
 
 test('plaintext apply makes an exact verified backup and changes only the one inserted flag; second apply is a no-op', async t => {
@@ -341,9 +376,28 @@ for (const compression of ['none', 'zstd'] as const) test(`official ${compressio
   assert.equal((await fs.readdir(dirname(path))).filter(name => name.includes('memoir-repair')).length, 0)
   await writer.close()
   await assert.rejects(backend.open(id, 'read'), /unknown.*(?:event type|harness)/)
+  // The repair's lease must also exclude an official writer during replacement.
+  // Check the exact backup and same-directory staging before the atomic rename.
+  const rename = fs.rename.bind(fs)
+  let replacements = 0
+  t.mock.method(fs, 'rename', async (...args: Parameters<typeof fs.rename>) => {
+    const [from, to] = args
+    replacements++
+    assert.equal(dirname(String(from)), dirname(path))
+    assert.equal(to, path)
+    assert.ok(String(from).endsWith('.tmp'))
+    assert.deepEqual(await fs.readFile(path), before)
+    const backup = (await fs.readdir(dirname(path))).find(name => name.endsWith('.bak'))!
+    assert.deepEqual(await fs.readFile(join(dirname(path), backup)), before)
+    await assert.rejects(coldBackendForLock.open(id, 'write'), { name: 'SessionAlreadyOwnedError' })
+    await rename(from, to)
+  })
+  const coldBackendForLock = await mountJsonlPersistence(coldContext, { root, compression }, sdk.load)
   const result = await repairSessionReceipts(path, applying)
+  t.mock.restoreAll()
+  assert.equal(replacements, 1)
   assert.deepEqual(await fs.readFile(result.backupPath), before)
-  const coldBackend = await mountJsonlPersistence(coldContext, { root, compression }, sdk.load)
+  const coldBackend = coldBackendForLock
   const reader = await coldBackend.open(id, 'read')
   const restored = await reader.read()
   await reader.close()
@@ -563,4 +617,53 @@ test('unknown backend versions refuse without importing backend code or modifyin
   await assert.rejects(repairSessionReceipts(f.path, { ...applying, dshPackage: installation }), { code: 'DSH_UNSUPPORTED' })
   assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
   assert.deepEqual(await fs.readdir(f.root), ['session.v4.jsonl', 'unsupported-installation'])
+})
+
+test('mixed host, direct SDK and nested catalog dependencies refuse before importing validators or touching logs', async t => {
+  const names = ['dsh-session-persistence-jsonl', 'dsh-session-persistence', 'dsh-session', 'dsh-session-format', 'dsh-session-format-catalog', 'dsh-llm', 'dsh-session-format-v3-to-v4']
+  const otherVersion = backendVersion === '0.2.2-rc.1' ? '0.2.1-rc.5' : '0.2.2-rc.1'
+  for (const fault of ['host', ...names, 'nested-codec', 'nested-session', 'wrong-name']) {
+    const f = await fixture(t)
+    const installation = join(f.root, 'mixed-installation')
+    const packages = join(installation, 'node_modules', '@deepseek-ai')
+    const imported = join(installation, 'IMPORTED')
+    await fs.mkdir(packages, { recursive: true })
+    await fs.writeFile(join(installation, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh', version: fault === 'host' ? otherVersion : backendVersion,
+    }))
+    const writePackage = async (path: string, name: string, version: string, dependencies = {}) => {
+      await fs.mkdir(path, { recursive: true })
+      await fs.writeFile(join(path, 'package.json'), JSON.stringify({
+        name: `@deepseek-ai/${name}`, version, type: 'module', main: './index.js', dependencies,
+      }))
+      await fs.writeFile(join(path, 'index.js'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(imported)}, 'unexpected import'); throw new Error(${JSON.stringify(secret)});`)
+    }
+    for (const name of names) {
+      const dependencies = name === 'dsh-session-persistence-jsonl'
+        ? Object.fromEntries(names.slice(1, -1).map(n => [`@deepseek-ai/${n}`, backendVersion]))
+        : name === 'dsh-session-format-catalog'
+          ? { '@deepseek-ai/dsh-session-format-v3-to-v4': backendVersion, '@deepseek-ai/dsh-session': backendVersion }
+          : {}
+      await writePackage(join(packages, name), fault === 'wrong-name' && name === 'dsh-session' ? 'wrong-package' : name,
+        fault === name ? otherVersion : backendVersion, dependencies)
+    }
+    if (fault.startsWith('nested-')) {
+      const name = fault === 'nested-codec' ? 'dsh-session-format-v3-to-v4' : 'dsh-session'
+      await writePackage(join(packages, 'dsh-session-format-catalog', 'node_modules', '@deepseek-ai', name), name, otherVersion)
+    }
+    const namesBefore = await fs.readdir(f.root)
+    const before = await fs.stat(f.path, { bigint: true })
+    await assert.rejects(repairSessionReceipts(f.path, { ...applying, dshPackage: installation }), { code: 'DSH_UNSUPPORTED' }, fault)
+    await assert.rejects(auditSessionReceipts(f.path, { dshPackage: installation }), { code: 'DSH_UNSUPPORTED' }, fault)
+    await assert.rejects(run(process.execPath, [script, '--dsh-package', installation, '--apply', '--host-stopped', f.path]), (error: any) => {
+      assert.match(error.stderr, /DSH_UNSUPPORTED/)
+      assert.ok(!error.stderr.includes(secret))
+      assert.equal(error.stdout, '')
+      return true
+    })
+    await assert.rejects(fs.stat(imported), { code: 'ENOENT' }, 'no validator code may run before the whole contract tree passes')
+    assert.equal(await fs.readFile(f.path, 'utf8'), originalText)
+    assert.equal((await fs.stat(f.path, { bigint: true })).mtimeNs, before.mtimeNs)
+    assert.deepEqual(await fs.readdir(f.root), namesBefore)
+  }
 })

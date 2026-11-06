@@ -106,9 +106,8 @@ jobs:
           PY
 
 
-  # Typecheck and test against other official SDK baselines. The pinned
-  # baseline reruns in the main job; future prereleases run as an advisory
-  # signal so upstream breaking changes surface before an adaptation release.
+  # Both the previous and current official SDK contracts are required gates.
+  # Future unreviewed prereleases may be added separately as advisory probes.
   compat:
     name: SDK compat (${{ matrix.sdk }})
     strategy:
@@ -117,8 +116,8 @@ jobs:
         include:
           - sdk: 0.2.1-rc.5
             advisory: false
-          - sdk: 0.2.2-alpha.2
-            advisory: true
+          - sdk: 0.2.2-rc.1
+            advisory: false
     continue-on-error: ${{ matrix.advisory }}
     runs-on: ubuntu-latest
     timeout-minutes: 30

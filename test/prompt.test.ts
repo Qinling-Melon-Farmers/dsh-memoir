@@ -5,22 +5,21 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { AgentRegistry, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
+import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { apply, MEMOIR_GUIDANCE, MEMOIR_SECTION_HEADING, memoirSectionText } from '../lib/index.js'
 import { MemoirStore, PROJECT_FILE } from '../lib/store.js'
 import { MemorySnapshotManager, sessionKeyOf, snapshotHash } from '../lib/snapshot.js'
 import { MemorySnapshotStore } from '../lib/snapshot-store.js'
 import { DEFAULT_MEMORY_BUDGET, estimateTokens } from '../lib/selector.js'
-import { ACTIVITY_KEY } from '../lib/activity.js'
+import { registerActivity } from '../lib/activity.js'
 import { callRoute, makeTempWorkspace } from './helpers.ts'
+import { mountAgentLoop, mountAgentRegistry, mountNativeTools } from './agent-sdk-helper.ts'
 
 const ENV_CWD = '/host/environment/must-not-enter-memory'
 const title = 'Templates {{asr}} / {{{cwd}}} / {{{{cwd}}}}'
@@ -30,7 +29,7 @@ const content = [
   '{"nested":{"ok":true}}', '{ { spaced } }', 'unfinished {{{{',
 ].join(' | ')
 const sectionText = (body: string) => `${MEMOIR_GUIDANCE}\n\n${MEMOIR_SECTION_HEADING}\n${body}`
-const memoirSection = (assembly: PromptAssembly) => {
+const memoirSection = (assembly: Pick<PromptAssembly, 'sections'>) => {
   const section = assembly.sections.find(section => section.name === 'plugin:dsh-memoir')
   assert.ok(section, 'production apply() must register the memory section')
   return section
@@ -48,16 +47,16 @@ function fixture(t: TestContext) {
 }
 
 /** Only HTTP registration is mocked. The section and its flag come from apply(). */
-function hostFixture(t: TestContext, f: ReturnType<typeof fixture>) {
+async function hostFixture(t: TestContext, f: ReturnType<typeof fixture>) {
   const root = new Context()
   t.after(() => root.fiber.dispose())
   new SessionProjectionRegistry(root)
   new SessionStore(root)
-  new AgentRegistry(root)
+  await mountAgentRegistry(root)
   new LlmRuntime(root)
   new SystemPrompt(root, { includeHarnessIdentity: false })
-  new ToolRuntime(root)
-  const loop = new AgentLoop(root, AgentLoop.Config({ agents: [] }))
+  await mountNativeTools(root)
+  const loop = await mountAgentLoop(root)
   const routes: WebRoute[] = []
   Object.assign(root, { webServer: { register: (route: WebRoute) => {
     routes.push(route)
@@ -67,17 +66,18 @@ function hostFixture(t: TestContext, f: ReturnType<typeof fixture>) {
   // so this fixture exercises registered interpolation without overriding it.
   root.systemPrompt.variable('memoir_test_variable', () => ENV_CWD)
   root.systemPrompt.variable('unset', () => undefined)
-  apply(root, {
+  await apply(root, {
     storePath: f.options.storePath, settingsPath: f.options.settingsPath,
     autoDistill: false, sessionSnapshotMax: 1,
   })
+  const activity = await registerActivity(root.sessionProjections)
   return {
     root,
     prompt: root.systemPrompt,
     async context(id: string) {
       // No turn is submitted, so creating real agents needs no model/network call.
       const agent = await loop.create(SessionId(id), {}, { cwd: f.cwd })
-      assert.ok(root.sessionProjections.stateOf(agent.session, ACTIVITY_KEY))
+      assert.ok(activity.stateOf(agent.session))
       return assembleContextFor(agent)
     },
     async restored() {
@@ -128,7 +128,7 @@ test('production apply preserves new memory, snapshots and final prompts literal
   f.store.record(f.cwd, { section: 'lessons', title, content })
   const stored = readFileSync(f.options.storePath)
   const markdown = readFileSync(join(f.cwd, PROJECT_FILE))
-  const host = hostFixture(t, f)
+  const host = await hostFixture(t, f)
   const context = await host.context('new-durable')
   const assembly = await host.prompt.assemble(context)
   assert.equal(memoirSection(assembly).interpolate, false, 'flag must be set by production apply(), not the fixture')
@@ -152,7 +152,7 @@ test('production apply preserves new memory, snapshots and final prompts literal
   assert.equal(f.store.entries(f.cwd)[0]!.content, content)
   f.store.record(f.cwd, { section: 'actions', content: 'Added after the first assembly' })
   assert.equal(renderPrompt(await host.prompt.assemble(context)), output)
-  const cold = hostFixture(t, f)
+  const cold = await hostFixture(t, f)
   assert.equal(renderPrompt(await cold.prompt.assemble(await cold.context('new-durable'))), output)
   assert.equal(await cold.restored(), 1)
   assert.deepEqual(readFileSync(record.path), record.bytes)
@@ -164,7 +164,7 @@ test('production apply preserves new memory, snapshots and final prompts literal
 test('production apply keeps registered variables literal even without any unknown variables', async (t) => {
   const f = fixture(t)
   f.store.record(f.cwd, { section: 'lessons', content: 'Example {{memoir_test_variable}} must stay literal.' })
-  const host = hostFixture(t, f)
+  const host = await hostFixture(t, f)
   const assembly = await host.prompt.assemble(await host.context('registered-only'))
   assert.equal(assembly.variables.memoir_test_variable, ENV_CWD)
   assert.equal(memoirSection(assembly).interpolate, false)
@@ -204,7 +204,7 @@ test('helper preserves an already-frozen legacy LRU snapshot without mutation or
 for (const legacy of [true, false]) {
   test(`production apply preserves ${legacy ? 'template-bearing' : 'ordinary'} legacy snapshots in LRU, after eviction and on remount`, async (t) => {
     const f = fixture(t)
-    const host = hostFixture(t, f)
+    const host = await hostFixture(t, f)
     const context = await host.context('legacy-disk')
     const key = sessionKeyOf(context)!
     const raw = sectionText(legacy ? `${title}\n${content}` : 'Keep ordinary {JSON} and 中文 memory byte-for-byte.')
@@ -223,7 +223,7 @@ for (const legacy of [true, false]) {
     assert.ok(fresh.includes('New memory belongs only to a new session'))
     assert.equal(renderPrompt(await host.prompt.assemble(context)), raw)
     assert.equal(await host.restored(), 2, 'LRU eviction restores the original durable snapshot')
-    const cold = hostFixture(t, f)
+    const cold = await hostFixture(t, f)
     assert.equal(renderPrompt(await cold.prompt.assemble(await cold.context('legacy-disk'))), raw)
     assert.equal(await cold.restored(), 1)
     assert.deepEqual(snapshotRecord(f, key).snapshot, frozen)
@@ -236,7 +236,7 @@ test('production literal section does not increase the hard budget for very long
   const f = fixture(t)
   const longContent = '{{cwd}} ' + '{'.repeat(10_000) + 'asr}}'
   f.store.record(f.cwd, { section: 'lessons', title: 'Long run', content: longContent })
-  const host = hostFixture(t, f)
+  const host = await hostFixture(t, f)
   const context = await host.context('budget')
   const assembly = await host.prompt.assemble(context)
   const output = renderPrompt(assembly)

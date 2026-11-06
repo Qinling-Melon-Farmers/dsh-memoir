@@ -32,7 +32,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { MemoryToolHooks } from './tools.js'
 import { resolveMemorySource } from './tools.js'
-import { activityProjection, ACTIVITY_KEY } from './activity.js'
+import { registerActivity } from './activity.js'
 import { MemoirStore, projectKey } from './store.js'
 import { memoirReadTool, memoirRecordTool, memoirUpdateTool } from './tools.js'
 import { makeRoutes } from './routes.js'
@@ -215,18 +215,18 @@ function autoDistillWire(ctx: Context): AutoDistillWire {
  * @param ctx - host plugin context carrying tools/systemPrompt/webServer.
  * @param config - resolved plugin config (defaults apply when absent).
  */
-export function apply(ctx: Context, config?: Config): void {
+export async function apply(ctx: Context, config?: Config): Promise<void> {
   const value = resolveConfig(config)
   if (!value.enabled) return
   const distillDiagnostics = new DistillDiagnostics()
-  ctx.effect(() => ctx.sessionProjections.register(activityProjection), 'dsh-memoir: activity projection')
+  const activity = await registerActivity(ctx.sessionProjections)
   // Live commit truth also covers nested PTC writes and a JSON commit followed
   // by Markdown failure. No foreign event is appended to the host's log.
   // Only successful direct results have durable metadata; after a cold restart
   // an outcome without that metadata is unknown, never inferred from a call.
   const committedTurns = new WeakMap<Session, number>()
   const activityOf = (session: Session) => {
-    const state = ctx.sessionProjections.stateOf(session, ACTIVITY_KEY)
+    const state = activity.stateOf(session)
     return state !== undefined && committedTurns.get(session) === state.turn ? { ...state, recorded: true } : state
   }
   const memoryHooks: MemoryToolHooks = {

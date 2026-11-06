@@ -1,6 +1,8 @@
 # dsh-memoir
 
-> **0.9.4**：开发与验证 SDK 基线升级到官方 npm DSH `0.2.1-rc.5`，保留 `0.2.0-rc.1 / rc.2` 与 `0.2.1-alpha.1 / alpha.2 / rc.2` 支持；#14 恢复 CLI 白名单经零差异审计扩展至 rc.3 / rc.4 / rc.5。0.9.3 的存储保护（#16）与模板字面量防护（#17）全部保留；升级并重新加载插件即可，无需删除快照或改写原始记忆；#14 的旧日志故障仍须单独恢复。
+**让新的 Agent 会话继续理解你的项目。** dsh-memoir 是 DeepSeek Harness（DSH）的本地优先项目记忆插件：保存已确认的工作结论、经验教训和后续行动，以有界 Hot Memory 注入新会话，并用 BM25 按需召回完整历史。
+
+无需 embedding、向量数据库或云端记忆服务；npm 包不捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主提供。适合个人和本地开发工作流，不是原始聊天备份或多人云同步服务。
 
 [![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
@@ -8,329 +10,169 @@
 
 中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
 
-**DeepSeek Harness（DSH）的本地优先、跨会话项目记忆插件。** 它把 Agent 已确认的工作结论、经验教训和后续行动持久化，在新会话中注入有界且缓存友好的 Hot Memory，并通过本地 BM25 排序召回长尾历史。
+## 快速安装
 
-无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH 与 Zod 4 peer 由宿主环境提供；Zod 用于验证宿主会话投影，不捆绑进插件。
+当前版本 **0.9.5（2026-11-06）**，适配 **DSH `0.2.2-rc.1` / Node.js `>=24.9.0`**。本版不迁移记忆、设置或快照；升级前请备份 DSH_HOME。旧日志故障须按后文单独恢复。
 
-> [!WARNING]
-> **#14 旧日志恢复边界：0.8.1–0.9.0 写入的旧回执可能导致会话重新打开失败。** 0.9.3 保留 0.9.1 起阻止新增异常回执的修复，但升级不自动重写旧日志；npm 包内置 `dsh-memoir-repair` 命令。旧会话仍打不开时，按[恢复说明](./SESSION_RECOVERY.md)先只读检查、停机备份后再显式恢复；不要删除日志或降级数据格式。恢复前停止旧插件写入，仅关闭自动蒸馏不能阻止手动工具写入。
-> #17 的 prompt 输出防护不修复任意旧日志。恢复 CLI 的后端与格式支持须以恢复说明列出的已审计范围为准；仅升级 DSH 也不会修复已有异常日志。
+**Web：** 安装或更新 CLI，再添加到 `web` profile：
 
-> [!IMPORTANT]
-> **0.9.4 要求 DSH `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1`**，开发 SDK 基线为 `0.2.1-rc.5`；保留官方 `0.2.0-rc.1 / rc.2` 与 `0.2.1-alpha.1 / alpha.2 / rc.2` 兼容线，rc.3 / rc.4 / rc.5 的后端库与 rc.2 逐字节一致。版本范围不代表其中所有版本均已验证；`0.2.2` 预发布尚未通过门禁、不在放行范围（见更新摘要）。保留首屏导引、原生设置、四种 Agent 语言、独立蒸馏回合与冻结快照。**DSH 0.1.7 兼容线为 `0.8.2`，但仍受 #14 影响；使用本版修复须先升级宿主，再安装 0.9.4。**
->
-> `dsh-memoir@0.7.1` 修复重启和内存淘汰后旧会话快照丢失（#10），支持 DSH **0.1.5-rc.1 / rc.2**。要求 `>=0.1.5-rc.1 <0.1.6-0`；请先核对宿主版本。旧 DSH 0.1.2 用户固定使用 `0.6.2`，0.1.1-rc.2 用户固定使用 `0.5.6`；这些旧版未包含本次修复。
-
-```bash
-npm install --global @deepseek-ai/dsh@0.2.1-rc.5
-dsh plugin --profile web add dsh-memoir@0.9.4
+```sh
+npm install --global @deepseek-ai/dsh@0.2.2-rc.1
+dsh plugin --profile web add dsh-memoir@0.9.5
 ```
 
-升级后重新加载插件，或重启 `dsh web`。#17 防护会在后续 prompt 组装时生效；无需手工删除旧快照。记忆不会随插件升级或卸载自动删除。
+**Desktop：** 先核对桌面应用内置的 DSH 宿主版本；更新全局 CLI 不会替代桌面内置宿主。在桌面的原生「插件」管理界面添加 npm 包 `dsh-memoir@0.9.5`，或用指向同一 DSH_HOME 的 CLI 添加到 `desktop` profile：
 
-## 0.9.4 更新摘要
-
-- **DSH rc.5 基线**：开发与验证 SDK 统一固定到 `0.2.1-rc.5`。`session-persistence-jsonl` 的库代码在 rc.2 → rc.3 → rc.4 → rc.5 之间逐字节一致（2026-11-01 审计），全量回归在 rc.5 基线通过；宿主/peer 范围保持不变，0.2.2 稳定版发布时将自动被第一条款覆盖。
-- **恢复 CLI 扩展至 rc.3 / rc.4 / rc.5**：白名单从五个官方 SDK 版本扩展到八个，安全边界不变：先只读检查，全部宿主退出并独立备份后，再显式 `--apply --host-stopped`。
-- **兼容基线一致性回归**：新增测试防住三类脱节——JSONL devDependency 必须在恢复白名单内、engines/peer 范围必须放行编译基线、双语恢复文档必须列全白名单版本；恢复 CLI 帮助文本测试改为从脚本动态解析。
-- **CI SDK 兼容矩阵**：新增 compat job，基线 rc.5 为硬门禁，`0.2.2-alpha.2` 为 advisory 预警；新增 `scripts/compat-swap.mjs` 基线切换脚本。
-- **0.2.2 预发布预检（未放行）**：`0.2.2-alpha.2` 要求 Node `>=24.9.0`（移除 Node 22），`ProjectionDefinition` 需要两个类型参数、`PromptAssembly` 拆分等属于公开契约变化；未通过门禁前不扩大 engine 范围。
-
-- **存储保护（[#16](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/16)）**：遇到未来 store 格式、读取错误或损坏文件备份失败时，报错并拒绝继续加载或覆盖（fail closed）。只有成功保留损坏原文件后才允许建立空库；Windows 临时占用导致的 rename 失败采用有界重试，耗尽后仍报错。
-- **Hot Memory 预算（#16）**：候选超出剩余硬预算时跳过并继续寻找较小条目；首条过大时按渲染后的完整块缩短正文，必要时缩短标题。连最小块也放不下则跳过，长标题不能突破 `hotMemoryMaxTokens`。
-- **模板字面量（[#17](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/17)）**：通过官方 `PromptSection` 的 `interpolate: false` 关闭记忆 section 的变量插值，使 `{{...}}` 等字面量按原文进入 system prompt，避免被求值或导致组装失败。新记忆、进程内旧快照与磁盘恢复的旧快照均按原文输出；花括号、原始记忆 JSON、`PROJECT_MEMORY.md` 与磁盘快照保持原样。感谢 [mikemikimike](https://github.com/mikemikimike) 在 [PR #18](https://github.com/Qinling-Melon-Farmers/dsh-memoir/pull/18) 中的报告、输出边界分析及旧快照方案对问题定位的帮助。
-- **0.9.3 的 rc.2 适配与修复全部保留**：#16 存储保护、Hot Memory 预算边界与 #17 模板字面量防护见 [CHANGELOG.md](./CHANGELOG.md)；项目记忆仍绑定会话原始项目，切换执行目录不转移归属。恢复 CLI 支持的八个官方 SDK 版本和安全边界见[恢复说明](./SESSION_RECOVERY.md)；运行时兼容不等于任意历史日志均可恢复。
-
-## 为什么选择 dsh-memoir
-
-| 能力 | 用户得到什么 |
-| --- | --- |
-| 本地优先 | JSON 单一事实源与项目内 `PROJECT_MEMORY.md`；不上传记忆，不依赖外部服务 |
-| 自动蒸馏提醒 | 顶层 Agent 完成有效工作回合时提醒归纳，由 `memoir_record` 透明落盘；跳过 idle、aborted、subagent 和已记录回合 |
-| 有界 Hot Memory | 只把高价值记忆放进 system prompt，受 token 预算硬限制；同一会话冻结前缀以提高 prompt-prefix cache 命中 |
-| BM25 排序召回 | 中文短语、英文关键词、代码标识符和路径都可检索；跨项目 Top-K 与查询 LRU 缓存共用同一引擎 |
-| 可治理的记忆 | 重要度、置顶、标签、归档、恢复和 supersede 生命周期；相似写入必须显式更新、替代或并存 |
-| 可追溯 | Agent 写入记录可信 session/turn 来源，Web 面板可复制并尽力跳回原会话 |
-| 完整 Web GUI | 中英双语项目/全局浏览、排序搜索、编辑、Hot Memory 预览、诊断和实时设置；可独立选择 Agent 侧中文、英文、德语或俄语 |
-
-适合需要“新 Agent 接手时继续理解项目”的个人或本地开发工作流。它不是原始聊天记录备份、多人云同步服务或向量语义知识库。
-
-### 界面预览
-
-**0.9.0 组件界面预览，使用演示数据。** 顶部常驻插件身份、GitHub、文档与记忆设置入口，无需滚过长列表。
-
-![0.9.0 界面预览：首屏插件导引与记忆浏览](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
-
-## 工作原理
-
-```text
-有效工作回合
-    │  自动蒸馏提醒
-    ▼
-memoir_record / memoir_update
-    │
-    ├── ~/.dsh/dsh-memoir.json       完整结构化历史（SSOT）
-    ├── <项目>/PROJECT_MEMORY.md      可读、可提交的投影
-    └── Retrieval Index              倒排索引 + BM25 + 查询缓存
-              │
-              ├── Hot Memory Selector ──> 有界 system-prompt 注入
-              └── memoir_read / Web ────> 按需召回长尾历史
+```sh
+dsh plugin --profile desktop add dsh-memoir@0.9.5
 ```
 
-完整历史与 Hot Memory 是两层数据：
+Web 与 Desktop 的插件安装、启用分别管理。使用同一 DSH_HOME 和相同数据路径时共享记忆与设置文件；不同 DSH_HOME、不同机器不会自动同步。安装或升级后重新加载插件，必要时重启对应的 `dsh web` 或桌面应用；只刷新页面不足以重新加载宿主插件。界面缺失时先核对 profile 和宿主版本。
 
-- **Full Memory** 保留全部记录，用于 GUI、人工审阅、Markdown 投影和排序检索。
-- **Hot Memory** 只选择预算内的 actions、lessons 与 recent state；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
-- **Session Snapshot** 按会话持久化冻结注入基线，重启恢复与内存淘汰后继续复用原文。0.9.3 通过关闭记忆 section 的变量插值保护旧基线，注入文本与已存快照均保持原样。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新；恢复失败会显式报告降级。
+## 界面预览
 
-### 快照恢复与清理（0.7.1）
+以下是 **0.9.0 历史界面预览**，不是 0.9.5 的新截图。组件预览使用演示数据；插件信息、文档和记忆设置入口常驻顶部。
 
-**0.9.3 升级提示：** #17 防护同时覆盖进程内缓存和磁盘恢复的旧快照，升级并重新加载插件即可，无需按下面的磁盘清理步骤删除它们。记忆 section 关闭变量插值后，含模板字面量的旧基线仍按原文输出，花括号与冻结前缀保持不变；这不等于修复 #14 的异常回执或其它旧日志故障。
+![0.9.0 组件预览：插件导引与记忆浏览（演示数据）](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
 
-- 默认目录：`$DSH_HOME/dsh-memoir.json.snapshots/`；自定义 storePath 时为 `<storePath>.snapshots/`。记录按数据源/设置文件的哈希、语言和会话哈希分开保存；按需读取，不在启动时加载全部文件。
-- `sessionSnapshotMax` 只限制内存 LRU。磁盘记录无自动 TTL，不随缩容、卸载或清理内存删除；备份记忆时请一起备份该目录。需要回收磁盘时先停止相关 DSH 进程并备份，再人工删除确定不再恢复的记录。删除后再次访问会建立新基线。
-- 语言切换使用独立快照空间；切回原语言会复用其旧基线。预算修改仅影响新基线；fork/新 session id 不借用父会话快照。
-- 升级前已丢失快照的旧会话，首次使用新版只能按当前记忆建立一次新基线；不从历史 system prompt 猜测截取原文。读取损坏、权限或锁失败时保留原文件，回退到进程内冻结；诊断页和日志会提示重启稳定性降级。
-- 单条文本上限 256 KiB，记录上限 2 MiB；超限走同样的可诊断降级。POSIX 新目录/记录使用 0700/0600，Windows 权限仍由目录 ACL 管理。记录含记忆文本，应视为用户数据。
-- 本修复消除可恢复快照的重复重建，不能保证提供商仍保留 KV cache 或保证命中率。
+<details>
+<summary>更多界面与历史截图（均保留原版本）</summary>
 
-## Agent 工具与记忆生命周期
+原生插件详情页直接复用记忆设置。第一张为 DSH 0.2.0-rc.1 的实际宿主界面；第二张为英文 GUI 中选择德语 Agent 文案的组件预览。
+
+![0.9.0 原生插件详情配置（DSH 0.2.0-rc.1）](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-host-plugin-zh.png)
+![0.9.0 组件预览：英文 GUI 与德语 Agent 文案（演示数据）](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-settings-en.png)
+
+历史截图来源：[0.9.0 离线公告（演示数据）](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-announcement-zh.png) · [0.7.1 快照诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png) · [0.7.0 原生设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png) · [0.6.2 蒸馏诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)。
+
+更早来源：[0.6.1 全局项目分组](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png) · [0.6.1 设置导航](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png) · [0.6.1 滚动布局](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png) · [0.6.0 原生视图](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png) · [0.5.6 记忆治理预览](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png) · [0.5.6 设置卡](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png) · [0.5.6 侧栏预览](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.5-sidebar-parity-zh.png)。链接版本为发布来源，文件名保留原组件版本。
+
+</details>
+
+## 如何使用、能力与边界
+
+1. 打开项目会话中的「记忆」，或从右侧栏打开记忆面板；也可在原生插件详情页或设置页进入记忆设置。侧栏不会自动打开或替换其它面板；缺少侧栏服务时其它入口仍可用。
+2. 完成工作后，让 Agent「记录本次结论、教训和下一步」，或等待符合条件的自动蒸馏提醒。也可在面板手工新增、编辑、置顶、归档、恢复或替代。
+3. 在「记忆浏览」中搜索项目或全局历史，在 Hot Memory 中查看新会话的注入候选，在「诊断」中检查索引、查询缓存、快照和写入结果。
+
+### 工具与记忆治理
 
 | 工具 | 用途 |
 | --- | --- |
-| `memoir_record` | 写入 work / lessons / actions / note；写前返回可解释的相似或冲突候选 |
-| `memoir_update` | 保留 id 和创建时间，更新正文、分类、重要度、标签与生命周期 |
-| `memoir_read` | 在 project（默认）/ global / all 范围内进行 compact 或 full 的本地排序召回 |
+| `memoir_record` | 写入 work / lessons / actions / note；写前返回相似或冲突候选 |
+| `memoir_update` | 保留 id 和创建时间，修改正文、分类、重要度、标签与生命周期 |
+| `memoir_read` | 在 project（默认）/ global / all 范围按相关度召回，支持 compact / full 输出 |
 
-每条记忆可设 1–5 重要度，默认 **3** 代表中性优先级；置顶会获得额外 Hot Memory 权重。默认只召回 `active`，被归档或替代的历史仍可检查和恢复，不会被自动删除。
+重要度为 1–5，默认 **3** 是中性优先级；置顶另有 Hot Memory 权重。默认召回 `active`，归档和被替代的历史仍可检查、恢复，不会自动删除。相似提示不等于判定真伪，必须显式选择 `update`、保留旧历史的 `supersede` 或允许并存的 `force-record`，不会自动合并或删除。
 
-相似记忆治理复用 BM25 候选，再融合标题相似度与 Token Jaccard。插件只提示疑似重复或冲突，不自行判断真伪；调用者必须选择：
+项目记忆绑定会话原始项目，切换执行目录不改变归属。Agent 写入保留可信 session/turn 来源，来源不足时可降级为仅 session；面板可复制标识并尽力打开原会话，不承诺自动定位到具体回合。GUI 手工记录不能伪造可信来源。
 
-- `update`：原地更新现有记录；
-- `supersede`：保留旧历史并标记已被新记录替代；
-- `force-record`：确认两条都应存在。
+### 自动蒸馏与语言
 
-## 自动蒸馏
+自动蒸馏是可观察、可取消的模型收尾提醒，不是静默抓取聊天或无成本后台任务。默认 `1 / 0 / 1`：每个有效工作回合、无额外冷却、至少一次工具调用；三个频率条件按 AND 判定、按 Agent 隔离。idle、aborted、subagent 和已成功保存记忆的回合不触发，冷却只在提醒成功后更新。
 
-0.8.2 诊断页区分提醒提交、实际保存、失败、取消、相似记忆待确认和回执降级。只有成功保存的 `memoir_record` / `memoir_update` 才抑制本回合提醒；失败或相似候选待确认不算写入。保存后宿主仍可能取消最终工具结果，因此计数可以重叠。提醒与后续保存的关联不证明因果或内容正确。GUI 手工写入不计入 Agent 工具计数。
+提醒排入独立收尾回合，来源仍指向原工作回合；不占用原任务答复的回合边界，不计入工作回合频率，也不递归触发蒸馏，可能增加显示的回合数。只有成功保存的 `memoir_record` / `memoir_update` 才抑制本回合提醒；失败或待确认相似候选不算保存。关闭 `autoDistill` 不会关闭手动写入工具。
 
-0.8.2 使用公开 `sessionProjections` 从日志和 checkpoint 重建当前回合，不再读取弃用的 `snapshotEvents()`。每会话只保留当前回合最多 4096 个调用 ID，不保存参数或正文；超出保留范围时来源降级为 session-only。门控最多保留 1024 个 Agent，销毁时清理；旧版写入没有保存回执，不能仅从历史调用推断成功。BM25 是词项召回，不承诺跨语言语义匹配。
+诊断区分提醒提交、实际保存、失败、取消和回执降级；保存后宿主仍可能取消结果，计数可重叠。提醒与后续保存的关联不证明因果或内容正确，GUI 手工写入不计入 Agent 工具计数。旧版已折叠的答案历史不会被升级改写，须展开过程或使用 `normal` 模式查看；修复历史见[更新日志](./CHANGELOG.md)。
 
-自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
+`language` 可选 `zh` / `en` / `de` / `ru`，控制工具描述、参数说明、蒸馏提示、工具结果、校验错误及 Hot Memory / Markdown 标题；工具名、参数名与枚举不变。它与中英 GUI 语言独立，不自动猜测语言或翻译记忆正文。修改即时影响后续提示，无需重启；切换本身不重写 JSON/Markdown，后续写入才使用当前语言的投影标题。
 
-> **0.8.2 修复了新回合的蒸馏答案折叠问题（[#13](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues/13)）**：通过公开 `followup` 排入独立记忆收尾回合，不再用同回合 `steer` 抢占原任务回合的最后一步。短回执、空输出或收尾工具失败都不会改变原任务答复的回合边界；记忆来源仍指向原工作回合。收尾回合不计入 worked-turn 频率，也不会递归触发蒸馏。它仍是可见、可取消的模型收尾，不是无成本后台任务，可能增加会话显示的回合数。
->
-> 升级不会改写旧会话：0.8.0 / 0.8.1 产生的同回合折叠历史仍需展开“用时 / 过程”或切到标准（`normal`）模式查看。本修复不改变 DSH 对任意其他同回合追加步骤的答案选择，也不靠“禁止输出”的提示词掩盖问题。
+### Hot Memory、召回与界面
 
-`autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已成功保存记忆的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
+完整历史保留在本地，只有预算内的 actions、lessons 与 recent state 自动进入 system prompt，不会整份注入 Markdown。每会话冻结 Hot Memory 前缀：新写入立即可被工具和 GUI 读取，自动注入从下一新会话更新；预算变更不重写既有快照。语言各有独立快照空间，切回原语言复用旧基线；fork/新 session id 不借用父快照。
 
-`language` 独立控制 Agent 可见的工具描述、参数说明、蒸馏提示、工具结果、Hot Memory / `PROJECT_MEMORY.md` 标题以及校验与治理错误。已发布 0.8.2 支持 `zh` / `en`，默认 `zh`；切换后工具描述与后续提示即时更新，不要求重启 DSH。
+超出剩余硬预算的候选会被跳过，继续寻找较小条目；首条过大时按完整渲染块缩短正文，必要时缩短标题。最小块仍放不下就跳过，长标题不能突破硬上限。
 
-**0.9.0新增 `de`（Deutsch）和 `ru`（Русский）**，可在记忆设置中明确选择；不是根据 Agent 或用户消息自动猜测语言。工具名、参数名与枚举不变，GUI 仍为中英双语，既有记忆正文不会自动翻译。切换语言本身不重写 JSON 或 Markdown；后续正常写入时投影标题使用当前语言。四种语言各有独立冻结快照空间，切回原语言可继续复用旧基线。降级到 0.8.2 前请先改回 `zh` 或 `en`。
+记忆中的 `{{...}}` 等模板字面量按原文输出，覆盖新记忆、内存旧快照及磁盘恢复快照；无需删除快照或改写原始记忆。冻结前缀有助缓存，但不保证提供商 KV cache、命中率或账单节省。
 
-## 本地召回与缓存
+BM25 支持中文 2/3-gram、Unicode 字母/组合标记/数字和代码/路径标识符，使用 NFC 归一化、真实词频、标题加权及短语/分类/时间权重。GUI 与工具共用跨项目去重 Top-K 和感知数据更新的 LRU 查询缓存；不同 `limit` 和输出详略共享排序。它是词项检索，不提供自动翻译、词形还原或跨语言语义匹配。
 
-- 中文 2/3-gram + 英文单词 + 代码/路径标识符分词；
-- BM25 文档侧保留真实词频，标题 2.5× 加权，另有精确短语、分类与时间权重；
-- 标题与正文独立长度归一化；
-- project / global / all 共用去重后的全局 Top-K；
-- epoch 感知、1 小时时间桶的 LRU 查询缓存；`limit` 与输出详略不进入缓存键，因此不同输出形态共享排序结果；
-- GUI 和 `memoir_read` 使用同一个 RetrievalEngine，并暴露 hits、misses、evictions、命中率与最近查询耗时。
+界面提供项目/全局分组、状态/分类/关键词筛选及 BM25 分数；每批展示 20 条记忆或项目，长正文默认六行，可展开。浏览、设置、Hot Memory、诊断各自保留滚动位置，列表末项避让输入框；支持键盘方向键、Home/End、项目折叠和焦点提示。GUI 跟随宿主中英语言设置。
 
-0.9.0将词项分割扩展为 Unicode 字母/组合标记/数字并做 NFC 归一化，保留德语变音字符与俄语西里尔字母；不修改原始正文，保留中文和代码标识符规则。它仍是词项检索，不提供自动翻译、词形还原或跨语言语义搜索。
+首次打开记忆会话页展示离线更新摘要，不阻塞对话；确认后同一 UI 存储空间的该版本不再自动展示，可从「关于与帮助」重看。设置页和侧栏不自动弹出；存储不可用时只在当前页面去重，Web/Desktop 确认状态不保证共享。公告不联网或改动记忆，插件不自动检查或升级。
 
-固定质量集的 Top-5 命中率为 100%，仓库门禁要求不低于 90%。
+「关于与帮助」显示插件版本、宿主范围、SDK 基线与维护者；链接指向插件项目，不是当前工作区仓库，也不会探测工作区 Git remote。更新通过宿主插件管理器进行，先核对目标包的宿主版本与预发布通道。
 
-## Web GUI
-
-安装到兼容 DSH 的 `web` profile 后，Memoir 通过官方 slot 注册原生「记忆」会话视图和「记忆」Settings 分区；布局、导航与卸载生命周期均由 DSH shell 管理，不再通过 DOM 选择器接管旧侧边栏。
-
-- 项目记忆与所有项目的全局记忆；全局视图按项目默认折叠并显示完整生命周期计数；
-- 状态、分类和关键词筛选，BM25 分数展示；
-- 新增、编辑、置顶、归档、恢复和替代；
-- session/turn 来源复制与尽力跳转；
-- Hot Memory Inspector：下一会话将继承什么；
-- Retrieval Diagnostics：索引、查询缓存、最近查询和会话快照；
-- 常驻 `记忆浏览 / 记忆设置 / Hot Memory / 诊断` 二级导航，各功能区拥有独立有界滚动位置；
-- 每批渐进展示 20 条记忆或 20 个项目，长正文默认折叠为六行并可显式展开；
-- 使用 DSH 原生 composer-overlay 契约，长列表可完整滚动且最后一项不会被对话输入框遮挡；
-- 页签支持方向键、Home、End，项目折叠具备 `aria-expanded` 与清晰焦点状态；
-- GUI 跟随 `<html lang>` 在中文和英文间即时切换；Agent 侧语言由独立的 `language` 设置控制。
-
-<details>
-<summary>0.9.0 界面预览：原生插件配置入口与多语言设置</summary>
-
-原生插件详情页直接复用记忆设置，不必先打开记忆列表。下图为 DSH 0.2.0-rc.1 的原生插件详情页。
-
-![0.9.0 原生插件详情配置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-host-plugin-zh.png)
-
-英文 GUI 中也可独立选择德语 Agent 文案；设置与记忆浏览分别滚动。
-
-![0.9.0 界面预览：英文界面选择德语 Agent 文案](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-settings-en.png)
-
-</details>
-
-<details>
-<summary>已发布历史版本 GUI 截图</summary>
-
-![v0.6.1 按项目折叠的全局记忆](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-global-project-groups-zh.png)
-
-![v0.7.1 在 DSH rc.2 中的快照持久化诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.1/picture/v0.7.1-snapshot-persistence-zh.png)
-
-![v0.7.0 在 DSH 0.1.5-rc.1 中的原生记忆设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.7.0/picture/v0.7.0-dsh015-settings-zh.png)
-
-![v0.6.2 自动蒸馏生命周期诊断](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.2/picture/v0.6.2-distill-diagnostics-zh.png)
-
-![v0.6.1 常驻功能导航与实时设置](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-settings-navigation-zh.png)
-
-![v0.6.1 对话视图滚动到底且避让输入框](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.1/picture/v0.6.1-conversation-scroll-zh.png)
-
-![DSH alpha.2 原生记忆会话视图](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.6.0/picture/v0.6.0-alpha2-native-zh.png)
-
-![记忆生命周期与相似治理](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.4-memory-management-zh.png)
-
-![Settings 设置卡](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.6-settings-card-zh.png)
-
-![侧边栏对齐](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.5.6/picture/v0.5.5-sidebar-parity-zh.png)
-
-</details>
-
-## 安装与兼容性
-
-| 渠道 | DSH 基线 | 安装方式 | 状态 |
-| --- | --- | --- | --- |
-| npm 固定版 `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | `dsh plugin --profile web add dsh-memoir@0.9.4` | SDK 0.2.1-rc.5；兼容 0.2.0-rc.1 / rc.2、0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 |
-| npm 固定版 `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | `dsh plugin --profile web add dsh-memoir@0.8.2` | 旧 0.1.7 兼容线，仍受 #14 影响 |
-| npm 固定版 `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | `dsh plugin --profile web add dsh-memoir@0.7.1` | 旧 0.1.5 维护线 |
-| npm 固定版 `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@0.6.2` | 旧 0.1.2 兼容线 |
-| npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| 源码 `v0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | 本地构建 + `link:` | SDK 0.2.1-rc.5；开发调试，不兼容旧 0.1.x |
-
-本版开发 SDK 统一固定为 `0.2.1-rc.5`。兼容矩阵中的宿主支持与 #14 恢复 CLI 的后端、文件格式及 generation 限制是不同边界；恢复范围见 [SESSION_RECOVERY.md](./SESSION_RECOVERY.md)。
-
-需要 Node.js `^22.19.0 || >=24.0.0`。0.7.1 继续使用原生 `conversation.view` / `settings.section` 与 `snapshotEvents()`。DSH 0.1.5 的会话日志升级至 V3；其迁移与 Memoir 的 store v4 / settings v3 是独立格式。升级 DSH 前备份 DSH_HOME，迁移后的 DSH 会话不能承诺被旧宿主读取。Memoir 本次不迁移或清空记忆，也不启用新动态提示词行为；既有会话快照语义保持不变。
-
-<details>
-<summary>从源码安装</summary>
-
-0.9.4 源码（开发 SDK / 示例宿主 DSH 0.2.1-rc.5）：
-
-```bash
-git clone --branch v0.9.4 https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
-pnpm install --frozen-lockfile
-pnpm run build
-npm install --global @deepseek-ai/dsh@0.2.1-rc.5
-dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
-```
-
-</details>
-
-0.8.2 使用原生 `uiWorkspace`、`conversation.view` / `settings.section` 与 Session V4 专属蒸馏来源。来源链接打开会话，回合编号可复制；不通过全局 DOM 自动滚到回合。设置页继承宿主背景、卡片使用主题层级色，保留皮肤覆盖与独立滚动。store v4 / settings v3 / snapshot v1 不变。升级 DSH 前备份 DSH_HOME，其会话迁移与插件记忆是两回事。
-
-## 原生侧栏与帮助入口
-
-**已发布 0.8.2：**
-
-- 会话“记忆”和设置页入口保持不变；右侧栏引导页新增“记忆”，可边对话边看项目记忆、Hot Memory 和诊断，不会自动打开或抢占其它面板。
-- 侧栏读取所属会话的工作区，复用同一数据层；每个实例独立保存当前功能区和滚动状态。缺少侧栏服务时，会话页和设置页仍可用。
-- 任一记忆面板的“记忆设置”底部提供默认折叠的“关于与帮助”：显示插件版本、宿主范围、SDK 基线、维护者，以及仓库、双语文档、Release、反馈链接。插件仓库与当前工作区明确区分。
-- 关于区不后台联网、不探测工作区 Git remote、不上传路径或记忆内容。更新通过宿主插件管理器操作，先核对目标包要求的 DSH 版本和预发布通道；本面板不自动升级。
-
-**0.9.0：**
-
-- 插件名、版本、GitHub 项目、文档和“打开记忆设置”前移到面板顶部，打开会话、设置或右侧记忆面板即可看到，无须先滚过记忆或设置列表。详细兼容信息保持折叠，不强制跳转或请求 Star。
-- 原生“插件”页面中打开 `dsh-memoir` 详情，即可使用同一套记忆设置表单；不另建一份配置，不向官方插件分组冒充注册。宿主没有此页面时，原有记忆入口仍可用。
-- 开发 SDK 与兼容性基线升级到官方 npm `0.2.0-rc.1`；安装前核对宿主版本。旧 DSH 0.1.7 的 Memoir 0.8.2 也受 #14 影响，建议备份后一起升级宿主和插件，参见顶部兼容与恢复提示。
-
-## 离线更新公告
-
-首次打开记忆会话页时展示 0.9.4 更新摘要，提示 DSH 0.2.1-rc.5 基线、恢复 CLI 扩展至 rc.3 / rc.4 / rc.5、兼容基线一致性回归，以及格式不变无需迁移、#14 旧日志仍须单独恢复的边界，不阻塞对话；点击“知道了”后，同一浏览器 origin 的本版本不再自动展示。“关于与帮助 → 查看本版更新”可随时重看。设置页和右侧栏不会自动弹出公告。下图保留为已标注版本的 0.9.0 历史预览。
-
-公告随包内置、中英双语，不联网、不上传信息、不改变记忆或对话。仅在 UI 本地存储记录已确认版本；存储不可用时退化为当前页面去重，Web/桌面端或不同 origin 的确认状态不承诺同步。
-
-![0.9.0 离线公告组件预览（演示数据）](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-announcement-zh.png)
-
-## 存储、隐私与安全边界
-
-```text
-~/.dsh/dsh-memoir.json          结构化 JSON v4（单一事实源）
-~/.dsh/dsh-memoir.settings.json GUI 运行时设置覆盖
-<项目>/PROJECT_MEMORY.md        从 JSON 生成的人类可读投影
-```
-
-- 无云端记忆库、embedding API 或向量数据库；
-- 浏览器提交任意绝对路径不能获得写权限，面板写入只接受可信活动工作区或已存在的项目桶；
-- 浏览器手工记录不能伪造可信 session/turn 来源；
-- 跨进程写入使用独占锁并在临界区重新读盘，保守回收死亡进程遗留锁；
-- Windows 路径键大小写归一化，展示路径保留原样；
-- `PROJECT_MEMORY.md` 可能被你提交到 Git，敏感内容是否进入仓库由使用者决定。
-
-建议在升级前按自己的备份策略保存上述 JSON 与项目 Markdown。卸载插件不会主动删除它们。
+历史性能数据见 [benchmark report](./bench/report.md)；结果依语料与环境变化，不代表当前版本的性能、语义准确率或节费保证。
 
 ## 配置
 
-以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除 `enabled` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
+以下参数可写入 profile 组合中 memoir 的 `config`（挂载示例见 [cordis.patch.yml](./cordis.patch.yml)）；除 `enabled` 外，也可从记忆面板、设置页或原生插件详情即时修改并持久化到 DSH_HOME。
 
-| 字段 | 默认值 | 作用 |
+| 参数 | 默认值 | 作用 |
 | --- | ---: | --- |
 | `enabled` | `true` | 工具、路由和 prompt 注入总开关 |
-| `language` | `zh` | Agent 文案语言；0.8.2 为 `zh` / `en`，0.9.0 新增 `de` / `ru`；与 GUI 语言独立 |
-| `announceToAgent` | `true` | 向 Agent 公告记忆工具与规则 |
-| `autoDistill` | `true` | 启用顶层有效回合收尾提醒 |
-| `autoDistillEvery` | `1` | 每 N 个 worked turn 最多提醒一次 |
-| `autoDistillCooldownMin` | `0` | 两次成功提醒的最短分钟间隔 |
-| `autoDistillMinTools` | `1` | 触发回合所需的最少工具调用数 |
-| `hotMemoryTokens` | `900` | Hot Memory 常规目标预算 |
-| `hotMemoryMaxTokens` | `1200` | 任何会话都不能超过的硬上限 |
+| `language` | `zh` | Agent 语言：`zh` / `en` / `de` / `ru`，独立于 GUI |
+| `announceToAgent` | `true` | 向 Agent 注入记忆规则与 Hot Memory；关闭后工具和 GUI 仍可用 |
+| `autoDistill` | `true` | 启用顶层有效工作回合收尾提醒 |
+| `autoDistillEvery` | `1` | 每 N 个有效工作回合最多提醒一次 |
+| `autoDistillCooldownMin` | `0` | 两次成功提醒之间的最短分钟间隔 |
+| `autoDistillMinTools` | `1` | 触发回合所需最少工具调用数 |
+| `hotMemoryTokens` | `900` | 新会话 Hot Memory 目标 token 预算 |
+| `hotMemoryMaxTokens` | `1200` | 新建会话快照的硬预算上限 |
 | `readDefaultLimit` | `8` | `memoir_read` 默认结果数 |
 | `readMaxLimit` | `30` | 单次召回实时上限 |
 | `sessionSnapshotMax` | `128` | 内存快照 LRU 容量，不删除磁盘快照 |
 | `queryCacheSize` | `128` | BM25 查询 LRU 容量 |
 
-缩小缓存容量会立即淘汰最旧项；已冻结会话不会因预算修改而重写，以维持 prompt 前缀稳定。“恢复启动配置”会删除 Web 覆盖并回到 profile 的启动值。
+整数参数最少为 1，冷却最少为 0；硬预算/召回上限不能小于对应目标/默认值。缩小缓存会立即淘汰最旧项；预算变更只影响新快照。「恢复启动配置」删除持久覆盖并回到 profile 启动值，不清空记忆。
 
-## 性能与验证
+## 数据安全与恢复
 
-v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`](./bench/report.md)）：
+### 文件、隐私与备份
 
-| 记录数 | 索引构建 | 未缓存查询 | 缓存查询 | 相对完整 Markdown 的注入降幅 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 10.5 ms | 1.190 ms | 4.07 µs | 97.6% |
-| 10,000 | 126.9 ms | 11.011 ms | 1.45 µs | 99.8% |
-| 100,000 | 1.68 s | 126.933 ms | 1.42 µs | 约 100% |
+默认 DSH_HOME 为 `~/.dsh`；自定义数据路径时以实际配置为准。
 
-基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
+| 文件 | 内容 |
+| --- | --- |
+| `$DSH_HOME/dsh-memoir.json` | 完整结构化历史，JSON store v4，单一事实源 |
+| `$DSH_HOME/dsh-memoir.settings.json` | GUI 持久设置覆盖，settings v3 |
+| `$DSH_HOME/dsh-memoir.json.snapshots/` | 按需读取的会话冻结快照，snapshot v1；自定义时为 `<storePath>.snapshots/` |
+| `<项目>/PROJECT_MEMORY.md` | 从 JSON 生成的可读投影，可由使用者提交 Git |
 
-自动化回归覆盖会话投影恢复、跨进程快照、写入与取消、生命周期清理、BM25 召回、Hot Memory 预算、缓存、纠错与跨项目隔离。固定词项样本的 Top-5 召回为 41/41；样本结果不代表真实模型的语义正确率，前缀一致性也不等同于实际账单节省保证。
+- 插件无独立云端记忆服务，不额外上传记忆或工作区路径；通过工具读取或注入 prompt 的内容会进入当前模型上下文。是否将敏感 Markdown 提交 Git 由使用者决定。
+- 面板写入只接受可信活动工作区或已有项目桶；提交任意绝对路径不授予写权限。跨进程写入使用独占锁并在锁内重新读盘，保守回收死亡写者锁；Windows 路径键大小写归一化，展示路径保持原样。
+- 未来 store 格式、读取错误或损坏文件备份失败时拒绝继续加载/覆盖；仅成功保存损坏原件后才可新建空库。Windows 临时 rename 失败采用有界重试，耗尽仍报错。
+- 升级前备份记忆 JSON、设置、快照目录和项目 Markdown；升级或卸载插件不自动删除它们。0.9.5 不迁移这些格式。DSH 自身会话迁移是另一件事，应备份整个 DSH_HOME；迁移后不保证旧宿主可读。
 
-## 常见问题
+### 快照保留与清理
 
-**会自动总结所有聊天吗？**<br>
-不会静默抓取所有对话。插件在符合条件的回合结束时提醒当前 Agent 归纳，Agent 通过公开工具写入，因此过程可观察、可审查。
+`sessionSnapshotMax` 只约束内存 LRU。磁盘快照按数据源/设置文件哈希、语言与会话哈希分开保存，无自动 TTL，不随缩容、卸载或清理内存删除。确需回收时先停止相关 DSH 进程并备份，再人工删除确定不再恢复的记录；再次访问会建立新基线。
 
-**为什么新记忆的重要度总是 3？**<br>
-3 是 1–5 标度的中性默认值，避免未显式评分的内容被当成低价值或最高优先级。可在工具参数或 GUI 中调整，置顶另有独立权重。
+快照已丢失的旧会话只能按当前记忆建立一次基线，不从历史 system prompt 猜测原文。损坏、权限、锁或超限错误保留原件并回退到进程内冻结，诊断/日志会报告重启稳定性降级。单条文本上限 256 KiB、记录上限 2 MiB；POSIX 新目录/文件为 0700/0600，Windows 由目录 ACL 管理。快照含记忆文本，应视为用户数据。
 
-**为什么当前会话没有立刻重新注入刚写的记忆？**<br>
-会话内 Hot Memory 快照刻意冻结以保护 prompt-prefix cache。刚写内容可立即被 `memoir_read` 和 GUI 看见，新会话会自动重建并注入。
+### 旧会话打不开（#14）
 
-**它会把完整记忆都塞进上下文吗？**<br>
-不会。只有受 `hotMemoryMaxTokens` 约束的 Hot Memory 自动注入；完整历史按需检索。
+**0.8.1–0.9.0 写入的异常回执可能导致会话重开失败；升级 Memoir 或 DSH 都不会自动修复旧日志。** 0.9.1 起阻止新增异常回执，0.9.5 保留该修复；模板字面量防护也不修复任意历史日志。
 
-**安装后为什么看不到界面？**<br>
-确认命令包含 `--profile web`，然后彻底重启 `dsh web`，仅刷新浏览器页面不够。
+按[会话恢复指南](./SESSION_RECOVERY.md)使用 npm 内置的 `dsh-memoir-repair`：先停止受影响旧插件写入并升级到兼容修复版，针对一个具体文件只读检查；全部 Web/CLI/Desktop/后台宿主退出并独立备份后，才显式 `--apply --host-stopped`。仅关闭自动蒸馏不能阻止手动写入。
+
+只接受指南白名单内版本一致的官方宿主/backend/SDK，含 `0.2.2-rc.1`；仅处理目录与头部匹配的活动原生 `session.v4.jsonl[.zstd]`，不扫描用户目录或迁移代次。拒绝更新格式取代的 v4、混版、路径别名/链接、损坏、混合编码和无校验和 zstd 帧；存储及解压后均最多 128 MiB。
+
+执行须持有官方写锁并持续停机：Windows 为同一登录会话 semaphore，POSIX 为稳定 `session.lock` inode 上的 flock，仅限可信本地文件系统，不用于网络盘或跨登录共享。仅给匹配的旧回执补 `ignorable: true`，不删事件或改正文/顺序；保留原始字节 `.bak` 后同目录原子替换，重复执行无操作。Windows 替换继承目录 ACL，不保留原文件专属 ACL。错误处理、残留 `.tmp`/`.bak`、`committed: true` 与回退按指南处理，不要删除原日志、降级格式或批量删未知缓存。
+
+## 兼容旧版本
+
+<details>
+<summary>展开宿主范围、旧兼容线及升级限制</summary>
+
+0.9.5 的宿主/peer 范围为 `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.2-rc.1 <0.2.2`。保留官方 0.2.0-rc.1 / rc.2 和 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 兼容线；范围不代表其中所有或未来构建均已验证，也不放行 0.2.2-alpha。运行兼容不等于任意历史日志可恢复。
+
+| Memoir 固定版本 | DSH 范围 | 注意事项 |
+| --- | --- | --- |
+| `0.9.5` | 上述范围；开发基线 `0.2.2-rc.1` | 当前版；记忆/设置/快照格式不变 |
+| `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | 历史 SDK 基线 `0.2.1-rc.5`，无 0.2.2-rc.1 适配 |
+| `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | 旧 0.1.7 线，仍受 #14 影响 |
+| `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | 旧 0.1.5 线，含重启/内存淘汰后快照修复 |
+| `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | 旧 0.1.2 线 |
+| `0.5.6` | `0.1.1-rc.2` | 旧 rc.2 线 |
+
+旧宿主须选择对应插件版本；上述旧线不包含当前全部修复，建议备份后一起升级宿主和插件。降到 0.8.2 前先把 Agent 语言改回 `zh` 或 `en`。插件 Node engine 保留 `^22.19.0 || >=24.0.0` 以支持旧宿主；当前开发 SDK 和 DSH 0.2.2-rc.1 仍要求 Node `>=24.9.0`。完整适配与修复历史见[更新日志](./CHANGELOG.md)。
+
+</details>
 
 ## 开发与贡献
 
-```bash
-pnpm install --frozen-lockfile
-pnpm run build
-pnpm run typecheck
-pnpm test
-npm run bench
-```
+开发基线为官方 npm DSH SDK `0.2.2-rc.1`，使用 Node `>=24.9.0` 和 pnpm。开发准备、构建及提交规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)；组合挂载示例见 [cordis.patch.yml](./cordis.patch.yml)。
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。0.9.4 版本变化见 [CHANGELOG.md](./CHANGELOG.md)，开发 SDK 基线为 DSH 0.2.1-rc.5；旧兼容线与风险见上方兼容性表。正式包由 tag 工作流通过 npm OIDC 发布，发布状态以 [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) 与 npm 为准。
-
-Apache-2.0
+[源码与反馈](https://github.com/Qinling-Melon-Farmers/dsh-memoir) · [Issues](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues) · [更新日志](./CHANGELOG.md) · [发布记录](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) · [Apache-2.0](./LICENSE)

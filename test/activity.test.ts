@@ -5,7 +5,7 @@ import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { Session, SessionId, SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { ToolCallId, createUserMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import { ACTIVITY_KEY, activityProjection, emptyActivity, CALL_LIMIT, writeReceiptMeta } from '../lib/activity.js'
+import { ACTIVITY_KEY, activityProjection, registerActivity, emptyActivity, CALL_LIMIT, writeReceiptMeta } from '../lib/activity.js'
 import { installAutoDistill, DistillDiagnostics } from '../lib/autodistill.js'
 import { memoirRecordTool, memoirUpdateTool, resolveMemorySource } from '../lib/tools.js'
 import { MemoirStore } from '../lib/store.js'
@@ -18,20 +18,20 @@ function userEvent(data: ReturnType<typeof createUserMessage>): SessionEvent {
   return session.append('user/message', data, { surfaceOp: 'append' })
 }
 
-test('activity projection replays late registration, checkpoints and remounts without retaining content', () => {
+test('activity projection replays late registration, checkpoints and remounts without retaining content', async () => {
   const session = Session.create(SessionId('late'), [], { id: SessionId('late'), version: SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false })
   session.append('tool/call', { turn: 8, step: 1, callId: ToolCallId('root'), name: 'run_code', arguments: 'sensitive arguments' })
   const root = new Context()
   const registry = new SessionProjectionRegistry(root)
-  const dispose = registry.register(activityProjection)
+  const handle = await registerActivity(registry)
   try {
-    assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.toolCalls, 1)
+    assert.equal(handle.stateOf(session).toolCalls, 1)
     session.append('tool/call', { turn: 8, step: 2, callId: ToolCallId('write'), name: 'memoir_record', arguments: '{}' })
     const checkpoint = registry.checkpoint(session)
     assert.ok(!JSON.stringify(checkpoint).includes('sensitive'))
     const receipt = session.append('tool/result', { turn: 8, step: 2,
       message: createToolResultMessage({ callId: ToolCallId('write'), content: [], isError: false }), meta: writeReceiptMeta(true) }, { surfaceOp: 'append' })
-    assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.recorded, true)
+    assert.equal(handle.stateOf(session).recorded, true)
     // Full replay and cold checkpoint replay have identical state.
     const restored = registry.restore(checkpoint, [receipt], SessionLogOffset(Number(receipt.seq)), session.header, SessionLogOffset(0))
     assert.equal((restored.checkpoint[ACTIVITY_KEY]?.val as { recorded: boolean }).recorded, true)
@@ -40,13 +40,13 @@ test('activity projection replays late registration, checkpoints and remounts wi
     assert.equal(registry.restoreFloor(legacyCheckpoint), 0, 'old projection checkpoints force full replay')
     const upgraded = registry.restore(legacyCheckpoint, session.snapshotEvents(), SessionLogOffset(0), session.header, SessionLogOffset(0))
     assert.deepEqual(upgraded.checkpoint[ACTIVITY_KEY]?.val, frozen[ACTIVITY_KEY]?.val)
-    assert.deepEqual(registry.stateOf(session, ACTIVITY_KEY), frozen[ACTIVITY_KEY]?.val)
-    dispose()
+    assert.deepEqual(handle.stateOf(session), frozen[ACTIVITY_KEY]?.val)
+    await handle.dispose()
     assert.equal(registry.stateOf(session, ACTIVITY_KEY), undefined)
-    const remount = registry.register(activityProjection)
-    assert.equal(registry.stateOf(session, ACTIVITY_KEY)?.recorded, true)
-    remount()
-  } finally { dispose() }
+    const remount = await registerActivity(registry)
+    assert.equal(remount.stateOf(session).recorded, true)
+    await remount.dispose()
+  } finally { await handle.dispose() }
 })
 
 test('write receipts must match memoir calls and represent a real commit', () => {

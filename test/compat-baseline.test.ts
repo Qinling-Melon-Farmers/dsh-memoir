@@ -100,6 +100,9 @@ test('range matcher reproduces the npm prerelease decisions this release relies 
   assert.equal(satisfiesRange(current, '0.2.1-alpha.1'), true)
   assert.equal(satisfiesRange(current, '0.2.0-rc.1'), true)
   assert.equal(satisfiesRange(current, '0.2.2-alpha.2'), false, '0.2.2 prereleases stay outside until a dedicated line exists')
+  const candidate = current + ' || >=0.2.2-rc.1 <0.2.2'
+  assert.equal(satisfiesRange(candidate, '0.2.2-rc.1'), true)
+  assert.equal(satisfiesRange(candidate, '0.2.2-alpha.3'), false, 'do not admit unaudited earlier alphas')
   assert.equal(satisfiesRange(current, '0.2.2'), true, 'a stable 0.2.2 already satisfies the 0.2.0 floor clause')
   assert.equal(satisfiesRange(current, '0.1.7-rc.2'), false)
   assert.equal(satisfiesRange('>=0.2.2-alpha.2 <0.2.2', '0.2.2-alpha.2'), true)

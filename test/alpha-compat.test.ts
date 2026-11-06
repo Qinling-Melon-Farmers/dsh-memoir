@@ -19,16 +19,16 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>
 }
 
-test('v0.9.4 retains the 0.2.0 floor and admits 0.2.1 prereleases', { skip: swapProbe && 'non-baseline compat probe' }, () => {
-  assert.equal(packageJson.version, '0.9.4')
-  const range = '>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1'
+test('v0.9.5 retains the 0.2.0 floor and admits 0.2.1 and audited 0.2.2 prereleases', { skip: swapProbe && 'non-baseline compat probe' }, () => {
+  assert.equal(packageJson.version, '0.9.5')
+  const range = '>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.2-rc.1 <0.2.2'
   assert.equal(packageJson.dsh?.engines?.dsh, range)
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], range)
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-tools'], range)
   assert.equal(packageJson.dependencies, undefined, 'the published package keeps zero bundled runtime dependencies')
 })
 
-test('v0.9.4 injects native client providers and pins the 0.2.1-rc.5 baseline', { skip: swapProbe && 'non-baseline compat probe' }, () => {
+test('v0.9.5 injects native client providers and pins the 0.2.2-rc.1 baseline', { skip: swapProbe && 'non-baseline compat probe' }, () => {
   assert.deepEqual(packageJson.dsh?.client?.inject, [
     '@deepseek-ai/dsh-api-session-controller',
     '@deepseek-ai/dsh-client-ui-renderer',
@@ -39,15 +39,15 @@ test('v0.9.4 injects native client providers and pins the 0.2.1-rc.5 baseline', 
     '@deepseek-ai/dsh-client-ui-settings-general',
   ])
   assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-runtime'], undefined)
-  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.2.1-rc.5')
+  assert.equal(packageJson.devDependencies?.['@deepseek-ai/dsh-client-ui-slots'], '0.2.2-rc.1')
   for (const [name, version] of Object.entries(packageJson.devDependencies ?? {})) {
     if (name.startsWith('@deepseek-ai/dsh-') && version.includes('rc')) {
-      assert.equal(version, '0.2.1-rc.5', `${name} must compile against the current rc baseline`)
+      assert.equal(version, '0.2.2-rc.1', `${name} must compile against the current rc baseline`)
     }
   }
 })
 
-test('native client adapter source uses official 0.2.1-rc.5 contracts', () => {
+test('native client adapter source uses official 0.2.2-rc.1 contracts', () => {
   assert.match(clientSource, /import type \{ ConvViewProps \} from '@deepseek-ai\/dsh-client-ui-conversation\/client'/)
   assert.match(clientSource, /PropsRuntime<'settings\.section'>/)
   assert.match(clientSource, /SessionListState/)

@@ -2,7 +2,7 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 / 0.2.2-rc.1
  * (format, zstd, lease, win32, generation selection and handle lifetime).
  * Use that installation's public format catalog, not a guessed JSONL schema.
  * Only the active canonical v4 file in a header-matching project/session directory
@@ -31,8 +31,41 @@ const INSERTION = Buffer.from(',"ignorable":true')
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0
 const runtimeCache = new Map()
 // 0.2.1-rc.3/rc.4/rc.5 ship the identical session-persistence-jsonl lib as 0.2.1-rc.2 (byte-for-byte lib audit, 2026-11-01).
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5'])
+// 0.2.2-rc.1 audit (2026-11-05): format/generation/lease/writer match rc.5;
+// backend changes only add snapshot locations and update Node decoder comments.
+// Catalog/filename code is identical. Its v4 codec now accepts foreign delivery
+// markers in an inherited prefix without parentSession; active-tail ownership
+// still rejects them. Use the selected catalog, including that codec dependency.
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-rc.1'])
 const REVIEWED_BACKEND_TEXT = [...REVIEWED_BACKENDS].join(' / ')
+// Check resolution from each validator's own manifest as well as the backend:
+// a nested older codec/Session can otherwise silently change restore policy.
+const VALIDATOR_PACKAGES = new Set([
+  'dsh-session-persistence-jsonl', 'dsh-session-persistence', 'dsh-session', 'dsh-llm',
+  'dsh-session-format', 'dsh-session-format-catalog', 'dsh-session-format-v0-to-v1',
+  'dsh-session-format-v1-to-v2', 'dsh-session-format-v2-to-v3', 'dsh-session-format-v3-to-v4',
+  'dsh-compaction-image-offload',
+].map(name => `@deepseek-ai/${name}`))
+
+async function checkValidatorTree(backendManifest, version) {
+  const pending = [backendManifest]
+  const checked = new Set()
+  while (pending.length) {
+    const manifest = pending.pop()
+    if (checked.has(manifest)) continue
+    checked.add(manifest)
+    const pkg = JSON.parse(await fs.readFile(manifest, 'utf8'))
+    if (!VALIDATOR_PACKAGES.has(pkg.name) || pkg.version !== version) throw new Error()
+    const require = createRequire(manifest)
+    for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
+      if (!VALIDATOR_PACKAGES.has(name)) continue
+      const dependency = require.resolve(`${name}/package.json`)
+      const resolved = JSON.parse(await fs.readFile(dependency, 'utf8'))
+      if (resolved.name !== name || resolved.version !== version) throw new Error()
+      pending.push(dependency)
+    }
+  }
+}
 
 function refuse(code, message) {
   throw Object.assign(new Error(message), { code })
@@ -50,22 +83,26 @@ async function runtimeFor(dshPackage) {
   if (!runtimeCache.has(manifest)) {
     runtimeCache.set(manifest, (async () => {
       try {
+        let hostVersion
         if (dshPackage !== undefined) {
           const pkg = JSON.parse(await fs.readFile(manifest, 'utf8'))
           if (pkg.name !== '@deepseek-ai/dsh') throw new Error()
+          hostVersion = pkg.version
         }
         const rootRequire = createRequire(manifest)
         const backendManifest = rootRequire.resolve('@deepseek-ai/dsh-session-persistence-jsonl/package.json')
         const backend = JSON.parse(await fs.readFile(backendManifest, 'utf8'))
         // Other releases must be reviewed for format AND lease compatibility first.
-        if (!REVIEWED_BACKENDS.has(backend.version)) throw new Error()
+        if (backend.name !== '@deepseek-ai/dsh-session-persistence-jsonl' || !REVIEWED_BACKENDS.has(backend.version)
+          || (dshPackage !== undefined && hostVersion !== backend.version)) throw new Error()
         const require = createRequire(backendManifest)
         const load = name => import(pathToFileURL(require.resolve(name)).href)
         // Mixed SDK trees are not one of the reviewed installations either.
-        for (const name of ['dsh-session', 'dsh-session-format', 'dsh-session-format-catalog', 'dsh-llm']) {
+        for (const name of ['dsh-session', 'dsh-session-persistence', 'dsh-session-format', 'dsh-session-format-catalog', 'dsh-llm']) {
           const pkg = JSON.parse(await fs.readFile(require.resolve(`@deepseek-ai/${name}/package.json`), 'utf8'))
-          if (pkg.version !== backend.version) throw new Error()
+          if (pkg.name !== `@deepseek-ai/${name}` || pkg.version !== backend.version) throw new Error()
         }
+        await checkValidatorTree(backendManifest, backend.version)
         const [catalog, session, llm, format] = await Promise.all([
           load('@deepseek-ai/dsh-session-format-catalog'), load('@deepseek-ai/dsh-session'), load('@deepseek-ai/dsh-llm'),
           load('@deepseek-ai/dsh-session-format'),

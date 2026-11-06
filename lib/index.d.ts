@@ -115,4 +115,4 @@ export declare function memoirSectionText(store: MemoirStore, context: {
  * @param ctx - host plugin context carrying tools/systemPrompt/webServer.
  * @param config - resolved plugin config (defaults apply when absent).
  */
-export declare function apply(ctx: Context, config?: Config): void;
+export declare function apply(ctx: Context, config?: Config): Promise<void>;

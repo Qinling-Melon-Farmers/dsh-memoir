@@ -1,6 +1,7 @@
 /** Bounded, replayable activity projection. No synchronous Session log reads. */
 import { z } from 'zod'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 
 export const ACTIVITY_KEY = 'dsh-memoir/activity'
 export const CALL_LIMIT = 4096
@@ -35,12 +36,12 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-export const activityProjection: ProjectionDefinition<typeof ACTIVITY_KEY> = {
-  key: ACTIVITY_KEY,
+export const activityProjection = {
+  key: ACTIVITY_KEY as typeof ACTIVITY_KEY,
   stateVersion: 3,
   stateSchema: schema,
   init: emptyActivity,
-  apply(previous, event) {
+  apply(previous: MemoirActivity, event: SessionEvent): MemoirActivity {
     if (event.type === 'turn/start' || event.type === 'tool/call' || event.type === 'tool/result' || event.type === 'dsh-memoir/written') {
       const turn = event.data.turn
       if (turn < previous.turn) return previous
@@ -73,4 +74,30 @@ export const activityProjection: ProjectionDefinition<typeof ACTIVITY_KEY> = {
     }
     return previous
   },
+}
+
+/** Public handle shape shared by the modern SDK and our legacy adapter. */
+export interface ActivityHandle {
+  /** Read while the owning registration is active; legacy SDKs cannot read after final release. */
+  stateOf(session: Session): MemoirActivity
+  dispose(): void | Promise<void>
+}
+
+/** Await readiness before exposing tools or turn listeners. Registration owns its effect. */
+export async function registerActivity(registry: SessionProjectionRegistry): Promise<ActivityHandle> {
+  const registration: unknown = await registry.register(activityProjection)
+  // DSH 0.2.0/0.2.1 returns a disposer; 0.2.2 returns a ready reader handle.
+  if (typeof registration === 'function') {
+    return {
+      stateOf: session => schema.parse(registry.stateOf(session, ACTIVITY_KEY)),
+      dispose: () => { registration() },
+    }
+  }
+  if (typeof registration !== 'object' || registration === null ||
+      !('stateOf' in registration) || typeof registration.stateOf !== 'function' ||
+      !('dispose' in registration) || typeof registration.dispose !== 'function') {
+    throw new TypeError('dsh-memoir: unsupported session projection registration')
+  }
+  const handle = registration as ActivityHandle
+  return { stateOf: session => handle.stateOf(session), dispose: () => handle.dispose() }
 }
