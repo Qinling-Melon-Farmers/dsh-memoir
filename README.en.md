@@ -55,6 +55,23 @@ Earlier sources: [0.6.1 global project groups](https://raw.githubusercontent.com
 2. After working, ask the agent to record conclusions, lessons and next steps, or wait for an eligible distillation reminder. You can also add, edit, pin, archive, restore or supersede entries manually in the panel.
 3. Search project or global history in Browse, inspect injection candidates for new sessions in Hot Memory, and check the index, query cache, snapshots and write outcomes in Diagnostics.
 
+### How it works
+
+```text
+Eligible worked turn -> Distillation reminder (separate wrap-up turn)
+                                      |
+                                      v
+                           memoir_record / memoir_update
+                                      |
+                                      v
+                           JSON store (single source of truth)
+                             +--> PROJECT_MEMORY.md (readable projection)
+                             +--> BM25 index + query LRU --> memoir_read / GUI search
+                             `--> Hot Memory Selector --> Frozen session snapshot --> system prompt
+```
+
+Reminders require the AND gate; only an actual tool save confirms persistence. Manual writes do not require a reminder first. BM25 recall and Hot Memory selection read structured memory independently; the selector does not depend on BM25 search results.
+
 ### Tools and memory governance
 
 | Tool | Purpose |
@@ -69,7 +86,7 @@ Project memory stays anchored to the original session project when the execution
 
 ### Automatic distillation and language
 
-Automatic distillation is observable, cancelable model work, rather than silent chat scraping or a free background task. Defaults are `1 / 0 / 1`: each eligible worked turn, no extra cooldown, at least one tool call. All three cadence conditions use AND semantics and are isolated per agent. Idle, aborted, subagent and successfully recorded turns are skipped; cooldown advances only after a successful reminder.
+Automatic distillation is observable, cancelable model work, rather than silent chat scraping or a free background task. Defaults are `1 / 0 / 1`: each eligible worked turn, no extra cooldown, at least one tool call. `autoDistillEvery`, `autoDistillCooldownMin` and `autoDistillMinTools` use AND semantics and are isolated per agent. Idle, aborted, subagent and successfully recorded turns are skipped; cooldown advances only after a successful reminder.
 
 Reminders queue a separate wrap-up turn with provenance pointing to the source work turn. They preserve the original task answer's turn boundary, neither advance worked-turn cadence nor trigger recursive distillation, and may increase the displayed turn count. Only persisted `memoir_record` / `memoir_update` calls suppress that turn's reminder; failed calls or unresolved similarity do not count. Turning off `autoDistill` leaves manual write tools available.
 
@@ -77,17 +94,29 @@ Diagnostics distinguish reminders, actual saves, failures, cancellation and unav
 
 `language` supports `zh` / `en` / `de` / `ru`, controlling tool descriptions, parameter help, distillation prompts, tool results, validation errors and Hot Memory / Markdown headings. Tool names, parameter keys and enums stay unchanged. It is independent of the Chinese/English GUI, does not infer language or translate existing memories, and affects subsequent prompts immediately without restarting. Switching alone does not rewrite JSON/Markdown; later writes use the selected language for projection headings.
 
-### Hot Memory, recall and the interface
+### Hot Memory and session snapshots
 
-Complete history stays local. Only budgeted actions, lessons and recent state enter the system prompt automatically; the whole Markdown file is never injected. Each session freezes its Hot Memory prefix. New writes are immediately visible to tools and the GUI, while automatic injection refreshes in the next new session. Budget changes do not rewrite existing snapshots. Languages have separate snapshot namespaces, switching back reuses the old baseline, and forks/new session ids do not inherit parent snapshots.
+- **Bounded injection:** complete history stays local. Only budgeted actions, lessons and recent state enter the system prompt automatically; the whole Markdown file is never injected.
+- **Frozen prefixes:** new writes are immediately visible to tools and the GUI, while automatic injection refreshes in the next new session. Budget changes do not rewrite existing snapshots. Languages have separate namespaces, switching back reuses the old baseline, and forks/new session ids do not inherit parent snapshots.
+- **Hard budget handling:** skip candidates exceeding the remaining budget in favor of smaller entries. Shorten an oversized first entry's content and, if needed, title against the complete rendered block. Skip it if even the minimum block cannot fit; long titles cannot bypass the hard ceiling.
+- **Literal text and cache limits:** emit `{{...}}` and other template literals verbatim for new memories, cached old snapshots and restored disk snapshots, without deleting snapshots or rewriting original memories. Frozen prefixes can help caching but do not guarantee provider KV-cache retention, hit rates or billing savings.
 
-Candidates exceeding the remaining hard budget are skipped in favor of smaller entries. An oversized first entry has its content and, if needed, title shortened against the complete rendered block. If even the minimum block cannot fit, it is skipped; long titles cannot bypass the hard ceiling.
+### Local recall and caching
 
-Template literals such as `{{...}}` are emitted verbatim for new memories, cached old snapshots and restored disk snapshots. No snapshot deletion or original-memory rewrite is needed. Frozen prefixes can help caching but do not guarantee provider KV-cache retention, hit rates or billing savings.
+- **Tokenization:** Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers. NFC normalization preserves original content, German umlauts and Russian Cyrillic.
+- **BM25 ranking:** retain true term frequency, boost title BM25 scores by **2.5×**, and apply exact-phrase, section and recency weights. Title and body lengths are normalized independently.
+- **Shared retrieval:** the GUI and `memoir_read` share the BM25 engine. With a query, the tool takes a global Top-K for `scope=global`. For `scope=all`, it shows the current project first, then merges global results with ID deduplication; the whole call is not guaranteed to be a single global Top-K. Without a query it takes recent entries per project; see Configuration for `limit` boundaries.
+- **Query LRU:** cache keys include the data epoch, project cwd, section, status, normalized query and a one-hour time bucket, reflecting data updates. Neither `limit` nor output detail enters the key, so output variants share rankings.
+- **Diagnostics:** expose the index, cache hits / misses / evictions, hit rate and latency of the most recent actual search.
+- **Limits:** retrieval is lexical, without automatic translation, stemming or cross-language semantic matching.
 
-BM25 supports Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers, with NFC normalization, true term frequency, title boosting and phrase/section/recency weights. The GUI and tools share the BM25 engine and an LRU query cache aware of data updates; different `limit` and output detail values share rankings. The tool takes a global Top-K for `scope=global` with a query. For `scope=all`, it shows the current project first, then merges global results with ID deduplication; the whole call is not guaranteed to be a single global Top-K. Retrieval is lexical, without automatic translation, stemming or cross-language semantic matching.
+### Web / Desktop GUI
 
-The UI provides project/global groups, status/section/keyword filters and BM25 scores. It shows batches of 20 entries or projects, with expandable six-line body previews. Browse, Settings, Hot Memory and Diagnostics preserve separate scroll positions, and the final list item stays above the composer. Arrow keys, Home/End, project disclosures and visible focus states are supported. GUI language follows the host's Chinese/English setting.
+- **Browsing and governance:** project/global memory groups, status/section/keyword filters and BM25 scores; add, edit, pin, archive, restore and supersede entries.
+- **Provenance:** copy session/turn identifiers and make a best-effort jump to the source session, without promising navigation to the exact turn.
+- **Previews and diagnostics:** Hot Memory Inspector previews new-session candidates from current data, rather than an existing session's frozen baseline. Diagnostics cover the index, query cache, snapshots and write outcomes.
+- **Long lists:** batches of 20 entries or projects and expandable six-line body previews. Browse, Settings, Hot Memory and Diagnostics preserve separate scroll positions, with the final item above the composer.
+- **Accessibility and language:** arrow keys, Home/End, project disclosures and visible focus states. GUI language follows the host's Chinese/English setting; the independent `language` setting controls four agent languages.
 
 The first Memory Conversation opening shows offline release highlights without blocking chat. Acknowledging suppresses automatic display for that version in the same UI storage context; reopen from About & help. Settings and sidebar panels do not open it automatically. Without storage, deduplication lasts only for the current page; Web/Desktop acknowledgment need not be shared. Notices make no network requests or memory changes, and the plugin does not automatically check for or install updates.
 
