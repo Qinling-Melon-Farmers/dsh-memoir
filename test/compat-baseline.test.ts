@@ -17,6 +17,7 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const repairScript = readFileSync(join(ROOT, 'scripts', 'repair-session-receipts.mjs'), 'utf8')
 const recoveryDoc = readFileSync(join(ROOT, 'SESSION_RECOVERY.md'), 'utf8')
 const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+const englishReadme = readFileSync(join(ROOT, 'README.en.md'), 'utf8')
 // compat-swap probes compile other SDK baselines; only release runs pin devDeps.
 const swapProbe = process.env.DSH_COMPAT_SWAP !== undefined
 const probeSkip = swapProbe ? 'non-baseline compat probe' : false
@@ -133,5 +134,8 @@ test('both recovery documents mention every reviewed backend and the baseline', 
     assert.ok(recoveryDoc.includes(version), `SESSION_RECOVERY.md must list reviewed backend ${version}`)
   }
   const baseline = packageJson.devDependencies?.['@deepseek-ai/dsh-agent']
-  assert.ok(readme.includes(`SDK ${baseline}`), 'README compatibility table must carry the current SDK baseline')
+  for (const [name, document] of [['README.md', readme], ['README.en.md', englishReadme]]) {
+    // Inline-code formatting must not invalidate a correctly documented baseline.
+    assert.ok(document.replaceAll('`', '').includes(`SDK ${baseline}`), `${name} must carry the current SDK baseline`)
+  }
 })

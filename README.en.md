@@ -61,7 +61,7 @@ Earlier sources: [0.6.1 global project groups](https://raw.githubusercontent.com
 | --- | --- |
 | `memoir_record` | Record work / lessons / actions / note; return similar or conflicting candidates before writing |
 | `memoir_update` | Keep the id and creation time while changing content, section, importance, tags and lifecycle |
-| `memoir_read` | Ranked recall within project (default) / global / all, with compact / full output |
+| `memoir_read` | Recall within project (default) / global / all: ranked search with a query, recent entries per project without one; compact / full output |
 
 Importance ranges from 1–5, with **3** as the neutral default; pinning adds separate Hot Memory weight. Recall defaults to `active`. Archived and superseded history remains inspectable and restorable, without automatic deletion. Similarity does not establish truth: explicitly choose `update`, history-preserving `supersede`, or `force-record` to keep both. Nothing is merged or deleted automatically.
 
@@ -85,7 +85,7 @@ Candidates exceeding the remaining hard budget are skipped in favor of smaller e
 
 Template literals such as `{{...}}` are emitted verbatim for new memories, cached old snapshots and restored disk snapshots. No snapshot deletion or original-memory rewrite is needed. Frozen prefixes can help caching but do not guarantee provider KV-cache retention, hit rates or billing savings.
 
-BM25 supports Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers, with NFC normalization, true term frequency, title boosting and phrase/section/recency weights. The GUI and tools share deduplicated cross-project Top-K and an LRU query cache aware of data updates; different `limit` and output detail values share rankings. Retrieval is lexical, without automatic translation, stemming or cross-language semantic matching.
+BM25 supports Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers, with NFC normalization, true term frequency, title boosting and phrase/section/recency weights. The GUI and tools share the BM25 engine and an LRU query cache aware of data updates; different `limit` and output detail values share rankings. The tool takes a global Top-K for `scope=global` with a query. For `scope=all`, it shows the current project first, then merges global results with ID deduplication; the whole call is not guaranteed to be a single global Top-K. Retrieval is lexical, without automatic translation, stemming or cross-language semantic matching.
 
 The UI provides project/global groups, status/section/keyword filters and BM25 scores. It shows batches of 20 entries or projects, with expandable six-line body previews. Browse, Settings, Hot Memory and Diagnostics preserve separate scroll positions, and the final list item stays above the composer. Arrow keys, Home/End, project disclosures and visible focus states are supported. GUI language follows the host's Chinese/English setting.
 
@@ -110,10 +110,12 @@ Set these parameters in the memoir `config` row of your profile composition; see
 | `autoDistillMinTools` | `1` | Minimum tool calls in the triggering turn |
 | `hotMemoryTokens` | `900` | Target Hot Memory token budget for new sessions |
 | `hotMemoryMaxTokens` | `1200` | Hard budget ceiling for newly created session snapshots |
-| `readDefaultLimit` | `8` | Default `memoir_read` result count |
-| `readMaxLimit` | `30` | Live maximum result count per recall |
+| `readDefaultLimit` | `8` | Default `limit` parameter for `memoir_read` |
+| `readMaxLimit` | `30` | Live maximum for the `limit` parameter, not a total-output count cap |
 | `sessionSnapshotMax` | `128` | In-memory snapshot LRU capacity; does not delete disk snapshots |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |
+
+The tool currently applies `limit` separately by branch or project: `scope=all` limits its project and global passes separately, while the global pass without a query limits each project. The total result count can exceed `limit`, subject to the output character budget.
 
 Integer parameters are at least 1, with cooldown at least 0; a hard budget/recall maximum cannot be below its target/default. Shrinking caches immediately evicts the oldest entries. Budget changes affect new snapshots only. Restore startup configuration removes persistent overrides and returns to profile startup values without clearing memory.
 
@@ -131,7 +133,7 @@ DSH_HOME defaults to `~/.dsh`; use the actual configured paths when customized.
 | `<project>/PROJECT_MEMORY.md` | Readable JSON projection that you may commit to Git |
 
 - The plugin has no separate cloud memory service and makes no additional memory or workspace-path uploads. Content read through tools or injected into prompts enters the current model's context. You decide whether sensitive Markdown belongs in Git.
-- Panel writes require a trusted active workspace or existing project bucket; submitting an arbitrary absolute path grants no write access. Cross-process writes take an exclusive lock and reread disk inside it, with conservative dead-writer lock recovery. Windows path keys are case-normalized while display paths stay unchanged.
+- Panel memory writes require a trusted active workspace or existing project bucket; submitting an arbitrary absolute path grants no write access. Cross-process memory-store writes take an exclusive lock and reread disk inside it, with conservative dead-writer lock recovery. Settings files lack cross-process refresh and conflict detection; avoid changing settings from multiple hosts at once. Windows path keys are case-normalized while display paths stay unchanged.
 - Future store formats, read errors and failed corrupt-file backups fail closed, refusing further loading/overwriting. A fresh store is allowed only after preserving the damaged original. Temporary Windows rename failures receive bounded retries and still surface when exhausted.
 - Before upgrades, back up memory JSON, settings, snapshots and project Markdown. Plugin upgrades or removal do not delete them automatically; 0.9.5 does not migrate their formats. DSH session migration is separate: back up all of DSH_HOME, as older hosts may not read migrated sessions.
 

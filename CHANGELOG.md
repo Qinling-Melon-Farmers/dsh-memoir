@@ -11,12 +11,16 @@
 - 更新真实 Agent 测试环境，按官方生命周期初始化 AgentRegistry，并在新 SDK 中注册独立的原生工具执行器；覆盖自动蒸馏、提示注入与会话持久化。CI 将 rc.1 与旧 rc.5 均列为必须通过的兼容检查。
 - **恢复 CLI 新增官方 `0.2.2-rc.1` 白名单**：保留原有八个已审计后端；显式核对宿主/backend 版本及实际解析的 SDK 依赖树，拒绝混版与未知版本。仍只处理原生 v4，使用官方会话写锁，并遵守[恢复说明](./SESSION_RECOVERY.md)的格式与 generation 边界。升级不自动修改旧日志；须先只读检查，全部宿主退出并独立备份后，再显式 `--apply --host-stopped`。
 
+- **README 结构重整**：中英文同步归位安装、使用、配置与历史兼容说明，保留截图来源及恢复边界；明确 `limit` 按分支/项目应用，并非统一的整次调用总数上限，`all` 不保证整次全局 Top-K；跨进程锁保障限定为记忆库写入，设置仍缺少跨进程刷新与冲突检测。仅澄清现有行为，不表示这些技术债已修复。
+
 ### English
 
 - **DSH `0.2.2-rc.1` compatibility**: move the development SDK to rc.1 / Cordis 4.1. Await projection readiness before exposing tools, HTTP routes or distillation listeners, then read through the ready handle. A separate compatibility path retains the legacy disposer / registry API. Projection v3, memory and snapshot formats remain unchanged.
 - Explicitly admit `>=0.2.2-rc.1 <0.2.2` in host and npm peer ranges while retaining the previous compatibility lines. Development with the new SDK and this DSH version require Node `>=24.9.0`. The plugin's own Node engine remains `^22.19.0 || >=24.0.0` for runtime support on older hosts; the range is not verification of every future build.
 - Update real Agent fixtures to initialize AgentRegistry through its public lifecycle and register the separate native tool executor on the new SDK, covering distillation, prompt injection and session persistence. Make both rc.1 and the previous rc.5 required CI compatibility checks.
 - **Recovery CLI adds official `0.2.2-rc.1` to its allowlist:** retain the eight previously reviewed backends. Check matching host/backend versions and the actually resolved SDK dependency tree; reject mixed or unknown versions. Native v4 only, the official session lease, and the format and generation limits in [session recovery](./SESSION_RECOVERY.md#english) remain required. Upgrading never rewrites existing logs automatically: audit first, stop every host and back up independently, then apply with `--apply --host-stopped`.
+
+- **README reorganization:** align installation, usage, configuration and historical compatibility sections in both languages, retaining screenshot sources and recovery boundaries. Clarify that `limit` applies by branch/project rather than as a uniform total-call count cap, and `all` does not guarantee a single global Top-K. Scope cross-process locking guarantees to memory-store writes; settings still lack cross-process refresh and conflict detection. These are documentation clarifications, not fixes for the underlying technical debt.
 
 ## [0.9.4] - 2026-11-01
 
