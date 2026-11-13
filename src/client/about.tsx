@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from 'react'
 import { ANNOUNCEMENT_VERSION, acknowledgeAnnouncement, hasAcknowledged, subscribeAnnouncement } from './announcement.js'
+import { UpdateNotice } from './updates.js'
 
 /** Build-stamped, offline plugin identity. Never inspect workspace Git remotes. */
 declare const __MEMOIR_PACKAGE_INFO__: { version: string; hostRange: string; sdkBaseline: string }
@@ -27,6 +28,7 @@ export function MemoirAbout({ t, onSettings, settingsTarget, announceOnOpen = fa
         {onSettings === undefined ? null : <button type="button" className="memoir-guide-settings" aria-controls={settingsTarget} onClick={onSettings}>{t('guide.settings')}</button>}
       </nav>
     </div>
+    <UpdateNotice t={t} />
     <details className="memoir-about" data-dsh-part="about">
     <summary>{t('about.title')}</summary>
     <div className="memoir-about-body">

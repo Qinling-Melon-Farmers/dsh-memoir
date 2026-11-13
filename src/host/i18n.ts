@@ -385,6 +385,38 @@ const en: HostCopy = {
 
 const dictionaries: Record<MemoirLanguage, HostCopy> = { zh, en, de, ru }
 
+/** Copy for bounded writes and a target changed during the current call. */
+const reliabilityDictionaries: Record<MemoirLanguage, {
+  contentLimit: (limit: number) => string
+  listLimit: (field: string, count: number, length: number) => string
+  candidateChanged: string
+}> = {
+  zh: {
+    contentLimit: (limit) => `content 不能超过 ${limit} 个字符`,
+    listLimit: (field, count, length) => `${field} 不能超过 ${count} 项，每项不能超过 ${length} 个字符`,
+    candidateChanged: '相似候选已发生变化，请重新查看当前候选后再确认',
+  },
+  en: {
+    contentLimit: (limit) => `content exceeds ${limit} characters`,
+    listLimit: (field, count, length) => `${field} exceeds ${count} items or ${length} characters per item`,
+    candidateChanged: 'Similarity candidate changed; review current candidates before confirming',
+  },
+  de: {
+    contentLimit: (limit) => `content darf höchstens ${limit} Zeichen enthalten`,
+    listLimit: (field, count, length) => `${field} darf höchstens ${count} Einträge mit jeweils höchstens ${length} Zeichen enthalten`,
+    candidateChanged: 'Der ähnliche Kandidat wurde geändert; bitte prüfe die aktuellen Kandidaten vor der Bestätigung erneut',
+  },
+  ru: {
+    contentLimit: (limit) => `content не должен превышать ${limit} символов`,
+    listLimit: (field, count, length) => `${field} должен содержать не более ${count} элементов, каждый не длиннее ${length} символов`,
+    candidateChanged: 'Похожий кандидат изменился; перед подтверждением снова проверьте текущих кандидатов',
+  },
+}
+
+export function reliabilityCopy(language: MemoirLanguage) {
+  return reliabilityDictionaries[language]
+}
+
 export function languageFrom(source: MemoirLanguageSource | undefined): MemoirLanguage {
   return resolveMemoirLanguage(typeof source === 'function' ? source() : source)
 }

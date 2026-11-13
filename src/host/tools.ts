@@ -300,8 +300,8 @@ export function memoirRecordTool(store: MemoirStore, retrieval: RetrievalEngine,
         content: args.content,
         ...(args.importance !== undefined ? { importance: args.importance } : {}),
         ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
-        ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
-        ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
+        ...(args.supersedes !== undefined ? { supersedes: args.supersedes as string[] } : {}),
+        ...(args.tags !== undefined ? { tags: args.tags as string[] } : {}),
       }, {
         source: resolveMemorySource(exec, hooks),
         language,
@@ -408,8 +408,8 @@ export function memoirUpdateTool(store: MemoirStore, languageSource: MemoirLangu
         ...(args.importance !== undefined ? { importance: args.importance } : {}),
         ...(args.pinned !== undefined ? { pinned: args.pinned } : {}),
         ...(args.status !== undefined ? { status: args.status } : {}),
-        ...(Array.isArray(args.supersedes) ? { supersedes: args.supersedes.filter((id): id is string => typeof id === 'string') } : {}),
-        ...(Array.isArray(args.tags) ? { tags: args.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
+        ...(args.supersedes !== undefined ? { supersedes: args.supersedes as string[] } : {}),
+        ...(args.tags !== undefined ? { tags: args.tags as string[] } : {}),
       }
       const validation = validateEntryUpdate(patch, language)
       if (validation !== undefined) throw new Error(validation)
@@ -496,6 +496,7 @@ export function memoirReadTool(
       // the ranked list always survives truncation.
       const budget = new OutputBudget(READ_OUTPUT_MAX_CHARS)
       const renderedIds = new Set<string>()
+      let totalShown = 0
 
       if (scope === 'project' || (scope === 'all' && cwd !== undefined)) {
         if (cwd === undefined) {
@@ -508,6 +509,7 @@ export function memoirReadTool(
           if (ranked.length > 0) {
             const entries = ranked.slice(0, limit).map((r) => r.entry)
             const shown = appendGrouped(budget, entries, renderEntry, language)
+            totalShown += shown
             for (const entry of entries.slice(0, shown)) renderedIds.add(entry.id)
             // In all scope the global pass can still display the remainder.
             if (scope === 'project' && ranked.length > shown) budget.add(clippedNote(ranked.length, shown, language))
@@ -518,6 +520,7 @@ export function memoirReadTool(
             } else {
               const entries = matched.slice(-limit)
               const shown = appendGrouped(budget, entries, renderEntry, language)
+              totalShown += shown
               for (const entry of entries.slice(0, shown)) renderedIds.add(entry.id)
               if (scope === 'project' && matched.length > shown) budget.add(clippedNote(matched.length, shown, language))
             }
@@ -533,36 +536,37 @@ export function memoirReadTool(
           // v0.4.2: the limit is a true global Top-K — slice first, then
           // group by project for rendering (never per-project × limit).
           const pending = ranked.filter((result) => !renderedIds.has(result.entry.id))
-          const top = pending.slice(0, limit)
+          const top = pending.slice(0, Math.max(0, limit - totalShown))
           let shown = 0
-          const grouped = new Map<string, MemoirEntry[]>()
+          let lastPath: string | undefined
           for (const result of top) {
-            const bucket = grouped.get(result.projectPath) ?? []
-            bucket.push(result.entry)
-            grouped.set(result.projectPath, bucket)
-          }
-          for (const [path, entries] of grouped) {
-            if (!budget.add(['### ' + projectTitle(path), copy.path + ': ' + path].join('\n'))) break
-            for (const entry of entries) {
-              if (!budget.add(renderEntry(entry))) break
-              shown++
+            if (result.projectPath !== lastPath) {
+              if (!budget.add(['### ' + projectTitle(result.projectPath), copy.path + ': ' + result.projectPath].join('\n'))) break
+              lastPath = result.projectPath
             }
+            if (!budget.add(renderEntry(result.entry))) break
+            shown++
           }
-          if (pending.length > shown) budget.add(clippedNote(pending.length, shown, language))
+          if (pending.length > shown) budget.add(clippedNote(pending.length + totalShown, shown + totalShown, language))
         } else {
-          const projects = store.listProjects()
-          for (const project of projects) {
-            const matched = store.entries(project.path).filter((entry) => !renderedIds.has(entry.id) && filterEntry(entry))
+          const projects = store.listProjects().map((project) => ({
+            project,
+            matched: store.entries(project.path).filter((entry) => !renderedIds.has(entry.id) && filterEntry(entry)),
+          }))
+          const pending = projects.reduce((sum, item) => sum + item.matched.length, 0)
+          let shown = 0
+          for (const { project, matched } of projects) {
             if (matched.length === 0) continue
-            const entries = matched.slice(-Math.min(limit, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
+            const remaining = Math.max(0, limit - totalShown - shown)
+            const entries = matched.slice(-Math.min(remaining, READ_GLOBAL_MAX_ENTRIES_PER_PROJECT))
+            if (remaining === 0) continue
             if (!budget.add(['### ' + (project.title || projectTitle(project.path)), copy.path + ': ' + project.path + '  ' + copy.updated + ': ' + formatTime(project.updatedAt)].join('\n'))) break
-            let shown = 0
             for (const entry of entries) {
               if (!budget.add(renderEntry(entry))) break
               shown++
             }
-            if (matched.length > shown) budget.add(clippedNote(matched.length, shown, language))
           }
+          if (pending > shown) budget.add(clippedNote(pending + totalShown, shown + totalShown, language))
           if (budget.text === '') budget.add(copy.globalEmpty)
         }
       }

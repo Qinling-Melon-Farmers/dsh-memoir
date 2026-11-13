@@ -2,7 +2,7 @@
  * Structured memory store for dsh-memoir — the single source of truth is the
  * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
  * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
- * the same entries (git-friendly, auto-injected into future sessions). Pure
+ * the same entries (git-friendly; bounded Hot Memory is injected separately). Pure
  * node:fs, no cordis dependency —
  * unit-testable with an injected path.
  *
@@ -19,7 +19,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { resolveDshHome } from './dsh-home.js'
-import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
+import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, reliabilityCopy, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
 
 /** Global index format version. */
@@ -46,6 +46,24 @@ export const SECTION_KEYS = Object.keys(SECTIONS) as SectionKey[]
  * (targetTokens / hardMaxTokens).
  */
 export const INJECT_LIMIT = 16000
+/** Limits apply to new writes, without rejecting or truncating legacy data. */
+export const MAX_ENTRY_CONTENT_CHARS = 256 * 1024
+export const MAX_ENTRY_LIST_ITEMS = 64
+export const MAX_ENTRY_LIST_ITEM_CHARS = 128
+
+function boundedEntryFields(record: Record<string, unknown>, language: MemoirLanguage): string | undefined {
+  const copy = reliabilityCopy(language)
+  if (typeof record.content === 'string' && record.content.length > MAX_ENTRY_CONTENT_CHARS) {
+    return copy.contentLimit(MAX_ENTRY_CONTENT_CHARS)
+  }
+  for (const field of ['tags', 'supersedes']) {
+    const value = record[field]
+    if (Array.isArray(value) && (value.length > MAX_ENTRY_LIST_ITEMS || value.some((item) => typeof item === 'string' && item.length > MAX_ENTRY_LIST_ITEM_CHARS))) {
+      return copy.listLimit(field, MAX_ENTRY_LIST_ITEMS, MAX_ENTRY_LIST_ITEM_CHARS)
+    }
+  }
+  return undefined
+}
 
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note'
 
@@ -346,6 +364,8 @@ export function validateEntryPayload(payload: unknown, language: MemoirLanguage 
     return copy.section(SECTION_KEYS.join('/'))
   }
   if (typeof record.content !== 'string' || record.content.trim() === '') return copy.contentRequired
+  const bounds = boundedEntryFields(record, language)
+  if (bounds !== undefined) return bounds
   if (record.title !== undefined && (typeof record.title !== 'string' || record.title.length > 200)) {
     return copy.title
   }
@@ -367,6 +387,8 @@ export function validateEntryUpdate(payload: unknown, language: MemoirLanguage =
   const copy = hostCopy(language).validation
   if (typeof payload !== 'object' || payload === null) return copy.patchObject
   const patch = payload as Record<string, unknown>
+  const bounds = boundedEntryFields(patch, language)
+  if (bounds !== undefined) return bounds
   const fields = ['section', 'title', 'content', 'importance', 'pinned', 'status', 'supersedes', 'tags']
   if (!fields.some((field) => Object.prototype.hasOwnProperty.call(patch, field))) return copy.updateRequired
   if (patch.section !== undefined && (typeof patch.section !== 'string' || !Object.prototype.hasOwnProperty.call(SECTIONS, patch.section))) {
@@ -424,6 +446,7 @@ function normalizedSource(value: unknown, legacySessionId?: unknown): MemoirSour
  * The structured memory store.
  */
 export class MemoirStore {
+  private inMutation = false
   /** The store file path. */
   readonly path: string
 
@@ -494,6 +517,7 @@ export class MemoirStore {
    * mutates the latest on-disk state (no lost update between processes).
    */
   private mutateLocked<T>(mutate: () => T): T {
+    if (this.inMutation) return mutate()
     const lockPath = this.lockFilePath()
     const dir = dirname(lockPath)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -501,10 +525,19 @@ export class MemoirStore {
       lockPath,
       () => {
         this.invalidate()
-        return mutate()
+        this.inMutation = true
+        try { return mutate() } finally { this.inMutation = false }
       },
       { retryMs: this.lockRetryMs, timeoutMs: this.lockTimeoutMs, staleAfterMs: this.lockStaleAfterMs },
     )
+  }
+
+  /** Run a synchronous decision and its writes against one locked snapshot. */
+  withMutationLock<T>(operation: () => T): T {
+    return this.mutateLocked(() => {
+      this.load()
+      return operation()
+    })
   }
 
   /** Current store revision (0 before the first load/save). */
@@ -807,6 +840,8 @@ export class MemoirStore {
 
   /** Update an existing entry without deleting its id or creation time. */
   update(cwd: string, id: string, patch: EntryUpdate): MemoirEntry | undefined {
+    const error = validateEntryUpdate(patch, this.language())
+    if (error !== undefined) throw new Error(error)
     return this.mutateLocked(() => {
       const store = this.load()
       const project = store.projects[projectKey(cwd)]

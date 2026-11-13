@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Memory (Memoir)",
+    "description": "Local cross-session project memory: distillation, Hot Memory injection, BM25 recall and caching, provenance and lifecycle management, with no bundled runtime dependencies."
+  }
+}

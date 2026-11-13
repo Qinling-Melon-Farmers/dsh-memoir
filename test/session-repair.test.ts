@@ -171,7 +171,7 @@ test('alpha.2 repair preserves working-directory transitions and ignorable plugi
 })
 
 test('rc1 catalog preserves independent seeded deliveries but rejects foreign active-tail ownership', async t => {
-  if (backendVersion !== '0.2.2-rc.1') {
+  if (!['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3'].includes(backendVersion)) {
     t.skip('the independent seeded delivery policy was introduced in 0.2.2-rc.1')
     return
   }
@@ -196,6 +196,32 @@ test('rc1 catalog preserves independent seeded deliveries but rejects foreign ac
   assert.equal(await fs.readFile(f.path, 'utf8'), line(physicalHeader) + inherited + line({ ...receipt(3), ignorable: true }))
   assert.equal((await repairSessionReceipts(f.path, applying)).changed, 0)
   for (const invalid of [text + line(delivery(4)), text.replace('"throughSeq":0', '"throughSeq":1')]) {
+    const bad = await fixture(t, invalid)
+    await assert.rejects(repairSessionReceipts(bad.path, applying), { code: 'SESSION_INVALID' })
+    assert.equal(await fs.readFile(bad.path, 'utf8'), invalid)
+    assert.deepEqual(await fs.readdir(bad.root), ['session.v4.jsonl'])
+  }
+})
+
+test('rc2/rc3 native catalog names are validated before repairing an old receipt', async t => {
+  if (!['0.2.2-rc.2', '0.2.2-rc.3'].includes(backendVersion)) {
+    t.skip('native catalog version 3 is an rc2/rc3 contract')
+    return
+  }
+  const catalog = (seq: number, childId: string, name: string) => line({
+    type: 'subagent/catalog', seq, time: 1790662733587,
+    data: { version: 3, childId, childCreatedAt: 1790662733587, mode: 'external', name },
+  })
+  const valid = originalText + catalog(5, 'child-a', 'researcher')
+  const good = await fixture(t, valid)
+  const result = await repairSessionReceipts(good.path, applying)
+  assert.equal(await fs.readFile(result.backupPath, 'utf8'), valid)
+  assert.equal(await fs.readFile(good.path, 'utf8'), patchedText + catalog(5, 'child-a', 'researcher'))
+  for (const invalid of [
+    valid + catalog(6, 'child-b', 'researcher'),
+    originalText + catalog(5, 'child-a', 'lead'),
+    originalText + catalog(5, 'child-a', 'Bad Name'),
+  ]) {
     const bad = await fixture(t, invalid)
     await assert.rejects(repairSessionReceipts(bad.path, applying), { code: 'SESSION_INVALID' })
     assert.equal(await fs.readFile(bad.path, 'utf8'), invalid)

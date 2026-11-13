@@ -117,6 +117,11 @@ export interface HostCopy {
         readMax: string;
     };
 }
+export declare function reliabilityCopy(language: MemoirLanguage): {
+    contentLimit: (limit: number) => string;
+    listLimit: (field: string, count: number, length: number) => string;
+    candidateChanged: string;
+};
 export declare function languageFrom(source: MemoirLanguageSource | undefined): MemoirLanguage;
 export declare function hostCopy(language: MemoirLanguage): HostCopy;
 export declare function sectionCopy(section: SectionKey, language: MemoirLanguage): SectionCopy;

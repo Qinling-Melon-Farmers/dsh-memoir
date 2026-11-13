@@ -9,6 +9,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { useEffect, useState } from 'react'
 import type { MemoirApi } from './api.js'
 import { MemoirPanel } from './panel.js'
+import { UpdateContext } from './updates.js'
+import type { PluginUpdateStatus } from './updates.js'
 
 export const SIDEBAR_ID = 'dsh-memoir'
 
@@ -41,7 +43,7 @@ function SidebarTitle({ t }: { t: (key: string) => string }) {
 }
 
 /** Optional service: absence/reload must not pend the main plugin. */
-export function watchSidebar(ctx: Context, api: MemoirApi, t: (key: string) => string): () => Promise<void> {
+export function watchSidebar(ctx: Context, api: MemoirApi, t: (key: string) => string, updates?: PluginUpdateStatus): () => Promise<void> {
   const pending = ctx.inject(['sidebarRightTabs'], sidebarCtx => {
     sidebarCtx.effect(() => {
       const owned: Array<() => void> = []
@@ -54,7 +56,7 @@ export function watchSidebar(ctx: Context, api: MemoirApi, t: (key: string) => s
         }))
         owned.push(sidebarCtx.slots.inject('sidebar.right.pane.tab', () => sidebarCtx.slots.register({
           name: 'sidebar.right.pane.tab', key: SIDEBAR_ID,
-        }, props => <SidebarMemoir {...props} api={api} ctx={sidebarCtx} t={t} />)))
+        }, props => <UpdateContext.Provider value={updates ?? null}><SidebarMemoir {...props} api={api} ctx={sidebarCtx} t={t} /></UpdateContext.Provider>)))
         owned.push(sidebarCtx.slots.inject('sidebar.right.pane.tab.title', () => sidebarCtx.slots.register({
           name: 'sidebar.right.pane.tab.title', key: SIDEBAR_ID,
         }, () => <SidebarTitle t={t} />)))

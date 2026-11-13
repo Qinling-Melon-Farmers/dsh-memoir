@@ -45,7 +45,7 @@ test('optional sidebar service can arrive, disappear and remount without disturb
     const plugin = load(dom)
     const fork = root.plugin({ apply: plugin.apply })
     await new Promise(resolve => setImmediate(resolve))
-    assert.equal(entries.size, 3, 'absent sidebar does not block Conversation, Settings or plugin configuration')
+    assert.equal(entries.size, 5, 'absent sidebar does not block Conversation, Settings or plugin configuration')
     for (let cycle = 0; cycle < 3; cycle++) {
       const owner = root.plugin(ctx => {
         ctx.provide('sidebarRightTabs', { register: (entry: any) => {
@@ -55,7 +55,7 @@ test('optional sidebar service can arrive, disappear and remount without disturb
         } })
       })
       await new Promise(resolve => setImmediate(resolve))
-      assert.equal(entries.size, 5)
+      assert.equal(entries.size, 7)
       assert.equal(types.get('dsh-memoir').kind, 'dsh-memoir')
       assert.equal(types.get('dsh-memoir').keepMounted, true)
       assert.equal(types.get('dsh-memoir').guide[0].id, 'dsh-memoir')
@@ -63,7 +63,7 @@ test('optional sidebar service can arrive, disappear and remount without disturb
       await new Promise(resolve => setImmediate(resolve))
       assert.match(types.get('dsh-memoir').guide[0].description(), /alongside/)
       await owner.dispose()
-      assert.equal(entries.size, 3)
+      assert.equal(entries.size, 5)
       assert.deepEqual([...types.keys()], ['dsh-context'])
     }
     await fork.dispose()
@@ -73,7 +73,7 @@ test('optional sidebar service can arrive, disappear and remount without disturb
 })
 
 test('main and sidebar render isolated projects, tabs, scroll state and safe bilingual help', async () => {
-  const dom = new JSDOM('<html lang="zh"><head></head><body><div id="main"></div><div id="side"></div><div id="settings"></div><div id="plugin"></div></body></html>', { runScripts: 'outside-only', url: 'http://localhost/' })
+  const dom = new JSDOM('<html lang="zh"><head></head><body><div id="main"></div><div id="side"></div><div id="settings"></div><div id="plugin"></div><div id="left"></div></body></html>', { runScripts: 'outside-only', url: 'http://localhost/' })
   const old = Object.fromEntries(['window', 'document', 'MutationObserver', 'IS_REACT_ACT_ENVIRONMENT'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, MutationObserver: dom.window.MutationObserver, IS_REACT_ACT_ENVIRONMENT: true })
   const requests: string[] = []
@@ -95,7 +95,7 @@ test('main and sidebar render isolated projects, tabs, scroll state and safe bil
   const opened: string[] = []
   ctx.provide('uiWorkspace', { openSession: (id: string) => opened.push(id) })
   ctx.provide('sidebarRightTabs', { register: () => () => {} })
-  const roots = ['main', 'side', 'settings', 'plugin'].map(id => createRoot(dom.window.document.getElementById(id)!))
+  const roots = ['main', 'side', 'settings', 'plugin', 'left'].map(id => createRoot(dom.window.document.getElementById(id)!))
   let closes = 0
   try {
     load(dom).apply(ctx)
@@ -107,10 +107,15 @@ test('main and sidebar render isolated projects, tabs, scroll state and safe bil
       roots[1]!.render(createElement(entries.get('sidebar.right.pane.tab:dsh-memoir')!, { sessionId: 'B', useSessions, useTabInfo: () => ({ tab: { actions: { close: () => closes++ } } }) }))
       roots[2]!.render(createElement(entries.get('settings.section:memoir')!, { useSessions, close: () => {} }))
       roots[3]!.render(createElement(entries.get('plugins.bundle.config:dsh-memoir')!, { view: 'page' }))
+      roots[4]!.render(createElement(entries.get('main:memoir')!, { useSessions }))
     })
     const main = dom.window.document.getElementById('main')!, side = dom.window.document.getElementById('side')!
     const settings = dom.window.document.getElementById('settings')!, pluginPage = dom.window.document.getElementById('plugin')!
     assert.match(main.textContent!, /Memory \/private-project-A/)
+    const left = dom.window.document.getElementById('left')!
+    assert.match(left.textContent!, /Memory \/private-project-A/)
+    assert.ok(!left.textContent!.includes('private-project-B'))
+    assert.equal(entries.has('sidebar.panellist:memoir'), true)
     assert.ok(!main.textContent!.includes('private-project-B'))
     assert.match(side.textContent!, /Memory \/private-project-B/)
     assert.ok(!side.textContent!.includes('private-project-A'))

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "记忆 (Memoir)",
+    "description": "本地跨会话项目记忆：自动提炼、Hot Memory 注入、BM25 召回与缓存、来源追溯及记忆治理，无额外运行依赖。"
+  }
+}

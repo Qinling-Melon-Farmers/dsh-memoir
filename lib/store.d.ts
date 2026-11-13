@@ -2,7 +2,7 @@
  * Structured memory store for dsh-memoir — the single source of truth is the
  * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
  * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
- * the same entries (git-friendly, auto-injected into future sessions). Pure
+ * the same entries (git-friendly; bounded Hot Memory is injected separately). Pure
  * node:fs, no cordis dependency —
  * unit-testable with an injected path.
  *
@@ -33,6 +33,10 @@ export declare const SECTION_KEYS: SectionKey[];
  * (targetTokens / hardMaxTokens).
  */
 export declare const INJECT_LIMIT = 16000;
+/** Limits apply to new writes, without rejecting or truncating legacy data. */
+export declare const MAX_ENTRY_CONTENT_CHARS: number;
+export declare const MAX_ENTRY_LIST_ITEMS = 64;
+export declare const MAX_ENTRY_LIST_ITEM_CHARS = 128;
 export type SectionKey = 'work' | 'lessons' | 'actions' | 'note';
 /** Lifecycle state for one memory entry (v0.5.0). */
 export type MemoirStatus = 'active' | 'superseded' | 'archived';
@@ -181,6 +185,7 @@ export declare function validateEntryUpdate(payload: unknown, language?: MemoirL
  * The structured memory store.
  */
 export declare class MemoirStore {
+    private inMutation;
     /** The store file path. */
     readonly path: string;
     /** How often warm load() calls re-probe the file mtime (0 = every call). */
@@ -235,6 +240,8 @@ export declare class MemoirStore {
      * mutates the latest on-disk state (no lost update between processes).
      */
     private mutateLocked;
+    /** Run a synchronous decision and its writes against one locked snapshot. */
+    withMutationLock<T>(operation: () => T): T;
     /** Current store revision (0 before the first load/save). */
     currentRevision(): number;
     /** Stat the store file into the snapshot signature (null when absent). */

@@ -84,14 +84,18 @@ for (const n of sizes) {
   // Cached: warm the exact query first, then time the hit path.
   engine.cachedSearch(query, { cwd: '/bench/project' })
   const cached = measure('cached ranked query', () => engine.cachedSearch(query, { cwd: '/bench/project' }))
-  // Query cache hit rate: 20 distinct queries × 2 passes → exactly the
-  // second pass hits.
+  // Query cache hit rate: measure actual counter deltas for two passes;
+  // do not assume every second-pass query hits (capacity/epochs may change).
+  const before = engine.diagnostics().cache
   const probes = []
   for (let i = 0; i < 20; i++) probes.push('乱码 probe ' + i)
   for (let round = 0; round < 2; round++) {
     for (const probe of probes) engine.cachedSearch(probe, { cwd: '/bench/project' })
   }
-  const cacheHitRate = ((probes.length / (probes.length * 2)) * 100).toFixed(1)
+  const after = engine.diagnostics().cache
+  const hits = after.hits - before.hits
+  const misses = after.misses - before.misses
+  const cacheHitRate = (hits + misses === 0 ? 0 : hits / (hits + misses) * 100).toFixed(1)
   const reduction = ((1 - hot.estimatedTokens / fullTokens) * 100).toFixed(1)
   rows.push([
     String(n),

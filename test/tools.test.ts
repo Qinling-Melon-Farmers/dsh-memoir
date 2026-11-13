@@ -217,14 +217,14 @@ for (const language of ['zh', 'en', 'de', 'ru'] as const) {
       assert.equal(all.text, project.text, 'no extra truncation footer after project deduplication')
       for (const entry of [first, second]) assert.equal(all.text.split(entry.id).length - 1, 1)
       const completed = await read.execute({ scope: 'all', query: 'memoir', limit: 1 }, makeExec(ws.cwd)) as { text: string }
-      for (const entry of [first, second]) assert.equal(completed.text.split(entry.id).length - 1, 1)
-      assert.ok(!completed.text.includes(hostCopy(language).read.clipped(2, 1)), 'the global pass completes the project results')
+      assert.equal((completed.text.match(/^- \[/gm) ?? []).length, 1)
+      assert.ok(completed.text.includes(hostCopy(language).read.clipped(2, 1)), 'the whole-call limit reports the omitted match')
       const third = store.record(other.cwd, { section: 'work', content: 'memoir external' })
       const mixed = await read.execute({ scope: 'all', query: 'memoir', limit: 8 }, makeExec(ws.cwd)) as { text: string }
       for (const entry of [first, second, third]) assert.equal(mixed.text.split(entry.id).length - 1, 1)
       assert.ok(!mixed.text.includes(hostCopy(language).read.clipped(3, 1)))
       const truncated = await read.execute({ scope: 'all', query: 'memoir', limit: 1 }, makeExec(ws.cwd)) as { text: string }
-      assert.ok(truncated.text.includes(hostCopy(language).read.clipped(2, 1)), 'one pending match is genuinely omitted')
+      assert.ok(truncated.text.includes(hostCopy(language).read.clipped(3, 1)), 'the note counts all matches and displayed entries')
       const limited = await memoirReadTool(store, undefined, undefined, language).execute(
         { scope: 'project', query: 'memoir', limit: 1 }, makeExec(ws.cwd),
       ) as { text: string }

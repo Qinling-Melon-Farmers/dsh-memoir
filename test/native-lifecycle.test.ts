@@ -119,7 +119,7 @@ test('shipped client mounts, relocalizes and disposes native slots/styles three 
   const dom = new JSDOM('<!doctype html><html lang="zh"><head></head><body></body></html>', { runScripts: 'outside-only' })
   // React render is covered separately; this test exercises registration and
   // cleanup only, so the platform module stubs must never be rendered.
-  const require = (_id: string) => ({})
+  const require = (_id: string) => ({ createContext: () => ({}) })
   let plugin: { apply: (ctx: unknown) => void } | undefined
   Object.assign(dom.window, { __ModuleLoader__: { load: ({ factory }: { factory: (require: (id: string) => object) => typeof plugin }) => { plugin = factory(require) } } })
   dom.window.eval(readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'))
@@ -139,7 +139,7 @@ test('shipped client mounts, relocalizes and disposes native slots/styles three 
           },
         },
       })
-      assert.equal(active.size, 3)
+      assert.equal(active.size, 5)
       assert.ok(dom.window.document.querySelectorAll('style').length > 0)
       dom.window.document.documentElement.lang = 'en'
       await new Promise(resolve => setImmediate(resolve))

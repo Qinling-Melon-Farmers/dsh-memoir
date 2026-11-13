@@ -2,6 +2,32 @@
 
 本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
 
+## [Unreleased] — 0.9.6 开发候选 / Development candidate
+
+### 中文
+
+- **DSH 0.2.2-rc.3 适配**：升级开发 SDK 与匹配的 Zod，固定间接开发 peer，避免混入其它宿主版本。CI 持续覆盖 0.2.1-rc.5、0.2.2-rc.1 / rc.2 / rc.3。此候选尚未发布 npm。
+- **会话与恢复**：恢复 CLI 新增已审计的 rc.2 / rc.3 后端，使用选定安装的官方校验器，覆盖 catalog 名称及重复名称约束。#14 回归覆盖真实 Agent 后续回合、record/update 回执、两种存储编码及冷重开，保留无危险自定义事件的预防修复。恢复仍只处理原生 v4 单文件，须先只读检查、停机、备份；不自动迁移或修复真实日志。
+- **召回限额**：memoir_read 的 limit 现在限制整次调用返回条数，覆盖 project / global / all、有无 query、compact / full。all 保留本项目优先并去重，再用剩余额度展示全局结果；这不是跨项目统一 BM25 排名。输出仍受字符预算限制。
+- **写入可靠性**：新正文最多 262,144 个 UTF-16 代码单元；tags 与 supersedes 各最多 64 项、每项 128 个代码单元。Agent、HTTP 与直接 store 写入共用校验，旧超长记录仍能读取，不自动截断。四种 Agent 语言均提供对应错误。
+- **治理事务**：在同一写锁内刷新、重新计算候选并写入，拒绝本次调用取得锁前后已变化的更新/替代目标；补充精确正文重复检测和并发回归。跨 HTTP 请求的候选确认版本 token 尚未实现，不能保证发现从上次展示到本次调用开始之间的所有修改；显式 force-record 语义不变。
+- **原生 UI**：新增左侧「记忆」入口，跟随主会话的工作区，保留会话、设置与右侧面板；插件列表新增独立图标及中英元数据。插件信息区和原生插件设置页显示官方版本/兼容性检查结果，只提示稳定版，安装仍由宿主确认。检查只发送包名、不发送记忆内容或项目路径，十五分钟内复用结果。
+- **测量修正**：benchmark 命中率读取真实缓存计数差值；recall probe 将纳秒正确转换为微秒。此修复不代表检索质量或模型缓存收益提高。
+- 旧宿主没有公开版本查询接口时，更新提示降级为宿主插件页指引，不阻止记忆加载。
+- 记忆库、设置与冻结快照格式不变。工作区独立设置、设置并发控制、跨请求确认令牌及完整质量数据集仍在后续规划。
+
+### English
+
+- **DSH 0.2.2-rc.3 compatibility**: update the development SDK and matching Zod, pin transitive development peers, and retain CI coverage for 0.2.1-rc.5 and 0.2.2-rc.1 / rc.2 / rc.3. This candidate is not published to npm.
+- **Sessions and recovery**: add audited rc.2 / rc.3 backends using validators from the selected official installation, including catalog-name and duplicate-name constraints. Extend #14 regressions through real Agent follow-up turns, record/update receipts, both storage encodings and cold reopen. Recovery remains an explicit native-v4 single-file operation requiring audit, shutdown and backup; no automatic session migration or repair.
+- **Recall limits**: memoir_read now enforces limit across the entire call for project/global/all, with or without a query, in compact/full output. all retains project-first ordering and deduplication, then fills the remaining budget globally; it is not one cross-project BM25 ranking. Character limits still apply.
+- **Write bounds**: new content is limited to 262,144 UTF-16 code units; tags and supersedes each allow 64 items of at most 128 code units. Agent, HTTP and store writes share validation. Legacy oversized data remains readable without automatic truncation. Errors follow all four supported Agent languages.
+- **Governance transactions**: refresh, recompute candidates and write under one lock; reject update/supersede targets changed between the current call's pre-lock snapshot and locked confirmation. Add exact-content detection and concurrency regressions. No cross-request confirmation token is implemented yet, so changes between an earlier displayed candidate and the start of this call are not all detected. Explicit force-record is unchanged.
+- **Native UI**: add left-side Memory navigation scoped to the main conversation, retain existing views, and supply a dedicated icon and bilingual plugin metadata. Show host-provided stable-version/compatibility status in plugin information and native settings. Only package identity is queried, never memories or workspace paths; results are reused for fifteen minutes. The host still confirms installation.
+- **Measurement fixes**: compute benchmark cache-hit rate from real counter deltas and correctly convert recall-probe nanoseconds to microseconds. This does not claim improved relevance or model-cache savings.
+- Hosts without the public version-query API fall back to a Plugins-page hint without blocking memory views.
+- Memory, settings and frozen-snapshot formats stay unchanged. Workspace overrides, settings concurrency, cross-request confirmation tokens and the full quality dataset remain planned.
+
 ## [0.9.5] - 2026-11-06
 
 ### 中文

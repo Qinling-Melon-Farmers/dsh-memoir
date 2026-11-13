@@ -35,6 +35,7 @@ if (target === 'restore') {
   for (const name of Object.keys(manifest.devDependencies)) {
     if (name.startsWith('@deepseek-ai/') && !(name in committed.devDependencies)) delete manifest.devDependencies[name]
   }
+  manifest.devDependencies.zod = committed.devDependencies.zod
 } else {
   for (const name of Object.keys(manifest.devDependencies)) {
     if (name.startsWith('@deepseek-ai/dsh-')) manifest.devDependencies[name] = target
@@ -44,6 +45,14 @@ if (target === 'restore') {
   const [, major, minor, patch] = /^(\d+)\.(\d+)\.(\d+)/.exec(target)
   const modern = Number(major) > 0 || Number(minor) > 2 || (Number(minor) === 2 && Number(patch) >= 2)
   manifest.devDependencies['@deepseek-ai/cordis'] = modern ? '~4.1.0' : '~4.0.5'
+  // Projection's schema types follow the SDK's pinned Zod version.
+  manifest.devDependencies.zod = /^0\.2\.2-rc\.(?:[2-9]|\d{2,})$/.test(target) ? '4.6.6' : '4.4.3'
+  manifest.devDependencies['@deepseek-ai/cordis-plugin-include'] = modern ? '~1.1.0' : '~1.0.10'
+  manifest.devDependencies['@deepseek-ai/cordis-plugin-loader'] = modern ? '~1.1.0' : '~1.0.6'
+  manifest.devDependencies['@deepseek-ai/cordis-plugin-group'] = modern ? '~1.1.0' : '~1.0.5'
+  manifest.devDependencies['@deepseek-ai/schemastery'] = modern ? '~3.19.0' : '~3.18.5'
+  // dsh-error was first published in rc.2.
+  if (target === '0.2.2-rc.1' || !modern) delete manifest.devDependencies['@deepseek-ai/dsh-error']
   if (modern) manifest.devDependencies['@deepseek-ai/dsh-tool-executor-native'] = target
   else delete manifest.devDependencies['@deepseek-ai/dsh-tool-executor-native']
 }

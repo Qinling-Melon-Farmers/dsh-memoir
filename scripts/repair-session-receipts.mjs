@@ -2,7 +2,7 @@
 /**
  * Offline repair for #14. No host startup, migration, home discovery or tail recovery.
  * Physical format and lease protocol checked against the official npm
- * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 / 0.2.2-rc.1
+ * dsh-session-persistence-jsonl@0.2.0-rc.1 / rc.2 / 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 / 0.2.2-rc.1 / rc.2 / rc.3
  * (format, zstd, lease, win32, generation selection and handle lifetime).
  * Use that installation's public format catalog, not a guessed JSONL schema.
  * Only the active canonical v4 file in a header-matching project/session directory
@@ -36,8 +36,11 @@ const runtimeCache = new Map()
 // Catalog/filename code is identical. Its v4 codec now accepts foreign delivery
 // markers in an inherited prefix without parentSession; active-tail ownership
 // still rejects them. Use the selected catalog, including that codec dependency.
-const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-rc.1'])
+const REVIEWED_BACKENDS = new Set(['0.2.0-rc.1', '0.2.0-rc.2', '0.2.1-alpha.1', '0.2.1-alpha.2', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3'])
 const REVIEWED_BACKEND_TEXT = [...REVIEWED_BACKENDS].join(' / ')
+// rc.2/rc.3 audit (2026-11-13): JSONL backend entry, format and catalog
+// are identical to rc.1; v4 codec validates native catalog names and the
+// Session worker changes replay rules. Always use the selected SDK validators.
 // Check resolution from each validator's own manifest as well as the backend:
 // a nested older codec/Session can otherwise silently change restore policy.
 const VALIDATOR_PACKAGES = new Set([

@@ -1,9 +1,10 @@
 /** Explicit update / supersede / force-record protocol for v0.5.6. */
 
 import type { EntryPayload, EntryUpdate, MemoirEntry, MemoirSource, MemoirStore } from './store.js'
+import { validateEntryPayload } from './store.js'
 import type { RetrievalEngine } from './retrieval.js'
 import { findSimilarMemories, type SimilarityCandidate } from './similarity.js'
-import { hostCopy } from './i18n.js'
+import { hostCopy, reliabilityCopy } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
 
 export type RecordResolution = 'update' | 'supersede' | 'force-record'
@@ -55,6 +56,18 @@ function updatePatch(payload: EntryPayload): EntryUpdate {
   }
 }
 
+/** Exact content must remain detectable even when tokenization has no terms. */
+function currentCandidates(store: MemoirStore, retrieval: RetrievalEngine, cwd: string, payload: EntryPayload): SimilarityCandidate[] {
+  const ranked = findSimilarMemories(retrieval, cwd, payload)
+  const known = new Set(ranked.map((candidate) => candidate.entry.id))
+  const normalized = (text: string): string => text.toLowerCase().replace(/\s+/g, ' ').trim()
+  const content = normalized(payload.content)
+  const exact: SimilarityCandidate[] = store.entries(cwd)
+    .filter((entry) => (entry.status ?? 'active') === 'active' && !known.has(entry.id) && normalized(entry.content) === content)
+    .map((entry) => ({ kind: 'duplicate', score: 0, components: { bm25: 0, title: 0, tokenJaccard: 0 }, reasons: ['exact-content'], entry, projectPath: cwd }))
+  return [...exact, ...ranked].slice(0, 5)
+}
+
 /**
  * Resolve one prospective write. Omission is safe-by-default: no candidate
  * means a normal append; candidates mean a no-write response asking the
@@ -71,34 +84,46 @@ export function governedRecord(
   // Web routes always pass their configured live language explicitly.
   const language = options.language ?? 'en'
   const copy = hostCopy(language).governance
-  const candidates = findSimilarMemories(retrieval, cwd, payload)
-  if (options.resolution === undefined && options.targetId !== undefined) {
-    throw new Error(copy.resolutionRequired)
-  }
-  if (options.resolution === undefined && candidates.length > 0) {
-    return { action: 'needs-resolution', recorded: false, candidates }
-  }
+  const validation = validateEntryPayload(payload, language)
+  if (validation !== undefined) throw new Error(validation)
+  // Capture what this instance was about to confirm before refreshing the
+  // store under the lock. A changed target must be presented again.
+  const observed = options.resolution === 'update' || options.resolution === 'supersede'
+    ? currentCandidates(store, retrieval, cwd, payload).find((candidate) => candidate.entry.id === options.targetId)
+    : undefined
+  const observedTarget = observed === undefined ? undefined : JSON.stringify(observed.entry)
+  return store.withMutationLock(() => {
+    const candidates = currentCandidates(store, retrieval, cwd, payload)
+    if (options.resolution === undefined && options.targetId !== undefined) {
+      throw new Error(copy.resolutionRequired)
+    }
+    if (options.resolution === undefined && candidates.length > 0) {
+      return { action: 'needs-resolution', recorded: false, candidates }
+    }
 
-  if (options.resolution === 'update') {
-    const target = requireTarget(store, cwd, options.targetId, candidates, language)
-    const entry = store.update(cwd, target.id, updatePatch(payload))
-    if (entry === undefined) throw new Error(copy.updateMissing(target.id))
-    return { action: 'updated', recorded: false, entry, candidates }
-  }
+    if (options.resolution === 'update') {
+      const target = requireTarget(store, cwd, options.targetId, candidates, language)
+      if (observedTarget === undefined || observedTarget !== JSON.stringify(target)) throw new Error(reliabilityCopy(language).candidateChanged)
+      const entry = store.update(cwd, target.id, updatePatch(payload))
+      if (entry === undefined) throw new Error(copy.updateMissing(target.id))
+      return { action: 'updated', recorded: false, entry, candidates }
+    }
 
-  if (options.resolution === 'supersede') {
-    const target = requireTarget(store, cwd, options.targetId, candidates, language)
-    const supersedes = [...new Set([...(payload.supersedes ?? []), target.id])]
-    const entry = store.record(cwd, { ...payload, supersedes }, options.source)
-    return { action: 'superseded', recorded: true, entry, candidates }
-  }
+    if (options.resolution === 'supersede') {
+      const target = requireTarget(store, cwd, options.targetId, candidates, language)
+      if (observedTarget === undefined || observedTarget !== JSON.stringify(target)) throw new Error(reliabilityCopy(language).candidateChanged)
+      const supersedes = [...new Set([...(payload.supersedes ?? []), target.id])]
+      const entry = store.record(cwd, { ...payload, supersedes }, options.source)
+      return { action: 'superseded', recorded: true, entry, candidates }
+    }
 
-  if (options.resolution === 'force-record') {
-    if (options.targetId !== undefined) throw new Error(copy.forceTargetUnused)
+    if (options.resolution === 'force-record') {
+      if (options.targetId !== undefined) throw new Error(copy.forceTargetUnused)
+      const entry = store.record(cwd, payload, options.source)
+      return { action: 'force-recorded', recorded: true, entry, candidates }
+    }
+
     const entry = store.record(cwd, payload, options.source)
-    return { action: 'force-recorded', recorded: true, entry, candidates }
-  }
-
-  const entry = store.record(cwd, payload, options.source)
-  return { action: 'recorded', recorded: true, entry, candidates: [] }
+    return { action: 'recorded', recorded: true, entry, candidates: [] }
+  })
 }

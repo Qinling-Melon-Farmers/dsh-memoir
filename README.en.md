@@ -1,5 +1,8 @@
 # dsh-memoir
 
+**Development: 0.9.6 is not released.** This branch uses SDK `0.2.2-rc.3` and adds left-side navigation, native plugin identity/update notices and reliability fixes. The npm stable version remains 0.9.5 below; see the [Unreleased changelog](./CHANGELOG.md).
+
+
 **Help each new agent session pick up your project.** dsh-memoir is a local-first project-memory plugin for DeepSeek Harness (DSH). It persists confirmed work, lessons and next actions, injects bounded Hot Memory into new sessions, and recalls complete history on demand with BM25.
 
 No embeddings, vector database or cloud memory service. The npm package bundles no runtime dependencies; the host supplies DSH and Zod 4 peers. It fits personal and local development workflows, rather than raw chat backups or multi-user cloud sync.
@@ -30,6 +33,10 @@ dsh plugin --profile desktop add dsh-memoir@0.9.5
 Web and Desktop manage plugin installation and activation separately. They share memory and settings files when using the same DSH_HOME and data paths; different homes or machines do not sync automatically. Reload the plugin after installation or upgrade, restarting the relevant `dsh web` or desktop application if needed. Refreshing a page alone does not reload host plugins. If the UI is missing, check the profile and host version first.
 
 ## UI preview
+
+**0.9.6 development candidate (unreleased):** the left-side Memory entry opens the panel directly, with separate Browse, Settings, Hot Memory and Diagnostics views. Native light-theme preview with Chinese UI:
+
+![0.9.6 development candidate: left-side navigation and memory settings](./picture/v0.9.6-left-settings-zh.png)
 
 These are **historical 0.9.0 previews**, not new 0.9.5 screenshots. Component previews use demonstration data. Plugin information, documentation and memory settings stay at the top.
 
@@ -101,6 +108,8 @@ Diagnostics distinguish reminders, actual saves, failures, cancellation and unav
 - **Hard budget handling:** skip candidates exceeding the remaining budget in favor of smaller entries. Shorten an oversized first entry's content and, if needed, title against the complete rendered block. Skip it if even the minimum block cannot fit; long titles cannot bypass the hard ceiling.
 - **Literal text and cache limits:** emit `{{...}}` and other template literals verbatim for new memories, cached old snapshots and restored disk snapshots, without deleting snapshots or rewriting original memories. Frozen prefixes can help caching but do not guarantee provider KV-cache retention, hit rates or billing savings.
 
+0.9.6 adds Memory to the left global-panel rail, following the main conversation’s workspace. Existing conversation, Settings and right-side views remain available. Native Plugins gains a dedicated icon and bilingual metadata; the information area shows compatible stable updates.
+
 ### Local recall and caching
 
 - **Tokenization:** Chinese 2/3-grams, Unicode letters/combining marks/numbers and code/path identifiers. NFC normalization preserves original content, German umlauts and Russian Cyrillic.
@@ -118,7 +127,7 @@ Diagnostics distinguish reminders, actual saves, failures, cancellation and unav
 - **Long lists:** batches of 20 entries or projects and expandable six-line body previews. Browse, Settings, Hot Memory and Diagnostics preserve separate scroll positions, with the final item above the composer.
 - **Accessibility and language:** arrow keys, Home/End, project disclosures and visible focus states. GUI language follows the host's Chinese/English setting; the independent `language` setting controls four agent languages.
 
-The first Memory Conversation opening shows offline release highlights without blocking chat. Acknowledging suppresses automatic display for that version in the same UI storage context; reopen from About & help. Settings and sidebar panels do not open it automatically. Without storage, deduplication lasts only for the current page; Web/Desktop acknowledgment need not be shared. Notices make no network requests or memory changes, and the plugin does not automatically check for or install updates.
+The first Memory Conversation opening, or left-side Memory opening in 0.9.6, shows offline release highlights without blocking chat. Acknowledging suppresses automatic display for that version in the same UI storage context; reopen from About & help. Settings and right-sidebar panels do not open it automatically. Without storage, deduplication lasts only for the current page; Web/Desktop acknowledgment need not be shared. Notices make no network requests or memory changes. The separate 0.9.6 version check asks the host for stable versions and compatibility, shares results within the page for 15 minutes, sends no memories or workspace paths, and never installs automatically.
 
 About & help shows the plugin version, host range, SDK baseline and maintainer. Its links belong to the plugin project, rather than the current workspace repository; it does not inspect workspace Git remotes. Update through the host plugin manager after checking the target package's host requirements and prerelease channel.
 
@@ -140,11 +149,11 @@ Set these parameters in the memoir `config` row of your profile composition; see
 | `hotMemoryTokens` | `900` | Target Hot Memory token budget for new sessions |
 | `hotMemoryMaxTokens` | `1200` | Hard budget ceiling for newly created session snapshots |
 | `readDefaultLimit` | `8` | Default `limit` parameter for `memoir_read` |
-| `readMaxLimit` | `30` | Live maximum for the `limit` parameter, not a total-output count cap |
+| `readMaxLimit` | `30` | Whole-call result cap starting with 0.9.6 |
 | `sessionSnapshotMax` | `128` | In-memory snapshot LRU capacity; does not delete disk snapshots |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |
 
-The tool currently applies `limit` separately by branch or project: `scope=all` limits its project and global passes separately, while the global pass without a query limits each project. The total result count can exceed `limit`, subject to the output character budget.
+**The 0.9.6 candidate** caps the whole call at `limit` memories. `all` keeps project-first order, fills remaining slots globally and deduplicates; it is not a single cross-project ranking. No-query reads still iterate by project. Published 0.9.5 applies separate branch/project limits and may exceed that count. Both retain the character budget.
 
 Integer parameters are at least 1, with cooldown at least 0; a hard budget/recall maximum cannot be below its target/default. Shrinking caches immediately evicts the oldest entries. Budget changes affect new snapshots only. Restore startup configuration removes persistent overrides and returns to profile startup values without clearing memory.
 

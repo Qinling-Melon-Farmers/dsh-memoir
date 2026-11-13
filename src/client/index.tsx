@@ -19,6 +19,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { useEffect } from 'react'
 import { MemoirApi } from './api.js'
 import { makeT } from './i18n.js'
@@ -27,12 +29,24 @@ import { mountPanelStyles } from './styles.js'
 import { mainWorkspaceCwd } from './native-navigation.js'
 import { watchSidebar } from './sidebar.js'
 import { watchPluginSettings } from './plugin-settings.js'
+import { createPluginUpdates, UpdateContext } from './updates.js'
 
 type NativeGlobalProps = { useSessions: UseSessions }
 type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
 
 /** Required alpha services; package.json injects the packages that provide them. */
 export const inject = ['uiWorkspace', 'slots']
+
+function MemoirMainView({ useSessions, api, ctx, t }: NativeGlobalProps & { api: MemoirApi; ctx: Context; t: (key: string) => string }) {
+  const cwd = useSessions(mainWorkspaceCwd)
+  return <div className="memoir-native-view" data-dsh-plugin="memoir" data-dsh-part="main-view">
+    <MemoirPanel key={cwd} api={api} cwd={cwd} t={t} announceOnOpen openSource={id => ctx.uiWorkspace.openSession(id as SessionId)} />
+  </div>
+}
+
+function MemoirMainIcon({ size = 20 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1v15" /></svg>
+}
 
 /** Native per-session Conversation view. */
 function ConversationMemoirView({
@@ -116,27 +130,30 @@ export function apply(rawCtx: Context): void {
   const ctx = rawCtx
   const api = new MemoirApi()
   const t = makeT(document)
+  const updates = createPluginUpdates(ctx)
 
   ctx.effect(() => mountPanelStyles(), 'dsh-memoir: native alpha styles')
-  ctx.effect(() => watchSidebar(ctx, api, t), 'dsh-memoir: optional sidebar')
-  ctx.effect(() => watchPluginSettings(ctx, api, t), 'dsh-memoir: optional plugin settings')
+  ctx.effect(() => watchSidebar(ctx, api, t, updates), 'dsh-memoir: optional sidebar')
+  ctx.effect(() => watchPluginSettings(ctx, api, t, updates), 'dsh-memoir: optional plugin settings')
   ctx.effect(() => {
     let disposers: Array<() => void> = []
     const register = (): void => {
       for (const dispose of disposers.splice(0)) dispose()
       disposers = [
+        ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'memoir' }, props => <UpdateContext.Provider value={updates}><MemoirMainView {...props} api={api} ctx={ctx} t={t} /></UpdateContext.Provider>)),
+        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: 'memoir', order: 20, label: () => t('entry.label') }, MemoirMainIcon)),
         ctx.slots.inject('conversation.view', () => ctx.slots.register({
           name: 'conversation.view',
           id: 'memoir',
           order: 20,
           label: () => t('entry.label'),
-        }, props => <ConversationMemoirView {...props} api={api} ctx={ctx} t={t} />)),
+        }, props => <UpdateContext.Provider value={updates}><ConversationMemoirView {...props} api={api} ctx={ctx} t={t} /></UpdateContext.Provider>)),
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: 'memoir',
           order: 25,
           label: () => t('entry.label'),
-        }, props => <SettingsMemoirSection {...props} api={api} ctx={ctx} t={t} />)),
+        }, props => <UpdateContext.Provider value={updates}><SettingsMemoirSection {...props} api={api} ctx={ctx} t={t} /></UpdateContext.Provider>)),
       ]
     }
 

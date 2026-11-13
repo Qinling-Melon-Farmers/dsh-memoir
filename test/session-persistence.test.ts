@@ -38,7 +38,7 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
       class Adapter extends LlmAdapter {
         async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
           options.signal?.throwIfAborted()
-          assert.ok(requests < 2)
+          assert.ok(requests < 3)
           const blocks: ContentBlock[] = requests++ === 0
             ? [{ type: 'tool-call', id: ToolCallId('write'), name: toolName, arguments: JSON.stringify(args) }]
             : [{ type: 'text', text: 'Original task answer remains readable.' }]
@@ -64,14 +64,22 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
       agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Save the verified memory.' }] }))
       await agent.whenIdle()
       assert.equal(requests, 2)
-      const events = agent.session.snapshotEvents()
-      assert.equal(events.some(event => event.type === 'dsh-memoir/written'), false)
-      const result = events.find(event => event.type === 'tool/result')!
+      const firstTurnEvents = agent.session.snapshotEvents()
+      assert.equal(firstTurnEvents.some(event => event.type === 'dsh-memoir/written'), false)
+      const result = firstTurnEvents.find(event => event.type === 'tool/result')!
       assert.ok(result)
       const committed = outcome === 'record' || outcome === 'update'
       assert.equal(result.data.message.isError, outcome === 'failed')
       if (outcome !== 'failed') assert.deepEqual(result.data.meta, { memoir: { version: 1, persisted: committed } })
       assert.equal(activity.stateOf(agent.session).recorded, committed)
+
+      // A later user follow-up must not inherit a stale write receipt.
+      agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue the conversation.' }] }))
+      await agent.whenIdle()
+      assert.equal(requests, 3)
+      const events = agent.session.snapshotEvents()
+      assert.equal(events.some(event => event.type === 'dsh-memoir/written'), false)
+      assert.equal(activity.stateOf(agent.session).recorded, false)
 
       // AgentLoop owns the write handle; real session/event routing must persist
       // every tool result. Never manually append snapshotEvents to fake routing.
@@ -82,7 +90,7 @@ for (const compression of ['none', 'zstd'] as const) for (const outcome of ['rec
         const read = await reader.read()
         assert.deepEqual(read.events, events, 'cold reader accepts the entire history unchanged')
         const cold = Session.fromRestore(reader.id, read.events, reader.header, reader.inheritedEventCount, read.eventState)
-        assert.equal(activity.stateOf(cold).recorded, committed)
+        assert.equal(activity.stateOf(cold).recorded, false)
         assert.ok(JSON.stringify(read.events).includes('Original task answer remains readable.'))
       } finally { await reader.close() }
     } finally { await ctx.fiber.dispose(); await coldCtx.fiber.dispose(); ws.cleanup() }

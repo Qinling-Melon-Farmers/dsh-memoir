@@ -21,7 +21,7 @@
 
 ## 开发前置
 
-- 开发使用 Node.js `>=24.9.0` 与 pnpm：官方 DSH `0.2.2-rc.1` SDK 要求该 Node 版本，
+- 开发使用 Node.js `>=24.9.0` 与 pnpm：官方 DSH `0.2.2-rc.3` SDK 要求该 Node 版本，
   锁文件为 `pnpm-lock.yaml`。插件自身 `package.json` 的 Node engine 保留
   `^22.19.0 || >=24.0.0`，用于支持旧宿主运行；开发环境须满足新 SDK 的更高要求。
 - 插件只基于官方 NPM SDK（`@deepseek-ai/*`），**禁止修改 DSH 源码**、禁止

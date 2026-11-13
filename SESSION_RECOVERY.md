@@ -8,6 +8,10 @@ Memoir 0.8.1–0.9.0 的实际写入回执使用了没有 `ignorable` 标记的 
 
 **从 0.9.1 起同时包含预防修复和独立恢复工具**。新版不再生成该事件，直接工具调用使用官方 `tool/result.meta`；升级插件不会自动重写旧日志。**恢复前先停止受影响插件的写入并升级至支持当前宿主的修复版本**，否则旧版仍会生成坏回执；只关闭自动蒸馏不够，手动 `memoir_record` / `memoir_update` 也会触发。
 
+### 0.9.6 未发布候选：DSH 0.2.2-rc.2 / rc.3
+
+本地候选已审计并加入官方 npm `0.2.2-rc.2` / `0.2.2-rc.3`。JSONL 后端入口与格式目录和 rc.1 逐字节一致；rc.2 引入的会话投影、v4 catalog 名称校验在 rc.3 中保持一致。恢复使用所选宿主版本的官方校验器，继续执行单文件、代次、写锁与原始备份检查。此支持尚未进入 npm；下方 `0.9.5` 命令只覆盖其原有版本白名单。升级插件仍不会自动修复历史日志。
+
 ### 0.9.5：DSH 0.2.2-rc.1 支持（2026-11-06）
 
 **0.9.5 的 npm 包已包含 rc.1 恢复支持**，可使用下方的 `npm exec` 命令，无需本地源码。该支持只扩展已审计后端白名单，不改变恢复范围：只接受符合所选官方校验器的原生 v4 日志；不启动宿主、不迁移旧代次、不扫描 DSH_HOME 发现会话。升级插件或 DSH 都不会自动修复旧日志。
@@ -59,6 +63,10 @@ npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/p
 Memoir 0.8.1–0.9.0 appends a custom `dsh-memoir/written` receipt without `ignorable`. DSH can write it but refuses the whole persisted history on reopen. This does not itself delete the raw conversation or the memory store. **0.9.1 includes both prevention and a standalone recovery tool**. It uses official `tool/result.meta`; upgrading never rewrites old sessions automatically.
 
 Stop memory writes from affected builds and upgrade to a fixed version supporting your host first: disabling auto-distillation alone does not prevent manual write tools from producing another invalid receipt.
+
+### Unreleased 0.9.6 candidate: DSH 0.2.2-rc.2 / rc.3
+
+The local candidate supports reviewed official npm `0.2.2-rc.2` / `0.2.2-rc.3`: the JSONL backend entry and format catalog are byte-identical to rc.1; session projection and v4 catalog-name validation introduced in rc.2 match rc.3. Recovery uses the selected version's official validators and retains the documented single-file, generation, lease and original-backup checks. This support is not on npm yet; the `0.9.5` commands below retain that release's original allowlist. Upgrading never repairs historical logs automatically.
 
 ### 0.9.5: DSH 0.2.2-rc.1 support (2026-11-06)
 
