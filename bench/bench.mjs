@@ -12,7 +12,7 @@
  * "cold query" even though the warmup had already populated the LRU.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoirStore } from '../lib/store.js'
@@ -118,11 +118,19 @@ for (const n of sizes) {
 const report = [
   '# dsh-memoir benchmark report',
   '',
-  '> 生成时间: ' + new Date().toISOString() + ' · node ' + process.version + ' · budget ' + DEFAULT_MEMORY_BUDGET.targetTokens + '/' + DEFAULT_MEMORY_BUDGET.hardMaxTokens + ' tokens',
+  '> 生成时间 / Generated: ' + new Date().toISOString() + ' · dsh-memoir ' + JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version + ' · Node ' + process.version + ' · ' + process.platform + '/' + process.arch + ' · budget ' + DEFAULT_MEMORY_BUDGET.targetTokens + '/' + DEFAULT_MEMORY_BUDGET.hardMaxTokens + ' estimated tokens',
   '',
   '| 条目数 | 冷加载 | 热读取(平均) | Hot Memory 构建 | 索引构建 | 未缓存查询 | 缓存查询 | 缓存命中率 | 全量 markdown tokens | 注入 tokens | 降幅 | 选中/候选 | 快照复用(1000次构建数) |',
   '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ...rows.map((row) => '| ' + row.join(' | ') + ' |'),
+  '',
+  '## 测量口径 / Method',
+  '',
+  '- 固定合成单项目语料，四类记忆均匀分布；不是用户数据或语义质量评估。 / Fixed synthetic single-project corpus, evenly split across four sections; not user data or a semantic-quality evaluation.',
+  '- 延迟为本次运行均值：冷加载/索引构建各 1 次，未缓存查询 20 次，其余默认 50 次；有预热的项目不含预热耗时。未测 P95，也不是独立多次运行的统计比较。 / Per-run averages: one cold load/index build, 20 uncached searches, otherwise 50 iterations; warmup excluded where enabled. No P95 or statistical comparison across independent runs.',
+  '- 查询缓存命中率取 20 个不同查询、两轮请求的真实 hits/misses 增量；50% 来自此访问模式，不是生产命中率或模型 KV cache 命中率。 / Cache hit rate uses actual counter deltas for two passes over 20 distinct queries; 50% reflects this access pattern, not production or model KV-cache performance.',
+  '- tokens 是插件估算值；对比全量 Markdown 与有界 Hot Memory，不代表实际账单节省。降幅按一位小数取整，100.0% 不表示零注入。 / Tokens are estimates comparing full Markdown with bounded Hot Memory, not measured billing savings. Reduction is rounded; 100.0% does not mean zero injection.',
+  '- 冻结复用列为同一会话 1000 次请求实际构建次数，不证明跨模型提供商的缓存命中。 / Snapshot reuse counts actual builds across 1,000 requests for one session, not provider-side cache hits.',
   '',
 ].join('\n')
 

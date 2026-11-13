@@ -131,7 +131,17 @@ The first Memory Conversation opening, or left-side Memory opening in 0.9.6, sho
 
 About & help shows the plugin version, host range, SDK baseline and maintainer. Its links belong to the plugin project, rather than the current workspace repository; it does not inspect workspace Git remotes. Update through the host plugin manager after checking the target package's host requirements and prerelease channel.
 
-See the historical [benchmark report](./bench/report.md). Results vary with corpus and environment and do not guarantee current-version performance, semantic accuracy or billing savings.
+### Local performance reference
+
+These fixed synthetic-corpus measurements were taken on 2026-11-13 with the **unreleased 0.9.6 candidate** (Windows x64, Node 24.19.0), not the published npm 0.9.5 build:
+
+| Memories | Mean uncached search | Mean cached search | Mean Hot Memory build | Estimated injected tokens |
+| --- | --- | --- | --- | --- |
+| 1,000 | 0.880 ms | 1.126 µs | 0.429 ms | 916 |
+| 10,000 | 8.143 ms | 1.066 µs | 1.561 ms | 902 |
+| 100,000 | 104.255 ms | 0.990 µs | 14.788 ms | 917 |
+
+Cache statistics use actual counters: two requests for each of 20 distinct queries produced a 50% hit rate, determined by that access pattern. This is the local retrieval cache, not a model provider's KV cache. Latencies are loop averages from one run, without P95 measurements; token estimates do not measure billing savings. See the [benchmark report](./bench/report.md) for methodology, cold-load and index-build costs.
 
 ## Configuration
 
