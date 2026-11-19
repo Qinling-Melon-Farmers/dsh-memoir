@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
-import { MemoirStore, validateEntryPayload, validateEntryUpdate } from '../lib/store.js'
+import { MemoirStore, projectKey, validateEntryPayload, validateEntryUpdate } from '../lib/store.js'
 import { memoirRecordTool, memoirUpdateTool } from '../lib/tools.js'
 import { RetrievalEngine } from '../lib/retrieval.js'
 import { makeRoutes } from '../lib/routes.js'
@@ -76,7 +76,7 @@ test('legacy oversized content remains readable and an unrelated update preserve
   try {
     const path = join(ws.dir, 'store.json')
     const content = 'z'.repeat(256 * 1024 + 1)
-    writeFileSync(path, JSON.stringify({ version: 4, projects: { [ws.cwd.replace(/\\/g, '/').toLowerCase()]: {
+    writeFileSync(path, JSON.stringify({ version: 4, projects: { [projectKey(ws.cwd)]: {
       path: ws.cwd, title: 'legacy', updatedAt: 1, entries: [{ id: 'old', section: 'note', content, time: 1 }],
     } } }))
     const store = new MemoirStore(path)
