@@ -8,9 +8,9 @@ Memoir 0.8.1–0.9.0 的实际写入回执使用了没有 `ignorable` 标记的 
 
 **从 0.9.1 起同时包含预防修复和独立恢复工具**。新版不再生成该事件，直接工具调用使用官方 `tool/result.meta`；升级插件不会自动重写旧日志。**恢复前先停止受影响插件的写入并升级至支持当前宿主的修复版本**，否则旧版仍会生成坏回执；只关闭自动蒸馏不够，手动 `memoir_record` / `memoir_update` 也会触发。
 
-### 0.9.6 未发布候选：DSH 0.2.2-rc.2 / rc.3
+### 0.9.6：DSH 0.2.2-rc.2 / rc.3 / rc.5
 
-本地候选已审计并加入官方 npm `0.2.2-rc.2` / `0.2.2-rc.3`。JSONL 后端入口与格式目录和 rc.1 逐字节一致；rc.2 引入的会话投影、v4 catalog 名称校验在 rc.3 中保持一致。恢复使用所选宿主版本的官方校验器，继续执行单文件、代次、写锁与原始备份检查。此支持尚未进入 npm；下方 `0.9.5` 命令只覆盖其原有版本白名单。升级插件仍不会自动修复历史日志。
+0.9.6 已审计并加入官方 npm `0.2.2-rc.2` / `0.2.2-rc.3`。JSONL 后端入口与格式目录和 rc.1 逐字节一致；rc.2 引入的会话投影、v4 catalog 名称校验在 rc.3 中保持一致。恢复使用所选宿主版本的官方校验器，继续执行单文件、代次、写锁与原始备份检查。2026-11-19 补充审计 rc.5：JSONL 后端、persistence、Session、格式目录及各代 codec 的 JS 与 rc.3 一致，LLM 仅增加 CONTENT_REFUSED 错误码，因此加入 `0.2.2-rc.5`；未审计的 0.2.2-rc.4 不在恢复白名单。npm 包包含此支持；下方命令使用 0.9.6。升级插件仍不会自动修复历史日志。
 
 ### 0.9.5：DSH 0.2.2-rc.1 支持（2026-11-06）
 
@@ -31,11 +31,11 @@ Memoir 0.8.1–0.9.0 的实际写入回执使用了没有 `ignorable` 标记的 
 
 ```sh
 npm install --prefix "/path/to/rc1" @deepseek-ai/dsh@0.2.2-rc.1
-npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
+npm exec --yes --package=dsh-memoir@0.9.6 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
 ```
 
 - Windows 全局路径可用 `npm root -g` 查出，再附加 `@deepseek-ai/dsh`；WSL 使用自己的 Linux 安装。桌面内置依赖不可直接供 Node 加载时，使用单独安装的官方 npm DSH 作为校验器，不修改桌面文件。
-- npm 0.9.5 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1` / `0.2.1-alpha.2` / `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5` / `0.2.2-rc.1`；rc.3 / rc.4 / rc.5 的后端库与 rc.2 逐字节一致（2026-11-01 审计）。宿主与 backend 必须同版本，实际解析的 SDK 依赖树也必须版本匹配；其它版本及混版拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
+- npm 0.9.6 支持已审计的官方 JSONL backend `0.2.0-rc.1` / `0.2.0-rc.2` / `0.2.1-alpha.1` / `0.2.1-alpha.2` / `0.2.1-rc.2` / `0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5` / `0.2.2-rc.1` / `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.5`；0.2.1-rc.3 / rc.4 / rc.5 的后端库与 rc.2 逐字节一致（2026-11-01 审计）。宿主与 backend 必须同版本，实际解析的 SDK 依赖树也必须版本匹配；其它版本及混版拒绝执行。只检查符合校验器的原生 v4 旧日志，不运行宿主、不迁移历史格式。
 - 文件必须位于与日志头部匹配的官方项目/会话目录内；请传实际路径，而不是照抄示例占位符或把单个文件复制到任意目录。只读取该会话目录的同级日志代次名称/元数据，拒绝已被更新格式取代的 v4、混合压缩编码、非规范文件名及路径别名；不会扫描其它项目，也不保证整个存储根目录没有其它问题。应用前、取得写锁后及替换前均复核代次状态。
 - 支持 `session.v4.jsonl` / `session.v4.jsonl.zstd`，存储和解压后均最多 128 MiB；Zstandard 每帧必须带校验和。日志截断、损坏、其它未知且不可忽略事件、符号链接/目录联接、硬链接等均拒绝修改。
 - 默认不改文件，不递归扫描用户目录；输出只有路径、计数和固定错误码，不输出正文或密钥。`candidates` 是待修复回执数量。
@@ -47,7 +47,7 @@ npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/p
 完全退出使用这份日志的 Web、CLI、桌面和后台宿主，独立备份会话目录。确认只读检查成功，再执行：
 
 ```sh
-npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" --apply --host-stopped "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
+npm exec --yes --package=dsh-memoir@0.9.6 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" --apply --host-stopped "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
 ```
 
 脚本取得官方会话写锁，逐项校验原始日志，仅在旧回执最外层补 `ignorable: true`；不删事件、不重排 seq、不改正文/时间/工具数据。受影响压缩帧会重压缩，其它帧原样保留。原始字节写入同目录唯一 `.memoir-repair-<id>.bak`，验证后才以同目录原子替换安装结果。再次执行是无操作；备份不会自动删除。
@@ -64,9 +64,9 @@ Memoir 0.8.1–0.9.0 appends a custom `dsh-memoir/written` receipt without `igno
 
 Stop memory writes from affected builds and upgrade to a fixed version supporting your host first: disabling auto-distillation alone does not prevent manual write tools from producing another invalid receipt.
 
-### Unreleased 0.9.6 candidate: DSH 0.2.2-rc.2 / rc.3
+### 0.9.6: DSH 0.2.2-rc.2 / rc.3 / rc.5
 
-The local candidate supports reviewed official npm `0.2.2-rc.2` / `0.2.2-rc.3`: the JSONL backend entry and format catalog are byte-identical to rc.1; session projection and v4 catalog-name validation introduced in rc.2 match rc.3. Recovery uses the selected version's official validators and retains the documented single-file, generation, lease and original-backup checks. This support is not on npm yet; the `0.9.5` commands below retain that release's original allowlist. Upgrading never repairs historical logs automatically.
+0.9.6 supports reviewed official npm `0.2.2-rc.2` / `0.2.2-rc.3`: the JSONL backend entry and format catalog are byte-identical to rc.1; session projection and v4 catalog-name validation introduced in rc.2 match rc.3. Recovery uses the selected version's official validators and retains the documented single-file, generation, lease and original-backup checks. The 2026-11-19 rc.5 audit found identical backend, persistence, Session, format/catalog and codec JS versus rc.3; LLM only adds CONTENT_REFUSED. This admits `0.2.2-rc.5`, but not the unreviewed 0.2.2-rc.4 recovery backend. The npm package includes this support; the commands below use 0.9.6. Upgrading never repairs historical logs automatically.
 
 ### 0.9.5: DSH 0.2.2-rc.1 support (2026-11-06)
 
@@ -87,10 +87,10 @@ The npm package includes the `dsh-memoir-repair` command, its script and this gu
 
 ```sh
 npm install --prefix "/path/to/rc1" @deepseek-ai/dsh@0.2.2-rc.1
-npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
+npm exec --yes --package=dsh-memoir@0.9.6 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
 ```
 
-The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **npm 0.9.5 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1 / 0.2.1-alpha.2 / 0.2.1-rc.2 / 0.2.1-rc.3 / 0.2.1-rc.4 / 0.2.1-rc.5 / 0.2.2-rc.1** (rc.3 / rc.4 / rc.5 ship the identical backend lib as rc.2, audited 2026-11-01). Host and backend versions must match, as must the actually resolved SDK dependencies. Other versions and mixed trees are rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
+The official DSH directory supplies the reviewed v4 validators and native lease dependencies. **npm 0.9.6 supports 0.2.0-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.1 / 0.2.1-alpha.2 / 0.2.1-rc.2 / 0.2.1-rc.3 / 0.2.1-rc.4 / 0.2.1-rc.5 / 0.2.2-rc.1 / 0.2.2-rc.2 / 0.2.2-rc.3 / 0.2.2-rc.5** (0.2.1-rc.3 / rc.4 / rc.5 ship the identical backend lib as rc.2, audited 2026-11-01). Host and backend versions must match, as must the actually resolved SDK dependencies. Other versions and mixed trees are rejected. `npm root -g` locates global packages; Windows and WSL have separate installations. An independently installed official npm DSH can validate desktop logs without editing the desktop installation.
 
 The file must remain in the official project/session directory matching its header. Use the actual path, not the example placeholders or an arbitrarily relocated single file. The tool checks sibling generation names/metadata only within that session: newer superseding formats, mixed encodings, noncanonical filenames and path aliases are rejected. It does not scan other projects or certify the whole storage root. Generation state is rechecked after taking the lease and immediately before replacement.
 
@@ -101,7 +101,7 @@ Default operation is read-only: no home scan, no host startup, no migration, and
 Exit **every** Web/CLI/desktop/background host using the file and independently back up the session directory. After a successful audit, apply explicitly:
 
 ```sh
-npm exec --yes --package=dsh-memoir@0.9.5 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" --apply --host-stopped "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
+npm exec --yes --package=dsh-memoir@0.9.6 -- dsh-memoir-repair --dsh-package "/path/to/rc1/node_modules/@deepseek-ai/dsh" --apply --host-stopped "/storage-root/<project>/<session-id>/session.v4.jsonl.zstd"
 ```
 
 The script takes the official session lease and adds only `ignorable: true` to exact legacy receipt envelopes, preserving event order, seq, timestamps, payloads and untouched compressed frames. A unique adjacent `.memoir-repair-<id>.bak` stores the verified original bytes before atomic replacement. Backups are retained; a second run makes no change.

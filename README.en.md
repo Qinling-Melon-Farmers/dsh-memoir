@@ -1,8 +1,5 @@
 # dsh-memoir
 
-**Development: 0.9.6 is not released.** This branch uses SDK `0.2.2-rc.3` and adds left-side navigation, native plugin identity/update notices and reliability fixes. The npm stable version remains 0.9.5 below; see the [Unreleased changelog](./CHANGELOG.md).
-
-
 **Help each new agent session pick up your project.** dsh-memoir is a local-first project-memory plugin for DeepSeek Harness (DSH). It persists confirmed work, lessons and next actions, injects bounded Hot Memory into new sessions, and recalls complete history on demand with BM25.
 
 No embeddings, vector database or cloud memory service. The npm package bundles no runtime dependencies; the host supplies DSH and Zod 4 peers. It fits personal and local development workflows, rather than raw chat backups or multi-user cloud sync.
@@ -15,30 +12,32 @@ No embeddings, vector database or cloud memory service. The npm package bundles 
 
 ## Quick installation
 
-Current release: **0.9.5 (2026-11-06)**, supporting **DSH `0.2.2-rc.1` / Node.js `>=24.9.0`**. This release does not migrate memory, settings or snapshots. Back up DSH_HOME before upgrading; affected historical logs require separate recovery below.
+Current release: **0.9.6 (2026-11-19)**, supporting **DSH `0.2.2-rc.3` / Node.js `>=24.9.0`**. This release does not migrate memory, settings or snapshots. Back up DSH_HOME before upgrading; affected historical logs require separate recovery below.
 
 **Web:** install or update the CLI, then add the plugin to the `web` profile:
 
 ```sh
-npm install --global @deepseek-ai/dsh@0.2.2-rc.1
-dsh plugin --profile web add dsh-memoir@0.9.5
+npm install --global @deepseek-ai/dsh@0.2.2-rc.3
+dsh plugin --profile web add dsh-memoir@0.9.6
 ```
 
-**Desktop:** check the desktop application's bundled DSH host version first; updating the global CLI does not replace that host. Add the npm package `dsh-memoir@0.9.5` through Desktop's native Plugins manager, or use a CLI pointing to the same DSH_HOME to add it to the `desktop` profile:
+**Desktop:** check the desktop application's bundled DSH host version first; updating the global CLI does not replace that host. Add the npm package `dsh-memoir@0.9.6` through Desktop's native Plugins manager, or use a CLI pointing to the same DSH_HOME to add it to the `desktop` profile:
 
 ```sh
-dsh plugin --profile desktop add dsh-memoir@0.9.5
+dsh plugin --profile desktop add dsh-memoir@0.9.6
 ```
 
 Web and Desktop manage plugin installation and activation separately. They share memory and settings files when using the same DSH_HOME and data paths; different homes or machines do not sync automatically. Reload the plugin after installation or upgrade, restarting the relevant `dsh web` or desktop application if needed. Refreshing a page alone does not reload host plugins. If the UI is missing, check the profile and host version first.
 
+DSH `0.2.2-rc.5` is additionally verified; the development baseline remains rc.3. The recovery CLI accepts only [reviewed versions](./SESSION_RECOVERY.md), not every backend within the runtime range.
+
 ## UI preview
 
-**0.9.6 development candidate (unreleased):** the left-side Memory entry opens the panel directly, with separate Browse, Settings, Hot Memory and Diagnostics views. Native light-theme preview with Chinese UI:
+**0.9.6:** the left-side Memory entry opens the panel directly, with separate Browse, Settings, Hot Memory and Diagnostics views. Native light-theme preview with Chinese UI:
 
-![0.9.6 development candidate: left-side navigation and memory settings](./picture/v0.9.6-left-settings-zh.png)
+![0.9.6: left-side navigation and memory settings](./picture/v0.9.6-left-settings-zh.png)
 
-These are **historical 0.9.0 previews**, not new 0.9.5 screenshots. Component previews use demonstration data. Plugin information, documentation and memory settings stay at the top.
+These are **historical 0.9.0 previews**, not new 0.9.6 screenshots. Component previews use demonstration data. Plugin information, documentation and memory settings stay at the top.
 
 ![0.9.0 component preview: plugin guide and memory browsing (demonstration data)](https://raw.githubusercontent.com/Qinling-Melon-Farmers/dsh-memoir/v0.9.0/picture/v0.9.0-preview-guide-zh.png)
 
@@ -133,7 +132,7 @@ About & help shows the plugin version, host range, SDK baseline and maintainer. 
 
 ### Local performance reference
 
-These fixed synthetic-corpus measurements were taken on 2026-11-13 with the **unreleased 0.9.6 candidate** (Windows x64, Node 24.19.0), not the published npm 0.9.5 build:
+These fixed synthetic-corpus measurements were taken on 2026-11-13 with the **0.9.6 release candidate** (Windows x64, Node 24.19.0), as a reference for this release, not an independent comparison against 0.9.5:
 
 | Memories | Mean uncached search | Mean cached search | Mean Hot Memory build | Estimated injected tokens |
 | --- | --- | --- | --- | --- |
@@ -163,7 +162,7 @@ Set these parameters in the memoir `config` row of your profile composition; see
 | `sessionSnapshotMax` | `128` | In-memory snapshot LRU capacity; does not delete disk snapshots |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |
 
-**The 0.9.6 candidate** caps the whole call at `limit` memories. `all` keeps project-first order, fills remaining slots globally and deduplicates; it is not a single cross-project ranking. No-query reads still iterate by project. Published 0.9.5 applies separate branch/project limits and may exceed that count. Both retain the character budget.
+**0.9.6** caps the whole call at `limit` memories. `all` keeps project-first order, fills remaining slots globally and deduplicates; it is not a single cross-project ranking. No-query reads still iterate by project. The older 0.9.5 applies separate branch/project limits and may exceed that count. Both retain the character budget.
 
 Integer parameters are at least 1, with cooldown at least 0; a hard budget/recall maximum cannot be below its target/default. Shrinking caches immediately evicts the oldest entries. Budget changes affect new snapshots only. Restore startup configuration removes persistent overrides and returns to profile startup values without clearing memory.
 
@@ -183,7 +182,7 @@ DSH_HOME defaults to `~/.dsh`; use the actual configured paths when customized.
 - The plugin has no separate cloud memory service and makes no additional memory or workspace-path uploads. Content read through tools or injected into prompts enters the current model's context. You decide whether sensitive Markdown belongs in Git.
 - Panel memory writes require a trusted active workspace or existing project bucket; submitting an arbitrary absolute path grants no write access. Cross-process memory-store writes take an exclusive lock and reread disk inside it, with conservative dead-writer lock recovery. Settings files lack cross-process refresh and conflict detection; avoid changing settings from multiple hosts at once. Windows path keys are case-normalized while display paths stay unchanged.
 - Future store formats, read errors and failed corrupt-file backups fail closed, refusing further loading/overwriting. A fresh store is allowed only after preserving the damaged original. Temporary Windows rename failures receive bounded retries and still surface when exhausted.
-- Before upgrades, back up memory JSON, settings, snapshots and project Markdown. Plugin upgrades or removal do not delete them automatically; 0.9.5 does not migrate their formats. DSH session migration is separate: back up all of DSH_HOME, as older hosts may not read migrated sessions.
+- Before upgrades, back up memory JSON, settings, snapshots and project Markdown. Plugin upgrades or removal do not delete them automatically; 0.9.6 does not migrate their formats. DSH session migration is separate: back up all of DSH_HOME, as older hosts may not read migrated sessions.
 
 ### Snapshot retention and cleanup
 
@@ -193,11 +192,11 @@ Old sessions whose snapshots are already lost can only establish a baseline from
 
 ### When an old session will not reopen (#14)
 
-**Invalid receipts written by 0.8.1–0.9.0 can prevent reopening; upgrading Memoir or DSH does not repair historical logs automatically.** Prevention starts in 0.9.1 and is retained in 0.9.5. Template-literal protection does not repair arbitrary old logs either.
+**Invalid receipts written by 0.8.1–0.9.0 can prevent reopening; upgrading Memoir or DSH does not repair historical logs automatically.** Prevention starts in 0.9.1 and is retained in 0.9.6. Template-literal protection does not repair arbitrary old logs either.
 
 Follow the [session recovery guide](./SESSION_RECOVERY.md#english) using the bundled npm `dsh-memoir-repair` command. Stop writes from the affected old plugin and upgrade to a compatible fixed version first. Audit one explicitly named file read-only; only after every Web/CLI/Desktop/background host exits and an independent backup exists, apply explicitly with `--apply --host-stopped`. Disabling automatic distillation alone does not stop manual writes.
 
-Only matching official host/backend/SDK versions in the guide's allowlist are accepted, including `0.2.2-rc.1`. The tool handles active native `session.v4.jsonl[.zstd]` files in header-matching directories only, without home scans or generation migration. It rejects superseded v4, mixed versions, path aliases/links, corruption, mixed encodings and zstd frames without checksums. Stored and expanded size are each capped at 128 MiB.
+Only matching official host/backend/SDK versions in the guide's allowlist are accepted, including `0.2.2-rc.1 / rc.2 / rc.3 / rc.5`. The tool handles active native `session.v4.jsonl[.zstd]` files in header-matching directories only, without home scans or generation migration. It rejects superseded v4, mixed versions, path aliases/links, corruption, mixed encodings and zstd frames without checksums. Stored and expanded size are each capped at 128 MiB.
 
 Apply holds the official session lease with hosts stopped throughout: a same-login-session Windows semaphore or POSIX flock on a stable `session.lock` inode. Use trusted local filesystems, not network drives or cross-login sharing. Only matching legacy receipts gain `ignorable: true`; events, content and order are preserved. Exact original bytes are backed up to `.bak` before same-directory atomic replacement, and repeating makes no change. Windows replacement inherits directory ACLs without preserving custom source-file ACLs. Follow the guide for errors, remaining `.tmp`/`.bak`, `committed: true` and rollback; never delete raw logs, downgrade formats or bulk-delete unknown caches.
 
@@ -206,23 +205,24 @@ Apply holds the official session lease with hosts stopped throughout: a same-log
 <details>
 <summary>Expand host ranges, older plugin lines and upgrade limits</summary>
 
-0.9.5's host/peer range is `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.2-rc.1 <0.2.2`. It retains official 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 lines. The range does not verify every included or future build and does not admit 0.2.2-alpha. Runtime compatibility does not imply recovery of arbitrary historical logs.
+0.9.6's host/peer range is `>=0.2.0-rc.1 <0.3.0-0 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.2-rc.1 <0.2.2`. It retains official 0.2.0-rc.1 / rc.2 and 0.2.1-alpha.1 / alpha.2 / rc.2 / rc.3 / rc.4 / rc.5 lines. The range does not verify every included or future build and does not admit 0.2.2-alpha. Runtime compatibility does not imply recovery of arbitrary historical logs.
 
 | Pinned Memoir | DSH range | Notes |
 | --- | --- | --- |
-| `0.9.5` | Range above; development baseline `0.2.2-rc.1` | Current release; memory/settings/snapshot formats unchanged |
+| `0.9.6` | Range above; development baseline `0.2.2-rc.3` | Current release; memory/settings/snapshot formats unchanged |
+| `0.9.5` | Range above; development baseline `0.2.2-rc.1` | Older release; recovery CLI does not support rc.2 / rc.3 |
 | `0.9.4` | `>=0.2.0-rc.1 <0.3.0-0 \|\| >=0.2.1-alpha.1 <0.2.1` | Historical SDK baseline `0.2.1-rc.5`; no 0.2.2-rc.1 adaptation |
 | `0.8.2` | `>=0.1.7-rc.1 <0.1.8-0` | Older 0.1.7 line, still affected by #14 |
 | `0.7.1` | `>=0.1.5-rc.1 <0.1.6-0` | Older 0.1.5 line; fixes snapshots after restart/RAM eviction |
 | `0.6.2` | `>=0.1.2-alpha.2 <0.1.3` | Older 0.1.2 line |
 | `0.5.6` | `0.1.1-rc.2` | Older rc.2 line |
 
-Match the plugin version to an older host. Older lines lack all current fixes; back up and upgrade both host and plugin where possible. Select `zh` or `en` before downgrading to 0.8.2. The plugin's Node engine remains `^22.19.0 || >=24.0.0` for older hosts; the current development SDK and DSH 0.2.2-rc.1 still require Node `>=24.9.0`. See the [changelog](./CHANGELOG.md) for full compatibility and fix history.
+Match the plugin version to an older host. Older lines lack all current fixes; back up and upgrade both host and plugin where possible. Select `zh` or `en` before downgrading to 0.8.2. The plugin's Node engine remains `^22.19.0 || >=24.0.0` for older hosts; the current development SDK and DSH 0.2.2-rc.3 still require Node `>=24.9.0`. See the [changelog](./CHANGELOG.md) for full compatibility and fix history.
 
 </details>
 
 ## Development and contributing
 
-Development uses official npm DSH SDK `0.2.2-rc.1`, Node `>=24.9.0` and pnpm. See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, builds and contribution rules, and [cordis.patch.yml](./cordis.patch.yml) for the composition mounting example.
+Development uses official npm DSH SDK `0.2.2-rc.3`, Node `>=24.9.0` and pnpm. See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, builds and contribution rules, and [cordis.patch.yml](./cordis.patch.yml) for the composition mounting example.
 
 [Source and feedback](https://github.com/Qinling-Melon-Farmers/dsh-memoir) · [Issues](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues) · [Changelog](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases) · [Apache-2.0](./LICENSE)

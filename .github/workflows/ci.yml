@@ -122,6 +122,8 @@ jobs:
             advisory: false
           - sdk: 0.2.2-rc.3
             advisory: false
+          - sdk: 0.2.2-rc.5
+            advisory: false
     continue-on-error: ${{ matrix.advisory }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
