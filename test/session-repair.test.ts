@@ -171,7 +171,7 @@ test('alpha.2 repair preserves working-directory transitions and ignorable plugi
 })
 
 test('rc1 catalog preserves independent seeded deliveries but rejects foreign active-tail ownership', async t => {
-  if (!['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3'].includes(backendVersion)) {
+  if (!['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.5'].includes(backendVersion)) {
     t.skip('the independent seeded delivery policy was introduced in 0.2.2-rc.1')
     return
   }
@@ -204,8 +204,8 @@ test('rc1 catalog preserves independent seeded deliveries but rejects foreign ac
 })
 
 test('rc2/rc3 native catalog names are validated before repairing an old receipt', async t => {
-  if (!['0.2.2-rc.2', '0.2.2-rc.3'].includes(backendVersion)) {
-    t.skip('native catalog version 3 is an rc2/rc3 contract')
+  if (!['0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.5'].includes(backendVersion)) {
+    t.skip('native catalog version 3 requires an audited rc2+ backend')
     return
   }
   const catalog = (seq: number, childId: string, name: string) => line({
